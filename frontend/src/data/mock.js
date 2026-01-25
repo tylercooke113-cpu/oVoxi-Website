@@ -98,9 +98,8 @@ export const complianceData = {
 
 export const statsData = [
   { value: "100%", label: "Compliance Rate" },
-  { value: "500K+", label: "Tracks Licensed" },
-  { value: "50+", label: "AI Lab Partners" },
-  { value: "1000+", label: "Creators Onboarded" }
+  { value: "500+", label: "Tracks Licensed" },
+  { value: "50+", label: "Artists Onboarded" }
 ];
 
 export const footerData = {
