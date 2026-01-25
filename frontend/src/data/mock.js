@@ -12,7 +12,9 @@ export const heroData = {
   headline: "oVoxi.ai: The Ethical Architecture for Generative Sound",
   description: "oVoxi is the world's first high-fidelity provenance layer for the AI music era. We bridge the gap between elite creators and global AI labs by providing foundation-model-ready datasets that are 100% compliant with the EU AI Act and the US NO FAKES Act.",
   primaryCTA: "Get Started",
-  secondaryCTA: "Learn More"
+  primaryCtaLink: "https://airtable.com/appmcBnXvP82ydQCz/pag6udQiv3QTWYG3m/form",
+  secondaryCTA: "Learn More",
+  secondaryCtaLink: "#creators"
 };
 
 export const featuresData = [
@@ -52,7 +54,10 @@ export const forCreatorsData = {
     "Legal protection for your digital identity",
     "Direct access to AI lab partnerships"
   ],
-  cta: "Join as Creator"
+  cta: "Join as Creator",
+  ctaLink: "https://airtable.com/appmcBnXvP82ydQCz/pag6udQiv3QTWYG3m/form",
+  secondaryCta: "Upload Stems",
+  secondaryCtaLink: "https://airtable.com/appmcBnXvP82ydQCz/pagjsLxEaWH3n99Xo/form"
 };
 
 export const forAILabsData = {
@@ -65,7 +70,8 @@ export const forAILabsData = {
     "Complete provenance documentation",
     "Technical specifications included"
   ],
-  cta: "Request Dataset"
+  cta: "Request Dataset",
+  ctaLink: "mailto:contact@ovoxi.ai?subject=Dataset%20Request"
 };
 
 export const complianceData = {
