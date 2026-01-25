@@ -7,12 +7,19 @@ module.exports = {
   ],
   theme: {
   	extend: {
+  		fontFamily: {
+  			mono: ['Kode Mono', 'monospace'],
+  			sans: ['Inter', 'system-ui', 'sans-serif'],
+  		},
   		borderRadius: {
   			lg: 'var(--radius)',
   			md: 'calc(var(--radius) - 2px)',
   			sm: 'calc(var(--radius) - 4px)'
   		},
   		colors: {
+  			'neon-blue': '#009DFF',
+  			'neon-blue-light': '#00B4FF',
+  			'neon-blue-dark': '#0080CC',
   			background: 'hsl(var(--background))',
   			foreground: 'hsl(var(--foreground))',
   			card: {
