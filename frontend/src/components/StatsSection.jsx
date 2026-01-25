@@ -4,8 +4,8 @@ import { statsData } from '../data/mock';
 export const StatsSection = () => {
   return (
     <section className="relative py-20 bg-black border-y border-white/10">
-      <div className="max-w-7xl mx-auto px-6 lg:px-8">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-8 md:gap-12">
+      <div className="max-w-5xl mx-auto px-6 lg:px-8">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 md:gap-16">
           {statsData.map((stat, index) => (
             <div
               key={index}
