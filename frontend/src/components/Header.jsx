@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { Menu, X } from 'lucide-react';
 import { navigationLinks } from '../data/mock';
 
+const AIRTABLE_ARTIST_INFO = "https://airtable.com/appmcBnXvP82ydQCz/pag6udQiv3QTWYG3m/form";
+
 export const Header = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
@@ -31,9 +33,14 @@ export const Header = () => {
 
           {/* Desktop CTA */}
           <div className="hidden md:flex items-center gap-4">
-            <button className="px-6 py-3 bg-neon-blue text-black font-medium hover:bg-neon-blue/90 transition-all duration-300 hover:shadow-[0_0_20px_rgba(0,157,255,0.4)]">
+            <a 
+              href={AIRTABLE_ARTIST_INFO}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-6 py-3 bg-neon-blue text-black font-medium hover:bg-neon-blue/90 transition-all duration-300 hover:shadow-[0_0_20px_rgba(0,157,255,0.4)]"
+            >
               Get Started
-            </button>
+            </a>
           </div>
 
           {/* Mobile Menu Button */}
@@ -59,9 +66,14 @@ export const Header = () => {
                   {link.label}
                 </a>
               ))}
-              <button className="mt-4 px-6 py-3 bg-neon-blue text-black font-medium hover:bg-neon-blue/90 transition-all duration-300">
+              <a 
+                href={AIRTABLE_ARTIST_INFO}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-4 px-6 py-3 bg-neon-blue text-black font-medium hover:bg-neon-blue/90 transition-all duration-300 text-center"
+              >
                 Get Started
-              </button>
+              </a>
             </nav>
           </div>
         )}
