@@ -1,6 +1,8 @@
 import React from 'react';
 import { ArrowRight } from 'lucide-react';
 
+const AIRTABLE_ARTIST_INFO = "https://airtable.com/appmcBnXvP82ydQCz/pag6udQiv3QTWYG3m/form";
+
 export const CTASection = () => {
   return (
     <section className="relative py-32 bg-black overflow-hidden">
@@ -21,13 +23,21 @@ export const CTASection = () => {
 
           {/* CTAs */}
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <button className="group flex items-center justify-center gap-3 px-8 py-4 bg-neon-blue text-black font-medium text-lg hover:shadow-[0_0_30px_rgba(0,157,255,0.5)] transition-all duration-400">
+            <a 
+              href={AIRTABLE_ARTIST_INFO}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="group flex items-center justify-center gap-3 px-8 py-4 bg-neon-blue text-black font-medium text-lg hover:shadow-[0_0_30px_rgba(0,157,255,0.5)] transition-all duration-400"
+            >
               Start Building Today
               <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
-            </button>
-            <button className="flex items-center justify-center gap-2 px-8 py-4 bg-white/10 text-white font-medium text-lg hover:bg-white hover:text-black transition-all duration-400">
+            </a>
+            <a 
+              href="mailto:contact@ovoxi.ai?subject=Sales%20Inquiry"
+              className="flex items-center justify-center gap-2 px-8 py-4 bg-white/10 text-white font-medium text-lg hover:bg-white hover:text-black transition-all duration-400"
+            >
               Contact Sales
-            </button>
+            </a>
           </div>
 
           {/* Trust Text */}
