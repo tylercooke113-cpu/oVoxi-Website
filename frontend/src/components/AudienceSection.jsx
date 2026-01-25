@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowRight, Check } from 'lucide-react';
+import { ArrowRight, Check, Upload } from 'lucide-react';
 import { forCreatorsData, forAILabsData } from '../data/mock';
 
 export const AudienceSection = () => {
@@ -38,11 +38,27 @@ export const AudienceSection = () => {
                 ))}
               </ul>
 
-              {/* CTA */}
-              <button className="group/btn flex items-center gap-3 px-6 py-3 bg-neon-blue text-black font-medium hover:shadow-[0_0_20px_rgba(0,157,255,0.4)] transition-all duration-300">
-                {forCreatorsData.cta}
-                <ArrowRight className="w-4 h-4 group-hover/btn:translate-x-1 transition-transform" />
-              </button>
+              {/* CTAs */}
+              <div className="flex flex-col sm:flex-row gap-4">
+                <a 
+                  href={forCreatorsData.ctaLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="group/btn flex items-center gap-3 px-6 py-3 bg-neon-blue text-black font-medium hover:shadow-[0_0_20px_rgba(0,157,255,0.4)] transition-all duration-300"
+                >
+                  {forCreatorsData.cta}
+                  <ArrowRight className="w-4 h-4 group-hover/btn:translate-x-1 transition-transform" />
+                </a>
+                <a 
+                  href={forCreatorsData.secondaryCtaLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="group/btn flex items-center gap-3 px-6 py-3 bg-white/10 text-white font-medium hover:bg-white hover:text-black transition-all duration-300"
+                >
+                  <Upload className="w-4 h-4" />
+                  {forCreatorsData.secondaryCta}
+                </a>
+              </div>
             </div>
           </div>
 
@@ -78,10 +94,13 @@ export const AudienceSection = () => {
               </ul>
 
               {/* CTA */}
-              <button className="group/btn flex items-center gap-3 px-6 py-3 bg-white/10 text-white font-medium hover:bg-white hover:text-black transition-all duration-300">
+              <a 
+                href={forAILabsData.ctaLink}
+                className="group/btn inline-flex items-center gap-3 px-6 py-3 bg-white/10 text-white font-medium hover:bg-white hover:text-black transition-all duration-300"
+              >
                 {forAILabsData.cta}
                 <ArrowRight className="w-4 h-4 group-hover/btn:translate-x-1 transition-transform" />
-              </button>
+              </a>
             </div>
           </div>
         </div>
