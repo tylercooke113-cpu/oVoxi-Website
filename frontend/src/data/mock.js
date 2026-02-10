@@ -3,8 +3,7 @@
 export const navigationLinks = [
   { label: "For Creators", href: "#creators" },
   { label: "For AI Labs", href: "#ai-labs" },
-  { label: "Compliance", href: "#compliance" },
-  { label: "About", href: "#about" }
+  { label: "Compliance", href: "#compliance" }
 ];
 
 export const heroData = {
