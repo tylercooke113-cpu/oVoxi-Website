@@ -39,11 +39,6 @@ export const CTASection = () => {
               Contact Sales
             </a>
           </div>
-
-          {/* Trust Text */}
-          <p className="mt-8 text-gray-500 text-sm">
-            Join 1000+ creators and 50+ AI labs already using oVoxi.ai
-          </p>
         </div>
       </div>
     </section>
