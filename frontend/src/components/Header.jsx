@@ -1,83 +1,112 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { Link, NavLink } from 'react-router-dom';
 import { Menu, X } from 'lucide-react';
-import { navigationLinks } from '../data/mock';
+import { NAV_LINKS } from '../content';
 
-const AIRTABLE_ARTIST_INFO = "https://airtable.com/appmcBnXvP82ydQCz/pag6udQiv3QTWYG3m/form";
+const Logo = () => (
+  <Link to="/" data-testid="logo-link" className="flex items-center gap-2 group">
+    <span className="relative flex h-8 w-8 items-center justify-center rounded-lg bg-electric/15 ring-1 ring-electric/40">
+      <span className="h-3 w-3 rounded-full bg-cyan shadow-[0_0_12px_#00E5FF] group-hover:scale-110 transition-transform" />
+    </span>
+    <span className="font-heading text-lg font-semibold tracking-tight text-white">
+      oVoxi<span className="text-electric">.ai</span>
+    </span>
+  </Link>
+);
 
 export const Header = () => {
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
+
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 16);
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+
+  const closeMenu = () => setOpen(false);
 
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 bg-black border-b border-white/10">
-      <div className="max-w-7xl mx-auto px-6 lg:px-8">
-        <div className="flex items-center justify-between h-20">
-          {/* Logo */}
-          <a href="/" className="flex items-center gap-2">
-            <span className="text-2xl font-bold text-white">
-              oVoxi<span className="text-neon-blue">.ai</span>
-            </span>
-          </a>
+    <header
+      data-testid="site-header"
+      className={`fixed top-0 inset-x-0 z-50 transition-colors duration-300 ${
+        scrolled ? 'bg-ink/80 backdrop-blur-xl border-b border-white/10' : 'bg-transparent'
+      }`}
+    >
+      <div className="mx-auto max-w-7xl px-6 lg:px-8">
+        <div className="flex h-16 items-center justify-between">
+          <Logo />
 
-          {/* Desktop Navigation */}
           <nav className="hidden md:flex items-center gap-8">
-            {navigationLinks.map((link) => (
-              <a
-                key={link.label}
-                href={link.href}
-                className="text-gray-400 hover:text-white transition-colors duration-300 text-sm font-medium"
+            {NAV_LINKS.map((l) => (
+              <NavLink
+                key={l.to}
+                to={l.to}
+                data-testid={`nav-${l.label.toLowerCase()}`}
+                className={({ isActive }) =>
+                  `text-sm font-medium transition-colors ${
+                    isActive ? 'text-white' : 'text-slate-400 hover:text-white'
+                  }`
+                }
               >
-                {link.label}
-              </a>
+                {l.label}
+              </NavLink>
             ))}
           </nav>
 
-          {/* Desktop CTA */}
-          <div className="hidden md:flex items-center gap-4">
-            <a 
-              href={AIRTABLE_ARTIST_INFO}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="px-6 py-3 bg-neon-blue text-black font-medium hover:bg-neon-blue/90 transition-all duration-300 hover:shadow-[0_0_20px_rgba(0,157,255,0.4)]"
+          <div className="hidden md:flex items-center gap-3">
+            <Link
+              to="/artists"
+              data-testid="header-artist-cta"
+              className="text-sm font-medium text-slate-300 hover:text-white transition-colors"
             >
-              Get Started
-            </a>
+              Join as Artist
+            </Link>
+            <Link
+              to="/contact?interest=ai_company"
+              data-testid="header-partnership-cta"
+              className="rounded-full bg-electric px-5 py-2 text-sm font-semibold text-white transition-all hover:shadow-[0_0_24px_rgba(0,102,255,0.6)]"
+            >
+              Request Partnership
+            </Link>
           </div>
 
-          {/* Mobile Menu Button */}
           <button
-            className="md:hidden text-white p-2"
-            onClick={() => setIsMenuOpen(!isMenuOpen)}
+            data-testid="mobile-menu-toggle"
+            className="md:hidden text-white"
+            onClick={() => setOpen((v) => !v)}
+            aria-label="Toggle menu"
           >
-            {isMenuOpen ? <X size={24} /> : <Menu size={24} />}
+            {open ? <X size={24} /> : <Menu size={24} />}
           </button>
         </div>
-
-        {/* Mobile Navigation */}
-        {isMenuOpen && (
-          <div className="md:hidden py-4 border-t border-white/10">
-            <nav className="flex flex-col gap-4">
-              {navigationLinks.map((link) => (
-                <a
-                  key={link.label}
-                  href={link.href}
-                  className="text-gray-400 hover:text-white transition-colors duration-300 text-sm font-medium py-2"
-                  onClick={() => setIsMenuOpen(false)}
-                >
-                  {link.label}
-                </a>
-              ))}
-              <a 
-                href={AIRTABLE_ARTIST_INFO}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-4 px-6 py-3 bg-neon-blue text-black font-medium hover:bg-neon-blue/90 transition-all duration-300 text-center"
-              >
-                Get Started
-              </a>
-            </nav>
-          </div>
-        )}
       </div>
+
+      {open && (
+        <div data-testid="mobile-menu" className="md:hidden bg-ink/95 backdrop-blur-xl border-b border-white/10">
+          <div className="px-6 py-4 flex flex-col gap-4">
+            {NAV_LINKS.map((l) => (
+              <Link
+                key={l.to}
+                to={l.to}
+                onClick={closeMenu}
+                data-testid={`mobile-nav-${l.label.toLowerCase()}`}
+                className="text-base font-medium text-slate-300 hover:text-white"
+              >
+                {l.label}
+              </Link>
+            ))}
+            <Link
+              to="/contact?interest=ai_company"
+              onClick={closeMenu}
+              data-testid="mobile-partnership-cta"
+              className="mt-2 rounded-full bg-electric px-5 py-2.5 text-center text-sm font-semibold text-white"
+            >
+              Request Partnership
+            </Link>
+          </div>
+        </div>
+      )}
     </header>
   );
 };

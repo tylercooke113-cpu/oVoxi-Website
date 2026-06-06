@@ -1,110 +1,64 @@
 import React from 'react';
-import { ArrowRight, Check, Upload } from 'lucide-react';
-import { forCreatorsData, forAILabsData } from '../data/mock';
+import { Check } from 'lucide-react';
+import { Reveal, SectionLabel } from './Reveal';
+import { PrimaryCTA } from './CtaButtons';
+import { AI_BENEFITS, ARTIST_BENEFITS } from '../content';
 
-export const AudienceSection = () => {
-  return (
-    <section className="relative py-32 bg-black">
-      <div className="max-w-7xl mx-auto px-6 lg:px-8">
-        <div className="grid lg:grid-cols-2 gap-8">
-          {/* For Creators Card */}
-          <div 
-            id="creators"
-            className="group relative p-10 lg:p-12 bg-white/[0.02] border border-white/10 hover:border-neon-blue/30 transition-all duration-500"
+const BenefitList = ({ items }) => (
+  <ul className="mt-6 space-y-3">
+    {items.map((b) => (
+      <li key={b} className="flex items-start gap-3 text-sm text-slate-300">
+        <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-electric/15 text-cyan">
+          <Check size={12} strokeWidth={3} />
+        </span>
+        {b}
+      </li>
+    ))}
+  </ul>
+);
+
+export const AudienceSection = () => (
+  <section data-testid="audience-section" className="relative border-y border-white/10 bg-ink-2 py-24 lg:py-32">
+    <div className="mx-auto max-w-7xl px-6 lg:px-8">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <Reveal>
+          <div
+            id="ai-companies"
+            data-testid="ai-companies-card"
+            className="flex h-full flex-col rounded-2xl border border-white/10 bg-white/[0.02] p-8 md:p-10"
           >
-            {/* Background Glow */}
-            <div className="absolute inset-0 bg-gradient-to-br from-neon-blue/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-            
-            <div className="relative z-10">
-              <span className="text-neon-blue text-sm font-medium tracking-wider uppercase">
-                {forCreatorsData.title}
-              </span>
-              <h3 className="text-2xl md:text-3xl font-bold text-white mt-3 mb-4">
-                {forCreatorsData.subtitle}
-              </h3>
-              <p className="text-gray-400 leading-relaxed mb-8">
-                {forCreatorsData.description}
-              </p>
-
-              {/* Benefits */}
-              <ul className="space-y-4 mb-10">
-                {forCreatorsData.benefits.map((benefit, index) => (
-                  <li key={index} className="flex items-center gap-3">
-                    <div className="w-5 h-5 flex items-center justify-center bg-neon-blue/20">
-                      <Check className="w-3 h-3 text-neon-blue" />
-                    </div>
-                    <span className="text-gray-300">{benefit}</span>
-                  </li>
-                ))}
-              </ul>
-
-              {/* CTAs */}
-              <div className="flex flex-col sm:flex-row gap-4">
-                <a 
-                  href={forCreatorsData.ctaLink}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="group/btn flex items-center gap-3 px-6 py-3 bg-neon-blue text-black font-medium hover:shadow-[0_0_20px_rgba(0,157,255,0.4)] transition-all duration-300"
-                >
-                  {forCreatorsData.cta}
-                  <ArrowRight className="w-4 h-4 group-hover/btn:translate-x-1 transition-transform" />
-                </a>
-                <a 
-                  href={forCreatorsData.secondaryCtaLink}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="group/btn flex items-center gap-3 px-6 py-3 bg-white/10 text-white font-medium hover:bg-white hover:text-black transition-all duration-300"
-                >
-                  <Upload className="w-4 h-4" />
-                  {forCreatorsData.secondaryCta}
-                </a>
-              </div>
+            <SectionLabel testid="ai-companies-label">For AI Companies</SectionLabel>
+            <h3 className="font-heading text-2xl font-semibold text-white sm:text-3xl">
+              Train on Music You Can Actually License
+            </h3>
+            <BenefitList items={AI_BENEFITS} />
+            <div className="mt-8">
+              <PrimaryCTA to="/contact?interest=ai_company" testid="ai-companies-cta">
+                Discuss Licensing
+              </PrimaryCTA>
             </div>
           </div>
+        </Reveal>
 
-          {/* For AI Labs Card */}
-          <div 
-            id="ai-labs"
-            className="group relative p-10 lg:p-12 bg-white/[0.02] border border-white/10 hover:border-neon-blue/30 transition-all duration-500"
+        <Reveal delay={0.12}>
+          <div
+            id="artists"
+            data-testid="artists-card"
+            className="flex h-full flex-col rounded-2xl border border-white/10 bg-white/[0.02] p-8 md:p-10"
           >
-            {/* Background Glow */}
-            <div className="absolute inset-0 bg-gradient-to-br from-neon-blue/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-            
-            <div className="relative z-10">
-              <span className="text-neon-blue text-sm font-medium tracking-wider uppercase">
-                {forAILabsData.title}
-              </span>
-              <h3 className="text-2xl md:text-3xl font-bold text-white mt-3 mb-4">
-                {forAILabsData.subtitle}
-              </h3>
-              <p className="text-gray-400 leading-relaxed mb-8">
-                {forAILabsData.description}
-              </p>
-
-              {/* Benefits */}
-              <ul className="space-y-4 mb-10">
-                {forAILabsData.benefits.map((benefit, index) => (
-                  <li key={index} className="flex items-center gap-3">
-                    <div className="w-5 h-5 flex items-center justify-center bg-neon-blue/20">
-                      <Check className="w-3 h-3 text-neon-blue" />
-                    </div>
-                    <span className="text-gray-300">{benefit}</span>
-                  </li>
-                ))}
-              </ul>
-
-              {/* CTA */}
-              <a 
-                href={forAILabsData.ctaLink}
-                className="group/btn inline-flex items-center gap-3 px-6 py-3 bg-white/10 text-white font-medium hover:bg-white hover:text-black transition-all duration-300"
-              >
-                {forAILabsData.cta}
-                <ArrowRight className="w-4 h-4 group-hover/btn:translate-x-1 transition-transform" />
-              </a>
+            <SectionLabel testid="artists-label">For Artists</SectionLabel>
+            <h3 className="font-heading text-2xl font-semibold text-white sm:text-3xl">
+              Turn Your Catalog Into Long-Term Licensing Revenue
+            </h3>
+            <BenefitList items={ARTIST_BENEFITS} />
+            <div className="mt-8">
+              <PrimaryCTA to="/contact?interest=artist" testid="artists-section-cta">
+                Apply to Join
+              </PrimaryCTA>
             </div>
           </div>
-        </div>
+        </Reveal>
       </div>
-    </section>
-  );
-};
+    </div>
+  </section>
+);

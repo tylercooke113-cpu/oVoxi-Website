@@ -1,86 +1,69 @@
 import React from 'react';
-import Spline from '@splinetool/react-spline';
-import { heroData } from '../data/mock';
-import { ArrowRight } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { HeroCanvas } from './HeroCanvas';
+import { PrimaryCTA, GhostCTA } from './CtaButtons';
+import { BRAND } from '../content';
 
-export const HeroSection = () => {
-  return (
-    <section className="relative min-h-screen bg-black pt-20 overflow-hidden">
-      {/* Grid Pattern Overlay */}
-      <div className="absolute inset-0 opacity-[0.03]">
-        <div 
-          className="w-full h-full"
-          style={{
-            backgroundImage: `
-              linear-gradient(to right, white 1px, transparent 1px),
-              linear-gradient(to bottom, white 1px, transparent 1px)
-            `,
-            backgroundSize: '60px 60px'
-          }}
-        />
-      </div>
+export const HeroSection = () => (
+  <section data-testid="hero-section" className="relative min-h-[100svh] overflow-hidden bg-ink">
+    <HeroCanvas />
+    {/* Readability overlays */}
+    <div className="absolute inset-0 grid-bg opacity-40" />
+    <div className="absolute inset-0 bg-gradient-to-b from-ink/70 via-ink/40 to-ink" />
+    <div className="absolute -top-40 left-1/2 h-[480px] w-[480px] -translate-x-1/2 rounded-full bg-electric/20 blur-[160px]" />
 
-      <div className="max-w-7xl mx-auto px-6 lg:px-8 relative z-10">
-        <div className="grid lg:grid-cols-2 gap-12 items-center min-h-[calc(100vh-80px)]">
-          {/* Left Content */}
-          <div className="flex flex-col justify-center py-20 lg:py-0">
-            {/* Tagline */}
-            <div className="inline-flex items-center gap-2 mb-6">
-              <span className="w-8 h-[1px] bg-neon-blue"></span>
-              <span className="text-neon-blue text-sm font-medium tracking-wider uppercase">
-                {heroData.tagline}
-              </span>
-            </div>
+    <div className="relative z-10 mx-auto flex min-h-[100svh] max-w-5xl flex-col items-center justify-center px-6 pt-24 text-center lg:px-8">
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6 }}
+        className="mb-7 flex flex-wrap items-center justify-center gap-2"
+      >
+        {BRAND.pillars.map((p) => (
+          <span
+            key={p}
+            className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-1.5 text-xs font-medium text-slate-300"
+          >
+            {p}
+          </span>
+        ))}
+      </motion.div>
 
-            {/* Headline */}
-            <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-white leading-tight mb-6">
-              {heroData.headline.split(':')[0]}:
-              <span className="block text-neon-blue mt-2">
-                {heroData.headline.split(':')[1]}
-              </span>
-            </h1>
+      <motion.h1
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.7, delay: 0.1 }}
+        className="font-heading text-4xl font-semibold leading-[1.05] tracking-tighter text-white sm:text-5xl lg:text-7xl"
+      >
+        The Curated Music Catalog
+        <span className="block text-gradient-blue">for the AI Generation</span>
+      </motion.h1>
 
-            {/* Description */}
-            <p className="text-gray-400 text-lg md:text-xl leading-relaxed mb-10 max-w-xl">
-              {heroData.description}
-            </p>
+      <motion.p
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.7, delay: 0.25 }}
+        className="mt-7 max-w-2xl text-base leading-relaxed text-slate-400 sm:text-lg"
+      >
+        oVoxi delivers emerging-first, fully licensed, AI-ready music catalogs built for AI training,
+        content generation, sync licensing, and enterprise media.
+      </motion.p>
 
-            {/* CTAs */}
-            <div className="flex flex-col sm:flex-row gap-4">
-              <a 
-                href={heroData.primaryCtaLink}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="group flex items-center justify-between gap-4 px-8 py-4 bg-neon-blue text-black font-medium text-lg hover:shadow-[0_0_30px_rgba(0,157,255,0.5)] transition-all duration-400"
-              >
-                {heroData.primaryCTA}
-                <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
-              </a>
-              <a 
-                href={heroData.secondaryCtaLink}
-                className="flex items-center justify-center gap-2 px-8 py-4 bg-white/10 text-white font-medium text-lg hover:bg-white hover:text-black transition-all duration-400"
-              >
-                {heroData.secondaryCTA}
-              </a>
-            </div>
-          </div>
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.7, delay: 0.4 }}
+        className="mt-10 flex flex-col gap-3 sm:flex-row"
+      >
+        <PrimaryCTA to="/contact?interest=ai_company" testid="hero-partnership-cta">
+          Request Partnership
+        </PrimaryCTA>
+        <GhostCTA to="/artists" testid="hero-artist-cta">
+          Join as an Artist
+        </GhostCTA>
+      </motion.div>
+    </div>
 
-          {/* Right - Spline 3D */}
-          <div className="hidden lg:flex items-center justify-center relative">
-            <div className="w-[700px] h-[700px] relative overflow-visible">
-              <Spline 
-                scene="https://prod.spline.design/NbVmy6DPLhY-5Lvg/scene.splinecode"
-                className="w-full h-full"
-              />
-            </div>
-            {/* Glow Effect */}
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-neon-blue/20 rounded-full blur-[100px] pointer-events-none" />
-          </div>
-        </div>
-      </div>
-
-      {/* Bottom Gradient */}
-      <div className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-black to-transparent" />
-    </section>
-  );
-};
+    <div className="pointer-events-none absolute bottom-0 inset-x-0 h-24 bg-gradient-to-t from-ink to-transparent" />
+  </section>
+);
