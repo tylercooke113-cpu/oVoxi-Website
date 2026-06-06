@@ -1,0 +1,103 @@
+{
+  "theme": "dark",
+  "archetype": "Archetype 4 (Swiss & High-Contrast - AI Infrastructure Variant)",
+  "brand": {
+    "name": "oVoxi",
+    "tagline": "The Curated Music Catalog for the AI Generation",
+    "tone": "Authoritative, futuristic, secure, high-end infrastructure, venture-backed"
+  },
+  "typography": {
+    "heading_font": "Outfit",
+    "body_font": "Manrope",
+    "rules": {
+      "h1": "text-4xl sm:text-5xl lg:text-6xl tracking-tighter font-medium",
+      "h2": "text-2xl sm:text-3xl lg:text-4xl tracking-tight font-medium",
+      "h3": "text-xl sm:text-2xl tracking-tight font-medium",
+      "body": "text-base leading-relaxed text-slate-400",
+      "labels": "text-xs tracking-[0.2em] uppercase font-bold text-blue-500",
+      "banned_fonts": ["Inter", "Roboto", "Open Sans"]
+    }
+  },
+  "colors": {
+    "background": {
+      "primary": "#030712",
+      "secondary": "#0B1120",
+      "glass": "rgba(255, 255, 255, 0.03)"
+    },
+    "accent": {
+      "primary": "#0066FF",
+      "secondary": "#00E5FF",
+      "glow": "rgba(0, 102, 255, 0.5)"
+    },
+    "text": {
+      "primary": "#F8FAFC",
+      "secondary": "#94A3B8"
+    },
+    "border": {
+      "default": "rgba(255, 255, 255, 0.1)",
+      "hover": "rgba(0, 102, 255, 0.4)"
+    }
+  },
+  "layout_and_spacing": {
+    "container_padding": "py-24 px-6 md:px-12 lg:px-24",
+    "grid_bento": "grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6",
+    "card_padding": "p-8 md:p-12",
+    "radius": "rounded-2xl"
+  },
+  "surface_strategies": {
+    "header": "Crystal Glass: bg-slate-950/60 backdrop-blur-xl border-b border-white/10",
+    "cards": "Flat background (bg-white/[0.02]), 1px subtle border (border-white/10), hover glow effect",
+    "hero_overlay": "Gradient overlay bg-gradient-to-b from-transparent to-slate-950"
+  },
+  "motion_and_interactions": {
+    "hover_states": "Cards lift -translate-y-1, border changes to border-blue-500/50, subtle blue drop-shadow",
+    "animations": "Framer Motion for staggered entrance on lists and bento grids. Slow drift for background nodes.",
+    "particles": "Use tsparticles for background abstract network floating nodes to simulate AI connectivity."
+  },
+  "components": {
+    "buttons": "Shadcn Button, customized to have either solid electric blue bg or transparent with 1px border and blue glow.",
+    "forms": "Shadcn Form/Input, dark background, border-white/10, focus:ring-blue-500",
+    "tables": "Shadcn Table, border-collapse, subtle border-b on rows, no zebra striping."
+  },
+  "icons_and_assets": {
+    "library": "lucide-react",
+    "testing": "All interactive elements MUST have a data-testid attribute in kebab-case (e.g. data-testid='hero-cta-button')"
+  },
+  "media": {
+    "hero_background": {
+      "url": "https://images.unsplash.com/photo-1764258560300-2346b28b4e7c?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzNTl8MHwxfHNlYXJjaHw0fHxhYnN0cmFjdCUyMG5ldHdvcmslMjBkYXJrJTIwYmx1ZXxlbnwwfHx8fDE3ODA3NjExMjh8MA&ixlib=rb-4.1.0&q=85",
+      "description": "Abstract blue glowing lines on a dark background to signify AI neural networks and data streams."
+    },
+    "market_opportunity": {
+      "url": "https://images.pexels.com/photos/8640331/pexels-photo-8640331.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "description": "Mesmerizing glowing neon blue optical fibers."
+    },
+    "artists_section": {
+      "url": "https://images.pexels.com/photos/5749202/pexels-photo-5749202.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "description": "Man working on music production in a dimly lit modern studio."
+    },
+    "team_ceo": {
+      "url": "https://images.unsplash.com/photo-1560250097-0b93528c311a?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzOTB8MHwxfHNlYXJjaHwyfHxwcm9mZXNzaW9uYWwlMjBwb3J0cmFpdCUyMG1hbnxlbnwwfHx8fDE3ODA3NjExMjh8MA&ixlib=rb-4.1.0&q=85",
+      "description": "Professional man in suit (Tyler Jatzeck-Cooke CEO)"
+    },
+    "team_cfo": {
+      "url": "https://images.pexels.com/photos/37148308/pexels-photo-37148308.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "description": "Confident business professional (Jose Pizarro CFO)"
+    },
+    "team_head_of_ar": {
+      "url": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzOTB8MHwxfHNlYXJjaHwzfHxwcm9mZXNzaW9uYWwlMjBwb3J0cmFpdCUyMG1hbnxlbnwwfHx8fDE3ODA3NjExMjh8MA&ixlib=rb-4.1.0&q=85",
+      "description": "Professional man (Jordan JUS Martin Head of Artist Relations)"
+    }
+  },
+  "instructions_to_main_agent": [
+    "Install framer-motion, tsparticles, and lucide-react.",
+    "Configure Tailwind config with Outfit and Manrope fonts.",
+    "Implement the bento grid (Mode B Control Room hybrid with Mode A for marketing tension) for the 'Why oVoxi' and 'Business Model' sections.",
+    "Apply the Tracing Beam or glowing border effects on hover for interactive elements to mimic high-end AI infrastructure like Vercel and ElevenLabs.",
+    "Avoid using any consumer streaming platform vibes; this is an infrastructure layer for enterprise buyers and investors.",
+    "For the hero section, layer the text over the hero background image with an opacity of 30-50% gradient to black to maintain stark readability.",
+    "Build the multi-page structure with React Router.",
+    "Ensure the competitive comparison table is strict, clean, high-contrast, matching SaaS pricing tier visuals.",
+    "Every interactive element MUST include data-testid attribute for testing."
+  ]
+}
