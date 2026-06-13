@@ -5,6 +5,7 @@ export const BRAND = {
   tagline: "The Curated Music Catalog for the AI Generation",
   email: "ovoxi.ai@gmail.com",
   domain: "ovoxi.net",
+  logo: "https://customer-assets.emergentagent.com/job_c48840f8-3bba-40f9-b35f-bd314ffd5269/artifacts/oi17t24e_hf_20260125_200238_8cdd4194-19fa-4ff2-a716-2190b592c8b4%20%281%29.png",
   pillars: ["Emerging-First", "Fully Licensed", "AI-Ready"],
 };
 

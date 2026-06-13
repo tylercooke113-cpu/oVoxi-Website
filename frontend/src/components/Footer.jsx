@@ -7,7 +7,6 @@ const COLUMNS = [
   {
     heading: 'Company',
     links: [
-      { label: 'About', to: '/about' },
       { label: 'Contact', to: '/contact' },
     ],
   },
@@ -18,32 +17,17 @@ const COLUMNS = [
       { label: 'For AI & Enterprise', to: '/contact?interest=ai_company' },
     ],
   },
-  {
-    heading: 'Get Started',
-    links: [
-      { label: 'Request Partnership', to: '/contact?interest=ai_company' },
-      { label: 'Join as Artist', to: '/contact?interest=artist' },
-    ],
-  },
 ];
 
 export const Footer = () => (
   <footer data-testid="site-footer" className="border-t border-white/10 bg-ink">
     <div className="mx-auto max-w-7xl px-6 lg:px-8 py-16">
-      <div className="grid grid-cols-1 gap-12 md:grid-cols-2 lg:grid-cols-5">
-        <div className="lg:col-span-2">
-          <div className="flex items-center gap-2">
-            <span className="relative flex h-8 w-8 items-center justify-center rounded-lg bg-electric/15 ring-1 ring-electric/40">
-              <span className="h-3 w-3 rounded-full bg-cyan shadow-[0_0_12px_#00E5FF]" />
-            </span>
-            <span className="font-heading text-lg font-semibold text-white">
-              oVoxi<span className="text-electric">.ai</span>
-            </span>
+      <div className="grid grid-cols-1 gap-12 md:grid-cols-3">
+        <div>
+          <div className="flex items-center gap-2.5">
+            <img src={BRAND.logo} alt="oVoxi" className="h-9 w-9 rounded-lg object-cover" />
+            <span className="font-heading text-lg font-semibold text-white">oVoxi</span>
           </div>
-          <p className="mt-5 max-w-sm text-sm leading-relaxed text-slate-400">
-            A licensed music infrastructure company for the AI era. Emerging-first, fully licensed,
-            AI-ready catalogs built for the next wave of generative sound.
-          </p>
           <a
             href={`mailto:${BRAND.email}`}
             data-testid="footer-email"

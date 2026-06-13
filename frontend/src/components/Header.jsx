@@ -1,16 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { Link, NavLink } from 'react-router-dom';
 import { Menu, X } from 'lucide-react';
-import { NAV_LINKS } from '../content';
+import { NAV_LINKS, BRAND } from '../content';
 
 const Logo = () => (
-  <Link to="/" data-testid="logo-link" className="flex items-center gap-2 group">
-    <span className="relative flex h-8 w-8 items-center justify-center rounded-lg bg-electric/15 ring-1 ring-electric/40">
-      <span className="h-3 w-3 rounded-full bg-cyan shadow-[0_0_12px_#00E5FF] group-hover:scale-110 transition-transform" />
-    </span>
-    <span className="font-heading text-lg font-semibold tracking-tight text-white">
-      oVoxi<span className="text-electric">.ai</span>
-    </span>
+  <Link to="/" data-testid="logo-link" className="flex items-center gap-2.5 group">
+    <img
+      src={BRAND.logo}
+      alt="oVoxi"
+      className="h-9 w-9 rounded-lg object-cover transition-transform group-hover:scale-105"
+    />
+    <span className="font-heading text-lg font-semibold tracking-tight text-white">oVoxi</span>
   </Link>
 );
 
