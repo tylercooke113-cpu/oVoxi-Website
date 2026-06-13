@@ -10,15 +10,14 @@ export const FinalCTASection = () => (
     <div className="relative mx-auto max-w-3xl px-6 text-center lg:px-8">
       <Reveal>
         <h2 className="font-heading text-3xl font-semibold tracking-tight text-white sm:text-4xl lg:text-5xl">
-          Build the Catalog That Defines AI Music
+          The AI Music Economy Is Here. Get Your Catalog Inside It.
         </h2>
         <p className="mt-6 text-base leading-relaxed text-slate-400 sm:text-lg">
-          Submit your music to get licensed, or talk to us about licensing the catalog for your AI
-          models and media.
+          oVoxi is actively building its founding catalog. Emerging artists accepted now.
         </p>
         <div className="mt-10 flex flex-col justify-center gap-3 sm:flex-row">
           <PrimaryCTA to="/contact?interest=artist" testid="final-artist-cta">
-            Submit Your Music
+            Apply as a Founding Artist
           </PrimaryCTA>
           <GhostCTA to="/contact?interest=ai_company" testid="final-licensing-cta">
             Discuss Licensing

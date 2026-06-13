@@ -1,21 +1,7 @@
 import React from 'react';
-import { Check } from 'lucide-react';
 import { Reveal, SectionLabel } from './Reveal';
 import { PrimaryCTA } from './CtaButtons';
-import { AI_BENEFITS, ARTIST_BENEFITS } from '../content';
-
-const BenefitList = ({ items }) => (
-  <ul className="mt-6 space-y-3">
-    {items.map((b) => (
-      <li key={b} className="flex items-start gap-3 text-sm text-slate-300">
-        <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-electric/15 text-cyan">
-          <Check size={12} strokeWidth={3} />
-        </span>
-        {b}
-      </li>
-    ))}
-  </ul>
-);
+import { AI_COPY, ARTIST_COPY } from '../content';
 
 export const AudienceSection = () => (
   <section data-testid="audience-section" className="relative border-y border-white/10 bg-ink-2 py-24 lg:py-32">
@@ -29,9 +15,9 @@ export const AudienceSection = () => (
           >
             <SectionLabel testid="ai-companies-label">For AI Companies</SectionLabel>
             <h3 className="font-heading text-2xl font-semibold text-white sm:text-3xl">
-              Train on Music You Can Actually License
+              {AI_COPY.headline}
             </h3>
-            <BenefitList items={AI_BENEFITS} />
+            <p className="mt-5 text-base leading-relaxed text-slate-400">{AI_COPY.body}</p>
             <div className="mt-8">
               <PrimaryCTA to="/contact?interest=ai_company" testid="ai-companies-cta">
                 Discuss Licensing
@@ -48,9 +34,9 @@ export const AudienceSection = () => (
           >
             <SectionLabel testid="artists-label">For Artists</SectionLabel>
             <h3 className="font-heading text-2xl font-semibold text-white sm:text-3xl">
-              Turn Your Catalog Into Long-Term Licensing Revenue
+              {ARTIST_COPY.headline}
             </h3>
-            <BenefitList items={ARTIST_BENEFITS} />
+            <p className="mt-5 text-base leading-relaxed text-slate-400">{ARTIST_COPY.body}</p>
             <div className="mt-8">
               <PrimaryCTA to="/contact?interest=artist" testid="artists-section-cta">
                 Apply to Join

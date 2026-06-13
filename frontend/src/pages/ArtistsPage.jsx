@@ -17,8 +17,8 @@ const ArtistsPage = () => (
     <PageHero
       testid="artists-hero"
       label="For Artists"
-      title="Turn Your Catalog Into Long-Term Licensing Revenue"
-      subtitle="We remove every barrier between emerging artists and recurring licensing income — PRO registration, mastering, stems, and ownership verification, all handled in-house."
+      title="Turn Your Music Into Licensing Revenue"
+      subtitle="oVoxi is the only catalog company built exclusively for emerging artists. We prepare your music for AI platforms and enterprise clients — and pay you when it licenses."
     />
 
     <section className="bg-ink py-20 lg:py-28">

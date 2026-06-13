@@ -2,7 +2,7 @@
 
 export const BRAND = {
   name: "oVoxi",
-  tagline: "The Curated Music Catalog for the AI Generation",
+  tagline: "The Curated Music Catalog Built for the AI Economy",
   email: "ovoxi.ai@gmail.com",
   domain: "ovoxi.net",
   logo: "https://customer-assets.emergentagent.com/job_c48840f8-3bba-40f9-b35f-bd314ffd5269/artifacts/oi17t24e_hf_20260125_200238_8cdd4194-19fa-4ff2-a716-2190b592c8b4%20%281%29.png",
@@ -16,27 +16,29 @@ export const NAV_LINKS = [
 ];
 
 export const PROCESS = [
-  { step: "01", title: "Artist Submits", body: "Indie artist uploads a track via the artist portal." },
-  { step: "02", title: "We Register & Master", body: "PRO registration, in-house mastering, and stem creation." },
-  { step: "03", title: "Ownership Verified", body: "In-house chain-of-title documents every split and rights holder." },
-  { step: "04", title: "Catalog Licensed", body: "Fully cleared, AI-ready assets delivered to platforms and buyers." },
+  { step: "01", title: "Artist Submits", body: "Emerging artists under 50K monthly listeners submit their catalog and sign our rights grant agreement." },
+  { step: "02", title: "We Register & Master", body: "We handle PRO registration, professional mastering, and 4-stem separation so your music is platform-ready." },
+  { step: "03", title: "Ownership Verified", body: "Chain-of-title documentation and acoustic fingerprinting confirm every track is fully cleared." },
+  { step: "04", title: "Catalog Licensed", body: "AI platforms and enterprise clients license your music. You get paid." },
 ];
 
-export const AI_BENEFITS = [
-  "Cleared rights at the asset level",
-  "Verified, documented ownership",
-  "Stems included as standard",
-  "Fresh, emerging genres",
-  "Genre-diverse, culturally relevant catalog",
-  "Dramatically reduced legal risk",
-];
+export const AI_COPY = {
+  headline: "Culturally Fresh. Legally Clean. AI-Ready.",
+  body: "Stop building on gray-area catalog. oVoxi delivers emerging artist recordings with stems, metadata, and chain-of-title documentation that enterprise deals require.",
+};
+
+export const ARTIST_COPY = {
+  headline: "Your Music Belongs in the AI Economy.",
+  body: "We handle everything — registration, mastering, stems, clearance. You focus on creating. We get your catalog licensed.",
+};
 
 export const ARTIST_BENEFITS = [
-  "PRO registration handled for you (ASCAP, BMI, SESAC)",
-  "Broadcast-standard mastering included",
-  "Stems support built in from day one",
-  "Recurring licensing opportunities",
-  "Transparent, usage-based royalty participation",
+  "PRO Registration handled for you",
+  "Professional mastering via LANDR",
+  "4-stem separation delivered to platforms",
+  "Chain-of-title documentation and fingerprinting",
+  "Licensing revenue every time your music is used",
+  "No upfront cost. We only win when you win.",
 ];
 
 export const INTEREST_OPTIONS = [

@@ -36,7 +36,7 @@ export const HeroSection = () => (
         className="font-heading text-4xl font-semibold leading-[1.05] tracking-tighter text-white sm:text-5xl lg:text-7xl"
       >
         The Curated Music Catalog
-        <span className="block text-gradient-blue">for the AI Generation</span>
+        <span className="block text-gradient-blue">Built for the AI Economy</span>
       </motion.h1>
 
       <motion.p
@@ -45,8 +45,8 @@ export const HeroSection = () => (
         transition={{ duration: 0.7, delay: 0.25 }}
         className="mt-7 max-w-2xl text-base leading-relaxed text-slate-400 sm:text-lg"
       >
-        oVoxi delivers emerging-first, fully licensed, AI-ready music catalogs built for AI training,
-        content generation, sync licensing, and enterprise media.
+        oVoxi sources fully licensed, stems-delivered recordings from emerging artists and licenses
+        them to AI music platforms and enterprise clients.
       </motion.p>
 
       <motion.div
