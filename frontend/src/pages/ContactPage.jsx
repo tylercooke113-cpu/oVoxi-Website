@@ -86,7 +86,6 @@ const ContactPage = () => {
             </a>
             <div className="mt-10 space-y-2 text-sm text-slate-500">
               <p>oVoxi · {BRAND.domain}</p>
-              <p>Pre-Seed · 2026 · Confidential</p>
             </div>
           </Reveal>
 

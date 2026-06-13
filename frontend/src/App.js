@@ -7,7 +7,6 @@ import { Footer } from "./components/Footer";
 import HomePage from "./pages/HomePage";
 import ArtistsPage from "./pages/ArtistsPage";
 import LicensingPage from "./pages/LicensingPage";
-import InvestorsPage from "./pages/InvestorsPage";
 import AboutPage from "./pages/AboutPage";
 import ContactPage from "./pages/ContactPage";
 
@@ -30,7 +29,6 @@ function App() {
             <Route path="/" element={<HomePage />} />
             <Route path="/artists" element={<ArtistsPage />} />
             <Route path="/licensing" element={<LicensingPage />} />
-            <Route path="/investors" element={<InvestorsPage />} />
             <Route path="/about" element={<AboutPage />} />
             <Route path="/contact" element={<ContactPage />} />
           </Routes>

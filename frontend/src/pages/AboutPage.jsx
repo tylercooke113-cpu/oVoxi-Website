@@ -76,11 +76,11 @@ const AboutPage = () => (
             introductions or partnership conversations, reach out directly.
           </p>
           <div className="mt-10 flex flex-col justify-center gap-3 sm:flex-row">
-            <PrimaryCTA to="/contact?interest=investor" testid="about-contact-cta">
+            <PrimaryCTA to="/contact" testid="about-contact-cta">
               Get in Touch
             </PrimaryCTA>
-            <GhostCTA to="/investors" testid="about-investor-cta">
-              Investor Overview
+            <GhostCTA to="/licensing" testid="about-licensing-cta">
+              Explore Licensing
             </GhostCTA>
           </div>
           <p className="mt-10 text-sm text-slate-500">

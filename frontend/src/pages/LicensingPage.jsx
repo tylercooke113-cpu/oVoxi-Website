@@ -3,9 +3,7 @@ import { Check } from 'lucide-react';
 import { PageHero } from '../components/PageHero';
 import { Reveal, SectionLabel } from '../components/Reveal';
 import { PrimaryCTA } from '../components/CtaButtons';
-import { MarketSection } from '../components/MarketSection';
-import { CompetitiveSection } from '../components/CompetitiveSection';
-import { BusinessModelSection } from '../components/BusinessModelSection';
+import { FinalCTASection } from '../components/FinalCTASection';
 import { AI_BENEFITS } from '../content';
 
 const LicensingPage = () => (
@@ -57,9 +55,7 @@ const LicensingPage = () => (
       </div>
     </section>
 
-    <MarketSection />
-    <BusinessModelSection />
-    <CompetitiveSection />
+    <FinalCTASection />
   </div>
 );
 

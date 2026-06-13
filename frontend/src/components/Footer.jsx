@@ -8,7 +8,6 @@ const COLUMNS = [
     heading: 'Company',
     links: [
       { label: 'About', to: '/about' },
-      { label: 'Investors', to: '/investors' },
       { label: 'Contact', to: '/contact' },
     ],
   },
@@ -24,7 +23,6 @@ const COLUMNS = [
     links: [
       { label: 'Request Partnership', to: '/contact?interest=ai_company' },
       { label: 'Join as Artist', to: '/contact?interest=artist' },
-      { label: 'Investor Inquiries', to: '/contact?interest=investor' },
     ],
   },
 ];
@@ -77,7 +75,7 @@ export const Footer = () => (
 
       <div className="mt-14 flex flex-col items-center justify-between gap-4 border-t border-white/10 pt-8 sm:flex-row">
         <p className="text-xs text-slate-500">
-          © {new Date().getFullYear()} oVoxi · {BRAND.domain} · Pre-Seed · Confidential
+          © {new Date().getFullYear()} oVoxi · {BRAND.domain}
         </p>
         <div className="flex items-center gap-6 text-xs text-slate-500">
           <span className="hover:text-slate-300 transition-colors cursor-default">Privacy</span>
