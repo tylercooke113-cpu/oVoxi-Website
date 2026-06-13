@@ -15,28 +15,6 @@ export const NAV_LINKS = [
   { label: "Contact", to: "/contact" },
 ];
 
-export const STATS = [
-  { value: "$6.65B", label: "AI music market today (2025)" },
-  { value: "$60B", label: "Projected market size by 2034" },
-  { value: "60,000", label: "AI tracks uploaded to Deezer daily" },
-  { value: "33%+", label: "New Apple Music uploads are AI-generated" },
-];
-
-export const PROBLEMS = [
-  {
-    title: "Rights Chaos",
-    body: "Studios generate thousands of AI audio assets daily with no mechanism to verify consent, rights clearance, or usage licensing before deployment.",
-  },
-  {
-    title: "No Fresh Catalog",
-    body: "Every licensed catalog is backward-looking — production libraries and known catalogs. AI generators training on stale content produce music that sounds like yesterday.",
-  },
-  {
-    title: "No Ownership Trail",
-    body: "Independent artists lack PRO registration, mastered files, and documented chain-of-title. There is no scalable way to license what cannot be cleared.",
-  },
-];
-
 export const PROCESS = [
   { step: "01", title: "Artist Submits", body: "Indie artist uploads a track via the artist portal." },
   { step: "02", title: "We Register & Master", body: "PRO registration, in-house mastering, and stem creation." },
