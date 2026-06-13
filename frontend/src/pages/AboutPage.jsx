@@ -79,8 +79,8 @@ const AboutPage = () => (
             <PrimaryCTA to="/contact" testid="about-contact-cta">
               Get in Touch
             </PrimaryCTA>
-            <GhostCTA to="/licensing" testid="about-licensing-cta">
-              Explore Licensing
+            <GhostCTA to="/contact?interest=ai_company" testid="about-licensing-cta">
+              Discuss Licensing
             </GhostCTA>
           </div>
           <p className="mt-10 text-sm text-slate-500">

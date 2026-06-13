@@ -15,7 +15,7 @@ const COLUMNS = [
     heading: 'Catalog',
     links: [
       { label: 'For Artists', to: '/artists' },
-      { label: 'For AI & Enterprise', to: '/licensing' },
+      { label: 'For AI & Enterprise', to: '/contact?interest=ai_company' },
     ],
   },
   {
