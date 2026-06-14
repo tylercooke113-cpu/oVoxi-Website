@@ -28,7 +28,7 @@ const ArtistsPage = () => (
             <h2 className="font-heading text-3xl font-semibold tracking-tight text-white sm:text-4xl">
               Built for the artist, end to end.
             </h2>
-            <ul className="mt-8 space-y-4 text-left">
+            <ul className="mt-8 mx-auto w-fit space-y-4">
               {ARTIST_BENEFITS.map((b) => (
                 <li key={b} className="flex items-start gap-3 text-base text-slate-300">
                   <span className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-electric/15 text-cyan">
