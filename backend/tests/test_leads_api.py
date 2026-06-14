@@ -3,7 +3,7 @@ import os
 import pytest
 import requests
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://stem-vault-2.preview.emergentagent.com').rstrip('/')
+BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'http://localhost:8001').rstrip('/')
 API = f"{BASE_URL}/api"
 
 INTEREST_VALUES = ["ai_company", "enterprise", "artist", "investor", "other"]
