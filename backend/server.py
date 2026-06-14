@@ -511,7 +511,7 @@ app.include_router(api_router)
 
 _cors_origins = [
     o.strip()
-    for o in os.environ.get('CORS_ORIGINS', 'https://ovoxi.net,http://localhost:3000').split(',')
+    for o in os.environ.get('CORS_ORIGINS', 'https://ovoxi.net,https://www.ovoxi.net,http://localhost:3000').split(',')
     if o.strip()
 ]
 app.add_middleware(
