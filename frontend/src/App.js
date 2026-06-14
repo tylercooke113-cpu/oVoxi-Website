@@ -1,6 +1,7 @@
 import "./App.css";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
+import PasswordGate from "./components/PasswordGate";
 import { Toaster } from "sonner";
 import { Header } from "./components/Header";
 import { Footer } from "./components/Footer";
@@ -22,9 +23,16 @@ function ScrollToTop() {
   return null;
 }
 
+const SESSION_KEY = "ovoxi_access_granted";
+
 function App() {
+  const [unlocked, setUnlocked] = useState(
+    () => sessionStorage.getItem(SESSION_KEY) === "1"
+  );
+
   return (
     <div className="App min-h-screen bg-ink">
+      {!unlocked && <PasswordGate onUnlock={() => setUnlocked(true)} />}
       <BrowserRouter>
         <ScrollToTop />
         <Header />

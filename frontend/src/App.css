@@ -56,3 +56,28 @@ html {
 .animate-float {
   animation: float 6s ease-in-out infinite;
 }
+
+/* ── Password Gate Animations ─────────────────────────────── */
+@keyframes scanlineScroll {
+  from { background-position: 0 0; }
+  to   { background-position: 0 100px; }
+}
+
+@keyframes logoPulse {
+  0%, 100% { filter: drop-shadow(0 0 14px rgba(0, 230, 255, 0.5)); }
+  50%       { filter: drop-shadow(0 0 28px rgba(0, 230, 255, 0.85)); }
+}
+
+@keyframes btnPulse {
+  0%, 100% { box-shadow: 0 0 18px rgba(0, 229, 255, 0.2), inset 0 0 18px rgba(0, 229, 255, 0.04); }
+  50%       { box-shadow: 0 0 28px rgba(0, 229, 255, 0.45), inset 0 0 24px rgba(0, 229, 255, 0.08); }
+}
+
+@keyframes shake {
+  0%,100% { transform: translateX(0); }
+  18%     { transform: translateX(-8px); }
+  36%     { transform: translateX(8px); }
+  54%     { transform: translateX(-6px); }
+  72%     { transform: translateX(6px); }
+  90%     { transform: translateX(-3px); }
+}
