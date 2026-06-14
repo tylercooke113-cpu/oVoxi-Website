@@ -72,7 +72,7 @@ async def _lalal_upload(audio_data: bytes, filename: str) -> str:
     ext = Path(filename).suffix.lower()
     content_type = AUDIO_CONTENT_TYPES.get(ext, "audio/mpeg")
     headers = {
-        "Authorization": f"license {LALAL_API_KEY}",
+        "Authorization": "license " + str(LALAL_API_KEY),
         "Content-Disposition": f'attachment; filename="{filename}"',
         "Content-Type": content_type,
     }
@@ -84,7 +84,7 @@ async def _lalal_upload(audio_data: bytes, filename: str) -> str:
 
 async def _lalal_split(file_id: str, stem: str) -> tuple:
     """Returns (stem_url, back_url). Polls until processing finishes."""
-    auth = {"Authorization": f"license {LALAL_API_KEY}"}
+    auth = {"Authorization": "license " + str(LALAL_API_KEY)}
     async with httpx.AsyncClient(timeout=30.0) as http:
         resp = await http.post(
             f"{LALAL_BASE}/preview/",
