@@ -174,18 +174,6 @@ export default function PasswordGate({ onUnlock }) {
           maxWidth: "440px",
         }}
       >
-        {/* Logo */}
-        <img
-          src="/logo.png"
-          alt="oVoxi"
-          style={{
-            height: "64px",
-            width: "auto",
-            filter: "drop-shadow(0 0 18px rgba(0, 230, 255, 0.55))",
-            animation: "logoPulse 3s ease-in-out infinite",
-          }}
-        />
-
         {/* RESTRICTED ACCESS label */}
         <div
           style={{
