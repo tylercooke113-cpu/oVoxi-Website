@@ -1,15 +1,22 @@
-from fastapi import FastAPI, APIRouter, UploadFile, File, Form, HTTPException, Header, Request
-from fastapi.staticfiles import StaticFiles
-from dotenv import load_dotenv
-from starlette.middleware.cors import CORSMiddleware
-from motor.motor_asyncio import AsyncIOMotorClient
+import asyncio
 import os
 import logging
-from pathlib import Path
-from pydantic import BaseModel, Field, ConfigDict, EmailStr, field_validator
-from typing import List, Optional
+import re
 import uuid
 from datetime import datetime, timezone
+from io import BytesIO
+from pathlib import Path
+from typing import List, Optional
+
+import boto3
+import httpx
+from botocore.config import Config
+from dotenv import load_dotenv
+from fastapi import BackgroundTasks, FastAPI, APIRouter, UploadFile, File, Form, HTTPException, Header, Request
+from fastapi.staticfiles import StaticFiles
+from motor.motor_asyncio import AsyncIOMotorClient
+from pydantic import BaseModel, Field, ConfigDict, EmailStr, field_validator
+from starlette.middleware.cors import CORSMiddleware
 
 
 ROOT_DIR = Path(__file__).parent
@@ -18,19 +25,161 @@ load_dotenv(ROOT_DIR / '.env')
 UPLOADS_DIR = ROOT_DIR / "uploads"
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
-# MongoDB connection
+# MongoDB
 mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
-# Create the main app without a prefix
-app = FastAPI()
+# Cloudflare R2
+r2_client = boto3.client(
+    "s3",
+    endpoint_url=os.environ.get("R2_ENDPOINT"),
+    aws_access_key_id=os.environ.get("R2_ACCESS_KEY_ID"),
+    aws_secret_access_key=os.environ.get("R2_SECRET_ACCESS_KEY"),
+    config=Config(signature_version="s3v4"),
+    region_name="auto",
+)
+R2_BUCKET = os.environ.get("R2_BUCKET_NAME", "")
 
-# Serve uploaded audio files statically
+# Lalal.ai
+LALAL_API_KEY = os.environ.get("LALAL_API_KEY", "")
+LALAL_BASE = "https://www.lalal.ai/api"
+
+AUDIO_CONTENT_TYPES = {".mp3": "audio/mpeg", ".wav": "audio/wav"}
+
+app = FastAPI()
 app.mount("/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="uploads")
 
-# Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _slugify(text: str) -> str:
+    text = re.sub(r'[^\w\s-]', '', text.lower().strip())
+    return re.sub(r'[\s_-]+', '_', text)[:80].strip('_')
+
+
+async def _lalal_upload(audio_data: bytes, filename: str) -> str:
+    ext = Path(filename).suffix.lower()
+    content_type = AUDIO_CONTENT_TYPES.get(ext, "audio/mpeg")
+    headers = {
+        "Authorization": f"license {LALAL_API_KEY}",
+        "Content-Disposition": f'attachment; filename="{filename}"',
+        "Content-Type": content_type,
+    }
+    async with httpx.AsyncClient(timeout=180.0) as http:
+        resp = await http.post(f"{LALAL_BASE}/upload/", content=audio_data, headers=headers)
+        resp.raise_for_status()
+        return resp.json()["id"]
+
+
+async def _lalal_split(file_id: str, stem: str) -> tuple:
+    """Returns (stem_url, back_url). Polls until processing finishes."""
+    auth = {"Authorization": f"license {LALAL_API_KEY}"}
+    async with httpx.AsyncClient(timeout=30.0) as http:
+        resp = await http.post(
+            f"{LALAL_BASE}/preview/",
+            json={"id": file_id, "stem": stem, "splitter": "phoenix"},
+            headers={**auth, "Content-Type": "application/json"},
+        )
+        resp.raise_for_status()
+
+        for _ in range(72):  # poll up to 12 minutes
+            await asyncio.sleep(10)
+            check = await http.post(
+                f"{LALAL_BASE}/check/",
+                json={"id": file_id},
+                headers={**auth, "Content-Type": "application/json"},
+            )
+            check.raise_for_status()
+            data = check.json()
+            status = data.get("status")
+            if status == "success":
+                stem_url = data.get("stem", {}).get("url")
+                back_url = data.get("back", {}).get("url")
+                return stem_url, back_url
+            if status == "error":
+                raise RuntimeError(f"Lalal.ai error: {data.get('error', 'unknown')}")
+
+    raise RuntimeError("Lalal.ai processing timed out after 12 minutes")
+
+
+async def _download(url: str) -> bytes:
+    async with httpx.AsyncClient(timeout=180.0, follow_redirects=True) as http:
+        resp = await http.get(url)
+        resp.raise_for_status()
+        return resp.content
+
+
+async def _r2_get(key: str) -> bytes:
+    def _blocking():
+        return r2_client.get_object(Bucket=R2_BUCKET, Key=key)["Body"].read()
+    return await asyncio.to_thread(_blocking)
+
+
+async def _r2_put(key: str, data: bytes, content_type: str) -> None:
+    def _blocking():
+        r2_client.put_object(Bucket=R2_BUCKET, Key=key, Body=data, ContentType=content_type)
+    await asyncio.to_thread(_blocking)
+
+
+async def _process_stems(submission_id: str, r2_key: str, artist_name: str, track_name: str) -> None:
+    try:
+        await db.track_submissions.update_one(
+            {"id": submission_id},
+            {"$set": {"status": "processing"}},
+        )
+
+        audio_data = await _r2_get(r2_key)
+        filename = Path(r2_key).name
+        lalal_file_id = await _lalal_upload(audio_data, filename)
+        logger.info("Lalal.ai upload complete, file_id=%s submission=%s", lalal_file_id, submission_id)
+
+        safe_artist = _slugify(artist_name)
+        safe_track = _slugify(track_name)
+        stem_paths: dict = {}
+
+        # Stem pairs: (local label, lalal stem name)
+        stems = [("vocals", "vocals"), ("drums", "drum"), ("bass", "bass")]
+
+        for label, lalal_stem in stems:
+            logger.info("Processing stem=%s for submission=%s", label, submission_id)
+            stem_url, back_url = await _lalal_split(lalal_file_id, lalal_stem)
+
+            if stem_url:
+                data = await _download(stem_url)
+                key = f"catalog/{safe_artist}/{safe_track}/stems/{label}.mp3"
+                await _r2_put(key, data, "audio/mpeg")
+                stem_paths[label] = key
+
+            # The "other" stem = instrumental (no-vocals back track)
+            if label == "vocals" and back_url:
+                data = await _download(back_url)
+                key = f"catalog/{safe_artist}/{safe_track}/stems/other.mp3"
+                await _r2_put(key, data, "audio/mpeg")
+                stem_paths["other"] = key
+
+        await db.track_submissions.update_one(
+            {"id": submission_id},
+            {"$set": {"status": "completed", "stem_paths": stem_paths}},
+        )
+        logger.info("Stem processing completed for submission=%s", submission_id)
+
+    except Exception as exc:
+        logger.error("Stem processing failed for submission=%s: %s", submission_id, exc)
+        await db.track_submissions.update_one(
+            {"id": submission_id},
+            {"$set": {"status": "failed", "error": str(exc)}},
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -39,10 +188,10 @@ api_router = APIRouter(prefix="/api")
 
 class StatusCheck(BaseModel):
     model_config = ConfigDict(extra="ignore")
-
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     client_name: str
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
 
 class StatusCheckCreate(BaseModel):
     client_name: str
@@ -52,13 +201,12 @@ class LeadCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=120)
     email: EmailStr
     company: Optional[str] = Field(default=None, max_length=160)
-    interest: str = Field(..., max_length=60)  # ai_company | enterprise | artist | investor | other
+    interest: str = Field(..., max_length=60)
     message: str = Field(..., min_length=1, max_length=4000)
 
 
 class Lead(BaseModel):
     model_config = ConfigDict(extra="ignore")
-
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     name: str
     email: str
@@ -91,7 +239,6 @@ class ArtistCreate(BaseModel):
 
 class Artist(BaseModel):
     model_config = ConfigDict(extra="ignore")
-
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     name: str
     email: str
@@ -102,6 +249,30 @@ class Artist(BaseModel):
     tracks: List[dict] = []
 
 
+class PresignRequest(BaseModel):
+    artist_name: str = Field(..., min_length=1, max_length=120)
+    track_name: str = Field(..., min_length=1, max_length=120)
+    genre: str
+    filename: str = Field(..., min_length=1, max_length=200)
+
+
+class CompleteUploadRequest(BaseModel):
+    submission_id: str
+
+
+class TrackSubmission(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    artist_name: str
+    track_name: str
+    genre: str
+    original_r2_path: str = ""
+    stem_paths: dict = {}
+    upload_date: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    status: str = "pending"
+    error: Optional[str] = None
+
+
 # ---------------------------------------------------------------------------
 # Existing routes
 # ---------------------------------------------------------------------------
@@ -110,25 +281,23 @@ class Artist(BaseModel):
 async def root():
     return {"message": "Hello World"}
 
+
 @api_router.post("/status", response_model=StatusCheck)
 async def create_status_check(input: StatusCheckCreate):
     status_dict = input.model_dump()
     status_obj = StatusCheck(**status_dict)
-
     doc = status_obj.model_dump()
     doc['timestamp'] = doc['timestamp'].isoformat()
-
-    _ = await db.status_checks.insert_one(doc)
+    await db.status_checks.insert_one(doc)
     return status_obj
+
 
 @api_router.get("/status", response_model=List[StatusCheck])
 async def get_status_checks():
     status_checks = await db.status_checks.find({}, {"_id": 0}).to_list(1000)
-
     for check in status_checks:
         if isinstance(check['timestamp'], str):
             check['timestamp'] = datetime.fromisoformat(check['timestamp'])
-
     return status_checks
 
 
@@ -160,7 +329,6 @@ async def create_artist(payload: ArtistCreate):
     existing = await db.artists.find_one({"email": payload.email}, {"_id": 0})
     if existing:
         raise HTTPException(status_code=409, detail="An application with this email already exists")
-
     artist = Artist(**payload.model_dump())
     doc = artist.model_dump()
     doc['created_at'] = doc['created_at'].isoformat()
@@ -179,7 +347,6 @@ async def upload_artist_tracks(
     if not artist:
         raise HTTPException(status_code=404, detail="Artist not found")
 
-    # Normalize single-value submissions
     if isinstance(titles, str):
         titles = [titles]
     if not isinstance(files, list):
@@ -189,28 +356,21 @@ async def upload_artist_tracks(
         raise HTTPException(status_code=400, detail="Number of titles must match number of files")
 
     allowed_ext = {'.mp3', '.wav'}
-    max_size = 20 * 1024 * 1024  # 20 MB
+    max_size = 20 * 1024 * 1024
 
     saved_tracks = []
     for title, upload in zip(titles, files):
         ext = Path(upload.filename or '').suffix.lower()
         if ext not in allowed_ext:
             raise HTTPException(status_code=400, detail=f"'{upload.filename}' must be an MP3 or WAV file")
-
         content = await upload.read()
         if len(content) > max_size:
             raise HTTPException(status_code=400, detail=f"'{upload.filename}' exceeds the 20 MB limit")
-
         safe_email = email.replace('@', '_').replace('.', '_')
         safe_filename = f"{safe_email}_{uuid.uuid4().hex}{ext}"
         with open(UPLOADS_DIR / safe_filename, 'wb') as f:
             f.write(content)
-
-        saved_tracks.append({
-            "id": str(uuid.uuid4()),
-            "title": title,
-            "filename": safe_filename,
-        })
+        saved_tracks.append({"id": str(uuid.uuid4()), "title": title, "filename": safe_filename})
 
     await db.artists.update_one(
         {"email": email},
@@ -228,17 +388,119 @@ async def get_artists(
     admin_password = os.environ.get('ADMIN_PASSWORD', '')
     if not admin_password or x_admin_password != admin_password:
         raise HTTPException(status_code=401, detail="Unauthorized")
-
     artists = await db.artists.find({}, {"_id": 0}).sort("created_at", -1).to_list(1000)
     base_url = str(request.base_url).rstrip('/')
-
     for artist in artists:
         if isinstance(artist.get('created_at'), str):
             artist['created_at'] = datetime.fromisoformat(artist['created_at'])
         for track in artist.get('tracks', []):
             track['url'] = f"{base_url}/uploads/{track['filename']}"
-
     return artists
+
+
+# ---------------------------------------------------------------------------
+# Upload pipeline routes
+# ---------------------------------------------------------------------------
+
+@api_router.post("/upload/presign")
+async def presign_upload(payload: PresignRequest):
+    if payload.genre not in VALID_GENRES:
+        raise HTTPException(status_code=400, detail=f"Invalid genre")
+
+    ext = Path(payload.filename).suffix.lower()
+    if ext not in AUDIO_CONTENT_TYPES:
+        raise HTTPException(status_code=400, detail="Only MP3 or WAV files are accepted")
+
+    submission_id = str(uuid.uuid4())
+    safe_artist = _slugify(payload.artist_name)
+    safe_track = _slugify(payload.track_name)
+    content_type = AUDIO_CONTENT_TYPES[ext]
+    r2_key = f"catalog/{safe_artist}/{safe_track}/original/{submission_id}{ext}"
+
+    def _presign():
+        return r2_client.generate_presigned_url(
+            "put_object",
+            Params={"Bucket": R2_BUCKET, "Key": r2_key, "ContentType": content_type},
+            ExpiresIn=3600,
+        )
+
+    try:
+        presigned_url = await asyncio.to_thread(_presign)
+    except Exception as exc:
+        logger.error("Failed to generate presigned URL: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to generate upload URL")
+
+    submission = TrackSubmission(
+        id=submission_id,
+        artist_name=payload.artist_name,
+        track_name=payload.track_name,
+        genre=payload.genre,
+        original_r2_path=r2_key,
+        status="pending",
+    )
+    doc = submission.model_dump()
+    doc['upload_date'] = doc['upload_date'].isoformat()
+    await db.track_submissions.insert_one(doc)
+
+    return {
+        "presigned_url": presigned_url,
+        "submission_id": submission_id,
+        "r2_key": r2_key,
+        "content_type": content_type,
+    }
+
+
+@api_router.post("/upload/complete")
+async def complete_upload(payload: CompleteUploadRequest, background_tasks: BackgroundTasks):
+    sub = await db.track_submissions.find_one({"id": payload.submission_id}, {"_id": 0})
+    if not sub:
+        raise HTTPException(status_code=404, detail="Submission not found")
+    if sub["status"] != "pending":
+        raise HTTPException(status_code=400, detail=f"Submission status is already '{sub['status']}'")
+
+    await db.track_submissions.update_one(
+        {"id": payload.submission_id},
+        {"$set": {"status": "uploaded"}},
+    )
+
+    background_tasks.add_task(
+        _process_stems,
+        payload.submission_id,
+        sub["original_r2_path"],
+        sub["artist_name"],
+        sub["track_name"],
+    )
+    logger.info("Queued stem processing for submission=%s", payload.submission_id)
+    return {"status": "processing", "submission_id": payload.submission_id}
+
+
+@api_router.get("/submissions")
+async def get_submissions(x_admin_password: Optional[str] = Header(default=None)):
+    admin_password = os.environ.get('ADMIN_PASSWORD', '')
+    if not admin_password or x_admin_password != admin_password:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    subs = await db.track_submissions.find({}, {"_id": 0}).sort("upload_date", -1).to_list(1000)
+
+    def _presign_get(key: str) -> str:
+        return r2_client.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": R2_BUCKET, "Key": key},
+            ExpiresIn=3600,
+        )
+
+    for s in subs:
+        if isinstance(s.get("upload_date"), str):
+            s["upload_date"] = datetime.fromisoformat(s["upload_date"])
+        if s.get("stem_paths"):
+            try:
+                s["stem_urls"] = {
+                    stem: await asyncio.to_thread(_presign_get, key)
+                    for stem, key in s["stem_paths"].items()
+                }
+            except Exception as exc:
+                logger.warning("Could not generate stem presigned URLs: %s", exc)
+                s["stem_urls"] = {}
+    return subs
 
 
 # ---------------------------------------------------------------------------
@@ -255,11 +517,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
