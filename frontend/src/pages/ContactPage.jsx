@@ -44,7 +44,7 @@ const ContactPage = () => {
     }
     setSubmitting(true);
     try {
-      await axios.post(`${API}/leads`, {
+      await axios.post(`${API}/contact`, {
         name: form.name,
         email: form.email,
         company: form.company || null,

@@ -29,9 +29,10 @@ const StatusBadge = ({ status }) => {
 
 const AdminPage = () => {
   const [password, setPassword] = useState('');
-  const [tab, setTab] = useState('submissions'); // 'submissions' | 'applications'
+  const [tab, setTab] = useState('submissions'); // 'submissions' | 'applications' | 'messages'
   const [artists, setArtists] = useState(null);
   const [submissions, setSubmissions] = useState(null);
+  const [messages, setMessages] = useState(null);
   const [loading, setLoading] = useState(false);
   const [authed, setAuthed] = useState(false);
 
@@ -40,12 +41,14 @@ const AdminPage = () => {
     setLoading(true);
     try {
       const headers = { 'x-admin-password': pw };
-      const [artRes, subRes] = await Promise.all([
+      const [artRes, subRes, msgRes] = await Promise.all([
         axios.get(`${API}/artists`, { headers }),
         axios.get(`${API}/submissions`, { headers }),
+        axios.get(`${API}/contact`, { headers }),
       ]);
       setArtists(artRes.data);
       setSubmissions(subRes.data);
+      setMessages(msgRes.data);
       setAuthed(true);
     } catch (err) {
       if (err.response?.status === 401) {
@@ -137,6 +140,7 @@ const AdminPage = () => {
               {[
                 { key: 'submissions', label: `Submissions (${submissions?.length ?? 0})` },
                 { key: 'applications', label: `Applications (${artists?.length ?? 0})` },
+                { key: 'messages', label: `Messages (${messages?.length ?? 0})` },
               ].map(({ key, label }) => (
                 <button
                   key={key}
@@ -223,6 +227,63 @@ const AdminPage = () => {
                               ) : (
                                 <span className="text-slate-600">—</span>
                               )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* Messages tab */}
+            {tab === 'messages' && (
+              <>
+                {messages?.length === 0 ? (
+                  <p className="text-slate-500">No messages yet.</p>
+                ) : (
+                  <div className="overflow-x-auto rounded-2xl border border-white/10">
+                    <table className="w-full text-left text-sm">
+                      <thead>
+                        <tr className="border-b border-white/10 bg-white/[0.02]">
+                          {['Name', 'Email', 'Interest', 'Date', 'Message'].map((h) => (
+                            <th
+                              key={h}
+                              className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-400 whitespace-nowrap"
+                            >
+                              {h}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {messages?.map((m, i) => (
+                          <tr
+                            key={m.id}
+                            className={`border-b border-white/5 transition-colors hover:bg-white/[0.03] ${
+                              i % 2 === 0 ? '' : 'bg-white/[0.01]'
+                            }`}
+                          >
+                            <td className="px-4 py-3 font-medium text-white whitespace-nowrap">
+                              {m.name}
+                              {m.company && (
+                                <span className="ml-1.5 text-xs text-slate-500">({m.company})</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-slate-300 whitespace-nowrap">{m.email}</td>
+                            <td className="px-4 py-3 text-slate-400 whitespace-nowrap">
+                              {m.interest ?? '—'}
+                            </td>
+                            <td className="px-4 py-3 text-slate-400 whitespace-nowrap">
+                              {new Date(m.created_at).toLocaleDateString('en-US', {
+                                month: 'short',
+                                day: 'numeric',
+                                year: 'numeric',
+                              })}
+                            </td>
+                            <td className="px-4 py-3 text-slate-300 max-w-xs">
+                              <p className="whitespace-pre-wrap break-words">{m.message}</p>
                             </td>
                           </tr>
                         ))}

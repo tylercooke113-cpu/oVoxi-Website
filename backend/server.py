@@ -223,6 +223,25 @@ class Lead(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
+class ContactSubmissionCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=120)
+    email: EmailStr
+    company: Optional[str] = Field(default=None, max_length=160)
+    interest: Optional[str] = Field(default=None, max_length=60)
+    message: str = Field(..., min_length=1, max_length=4000)
+
+
+class ContactSubmission(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    name: str
+    email: str
+    company: Optional[str] = None
+    interest: Optional[str] = None
+    message: str
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
 VALID_GENRES = {
     "Hip-Hop", "R&B", "Afrobeats", "Trap", "Soul", "Pop",
     "Electronic", "Latin", "Reggaeton", "Afropop", "Other",
@@ -325,6 +344,32 @@ async def get_leads():
         if isinstance(lead.get('created_at'), str):
             lead['created_at'] = datetime.fromisoformat(lead['created_at'])
     return leads
+
+
+# ---------------------------------------------------------------------------
+# Contact / partnership form routes
+# ---------------------------------------------------------------------------
+
+@api_router.post("/contact", response_model=ContactSubmission, status_code=201)
+async def create_contact_submission(payload: ContactSubmissionCreate):
+    submission = ContactSubmission(**payload.model_dump())
+    doc = submission.model_dump()
+    doc['created_at'] = doc['created_at'].isoformat()
+    await db.contact_submissions.insert_one(doc)
+    logger.info("New contact submission: %s (%s)", submission.email, submission.name)
+    return submission
+
+
+@api_router.get("/contact", response_model=List[ContactSubmission])
+async def get_contact_submissions(x_admin_password: Optional[str] = Header(default=None)):
+    admin_password = os.environ.get('ADMIN_PASSWORD', '')
+    if not admin_password or x_admin_password != admin_password:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    submissions = await db.contact_submissions.find({}, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    for s in submissions:
+        if isinstance(s.get('created_at'), str):
+            s['created_at'] = datetime.fromisoformat(s['created_at'])
+    return submissions
 
 
 # ---------------------------------------------------------------------------
