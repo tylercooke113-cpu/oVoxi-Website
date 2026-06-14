@@ -16,7 +16,7 @@ import {
   SelectValue,
 } from '../components/ui/select';
 
-const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
+const API = `https://ovoxi-website-production.up.railway.app/api`;
 
 const GENRES = [
   'Hip-Hop', 'R&B', 'Afrobeats', 'Trap', 'Soul',

@@ -15,7 +15,7 @@ import {
   SelectValue,
 } from '../components/ui/select';
 
-const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
+const API = `https://ovoxi-website-production.up.railway.app/api`;
 
 const GENRES = [
   'Hip-Hop', 'R&B', 'Afrobeats', 'Trap', 'Soul',
@@ -104,7 +104,16 @@ const UploadPage = () => {
       setStage('done');
     } catch (err) {
       console.error(err);
-      const detail = err.response?.data?.detail || 'Something went wrong. Please try again.';
+      let detail;
+      if (err.response?.data?.detail) {
+        detail = err.response.data.detail;
+      } else if (err.code === 'ERR_NETWORK' || err.message === 'Network Error') {
+        detail = 'Could not reach the server. Check your connection or try again shortly.';
+      } else if (err.response?.status >= 500) {
+        detail = `Server error (${err.response.status}). Please try again.`;
+      } else {
+        detail = err.message || 'Something went wrong. Please try again.';
+      }
       toast.error(detail);
       setStage('idle');
     }

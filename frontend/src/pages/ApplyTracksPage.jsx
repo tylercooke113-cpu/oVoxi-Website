@@ -9,7 +9,7 @@ import { Reveal } from '../components/Reveal';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 
-const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
+const API = `https://ovoxi-website-production.up.railway.app/api`;
 const MAX_FILE_SIZE = 20 * 1024 * 1024;
 
 const ApplyTracksPage = () => {

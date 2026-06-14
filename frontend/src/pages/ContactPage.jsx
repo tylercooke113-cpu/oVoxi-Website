@@ -17,7 +17,7 @@ import {
 } from '../components/ui/select';
 import { BRAND, INTEREST_OPTIONS } from '../content';
 
-const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
+const API = `https://ovoxi-website-production.up.railway.app/api`;
 const VALID = INTEREST_OPTIONS.map((o) => o.value);
 
 const ContactPage = () => {
