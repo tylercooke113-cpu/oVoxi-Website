@@ -22,14 +22,13 @@ const ArtistsPage = () => (
     />
 
     <section className="bg-ink py-20 lg:py-28">
-      <div className="mx-auto max-w-7xl px-6 lg:px-8">
-        <div className="max-w-2xl">
+      <div className="mx-auto max-w-3xl px-6 text-center lg:px-8">
           <Reveal>
             <SectionLabel>What You Get</SectionLabel>
             <h2 className="font-heading text-3xl font-semibold tracking-tight text-white sm:text-4xl">
               Built for the artist, end to end.
             </h2>
-            <ul className="mt-8 space-y-4">
+            <ul className="mt-8 space-y-4 text-left">
               {ARTIST_BENEFITS.map((b) => (
                 <li key={b} className="flex items-start gap-3 text-base text-slate-300">
                   <span className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-electric/15 text-cyan">
@@ -45,7 +44,6 @@ const ArtistsPage = () => (
               </PrimaryCTA>
             </div>
           </Reveal>
-        </div>
       </div>
     </section>
 

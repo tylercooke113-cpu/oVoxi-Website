@@ -40,31 +40,6 @@ const AboutPage = () => (
       </div>
     </section>
 
-    <section className="bg-ink py-20 lg:py-28">
-      <div className="mx-auto max-w-4xl px-6 text-center lg:px-8">
-        <Reveal>
-          <SectionLabel>Leadership</SectionLabel>
-          <h2 className="font-heading text-3xl font-semibold tracking-tight text-white sm:text-4xl">
-            Music industry depth. Legal infrastructure. Cultural edge.
-          </h2>
-          <p className="mx-auto mt-5 max-w-xl text-base leading-relaxed text-slate-400">
-            Full leadership profiles are being finalized and will be published here soon. For
-            introductions or partnership conversations, reach out directly.
-          </p>
-          <div className="mt-10 flex flex-col justify-center gap-3 sm:flex-row">
-            <PrimaryCTA to="/contact" testid="about-contact-cta">
-              Get in Touch
-            </PrimaryCTA>
-            <GhostCTA to="/contact?interest=ai_company" testid="about-licensing-cta">
-              Discuss Licensing
-            </GhostCTA>
-          </div>
-          <p className="mt-10 text-sm text-slate-500">
-            {BRAND.name} · {BRAND.domain} · {BRAND.email}
-          </p>
-        </Reveal>
-      </div>
-    </section>
   </div>
 );
 
