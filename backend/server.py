@@ -79,6 +79,7 @@ async def _lalal_upload(audio_data: bytes, filename: str) -> str:
     async with httpx.AsyncClient(timeout=180.0) as http:
         resp = await http.post(f"{LALAL_BASE}/upload/", content=audio_data, headers=headers)
         resp.raise_for_status()
+        logger.info("lalal upload response: %s", resp.json())
         return resp.json()["id"]
 
 
@@ -101,6 +102,7 @@ async def _lalal_split(file_id: str, stem: str) -> tuple:
                 headers={**auth, "Content-Type": "application/json"},
             )
             check.raise_for_status()
+            logger.info("lalal check response: %s", check.json())
             data = check.json()
             status = data.get("status")
             if status == "success":
