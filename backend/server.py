@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 import logging
 import re
@@ -86,31 +87,35 @@ async def _lalal_upload(audio_data: bytes, filename: str) -> str:
 async def _lalal_split(file_id: str, stem: str) -> tuple:
     """Returns (stem_url, back_url). Polls until processing finishes."""
     auth = {"Authorization": "license " + str(LALAL_API_KEY)}
+    params_json = json.dumps([{"id": file_id, "stem": stem, "splitter": "phoenix"}])
     async with httpx.AsyncClient(timeout=30.0) as http:
         resp = await http.post(
-            f"{LALAL_BASE}/preview/",
-            json={"id": [file_id], "stem": stem, "splitter": "phoenix"},
-            headers={**auth, "Content-Type": "application/json"},
+            f"{LALAL_BASE}/split/",
+            data={"params": params_json},
+            headers=auth,
         )
         resp.raise_for_status()
+        logger.info("lalal split response: %s", resp.json())
 
         for _ in range(72):  # poll up to 12 minutes
             await asyncio.sleep(10)
             check = await http.post(
                 f"{LALAL_BASE}/check/",
-                json={"id": [file_id]},
-                headers={**auth, "Content-Type": "application/json"},
+                data={"id": file_id},
+                headers=auth,
             )
             check.raise_for_status()
-            logger.info("lalal check response: %s", check.json())
             data = check.json()
-            status = data.get("status")
-            if status == "success":
-                stem_url = data.get("stem", {}).get("url")
-                back_url = data.get("back", {}).get("url")
-                return stem_url, back_url
-            if status == "error":
+            logger.info("lalal check response: %s", data)
+            if data.get("status") == "error":
                 raise RuntimeError(f"Lalal.ai error: {data.get('error', 'unknown')}")
+            result = data.get("result", {}).get(file_id, {})
+            state = result.get("task", {}).get("state")
+            if state == "error":
+                raise RuntimeError(f"Lalal.ai task error for {file_id}")
+            if state == "success":
+                split = result.get("split", {})
+                return split.get("stem_track"), split.get("back_track")
 
     raise RuntimeError("Lalal.ai processing timed out after 12 minutes")
 
