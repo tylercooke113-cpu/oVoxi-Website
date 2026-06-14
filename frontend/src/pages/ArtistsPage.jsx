@@ -23,7 +23,7 @@ const ArtistsPage = () => (
 
     <section className="bg-ink py-20 lg:py-28">
       <div className="mx-auto max-w-7xl px-6 lg:px-8">
-        <div className="grid grid-cols-1 gap-12 lg:grid-cols-2 lg:gap-16">
+        <div className="max-w-2xl">
           <Reveal>
             <SectionLabel>What You Get</SectionLabel>
             <h2 className="font-heading text-3xl font-semibold tracking-tight text-white sm:text-4xl">
@@ -43,21 +43,6 @@ const ArtistsPage = () => (
               <PrimaryCTA to="https://airtable.com/appmcBnXvP82ydQCz/pag6udQiv3QTWYG3m/form" testid="artists-page-apply-cta">
                 Apply to Join
               </PrimaryCTA>
-            </div>
-          </Reveal>
-
-          <Reveal delay={0.12}>
-            <div className="overflow-hidden rounded-2xl border border-white/10">
-              <div
-                className="h-64 w-full lg:h-full"
-                style={{
-                  backgroundImage:
-                    "url('https://images.pexels.com/photos/5749202/pexels-photo-5749202.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940')",
-                  backgroundSize: 'cover',
-                  backgroundPosition: 'center',
-                  minHeight: '320px',
-                }}
-              />
             </div>
           </Reveal>
         </div>
