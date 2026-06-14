@@ -19,30 +19,6 @@ const AboutPage = () => (
       subtitle="oVoxi is building the world's first emerging-first, fully licensed, AI-ready music catalog — the provenance and licensing layer the generative music economy is missing."
     />
 
-    <section className="bg-ink py-20 lg:py-28">
-      <div className="mx-auto max-w-4xl px-6 lg:px-8">
-        <Reveal>
-          <SectionLabel>Our Thesis</SectionLabel>
-          <div className="space-y-6 text-lg leading-relaxed text-slate-300">
-            <p>
-              AI music generators, media companies, game studios, and enterprise buyers need legally
-              defensible, culturally fresh music datasets and catalogs. Existing catalogs are
-              backward-looking — production libraries of yesterday&apos;s sound.
-            </p>
-            <p>
-              oVoxi acquires emerging artists before mainstream recognition, verifies ownership,
-              registers rights, creates stems, masters recordings, and licenses these assets to AI
-              platforms and enterprise buyers. We are not a streaming platform, a record label, or a
-              marketplace — we are the infrastructure layer for licensed AI music.
-            </p>
-            <p className="font-heading text-xl font-medium text-white">
-              The catalog that captures emerging artists first defines what AI music sounds like.
-            </p>
-          </div>
-        </Reveal>
-      </div>
-    </section>
-
     <section className="border-y border-white/10 bg-ink-2 py-20 lg:py-28">
       <div className="mx-auto max-w-7xl px-6 lg:px-8">
         <Reveal>

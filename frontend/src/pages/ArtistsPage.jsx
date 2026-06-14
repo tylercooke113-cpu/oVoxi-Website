@@ -40,7 +40,7 @@ const ArtistsPage = () => (
               ))}
             </ul>
             <div className="mt-10">
-              <PrimaryCTA to="/contact?interest=artist" testid="artists-page-apply-cta">
+              <PrimaryCTA to="https://airtable.com/appmcBnXvP82ydQCz/pag6udQiv3QTWYG3m/form" testid="artists-page-apply-cta">
                 Apply to Join
               </PrimaryCTA>
             </div>

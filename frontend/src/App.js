@@ -8,6 +8,7 @@ import HomePage from "./pages/HomePage";
 import ArtistsPage from "./pages/ArtistsPage";
 import AboutPage from "./pages/AboutPage";
 import ContactPage from "./pages/ContactPage";
+import ArtistUploadPage from "./pages/ArtistUploadPage";
 
 function ScrollToTop() {
   const { pathname } = useLocation();
@@ -29,6 +30,7 @@ function App() {
             <Route path="/artists" element={<ArtistsPage />} />
             <Route path="/about" element={<AboutPage />} />
             <Route path="/contact" element={<ContactPage />} />
+            <Route path="/artist-upload" element={<ArtistUploadPage />} />
           </Routes>
         </main>
         <Footer />

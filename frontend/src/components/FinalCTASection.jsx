@@ -16,7 +16,7 @@ export const FinalCTASection = () => (
           oVoxi is actively building its founding catalog. Emerging artists accepted now.
         </p>
         <div className="mt-10 flex flex-col justify-center gap-3 sm:flex-row">
-          <PrimaryCTA to="/contact?interest=artist" testid="final-artist-cta">
+          <PrimaryCTA to="https://airtable.com/appmcBnXvP82ydQCz/pag6udQiv3QTWYG3m/form" testid="final-artist-cta">
             Apply as a Founding Artist
           </PrimaryCTA>
           <GhostCTA to="/contact?interest=ai_company" testid="final-licensing-cta">
