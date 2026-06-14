@@ -89,7 +89,7 @@ async def _lalal_split(file_id: str, stem: str) -> tuple:
     async with httpx.AsyncClient(timeout=30.0) as http:
         resp = await http.post(
             f"{LALAL_BASE}/preview/",
-            json={"id": file_id, "stem": stem, "splitter": "phoenix"},
+            json={"id": [file_id], "stem": stem, "splitter": "phoenix"},
             headers={**auth, "Content-Type": "application/json"},
         )
         resp.raise_for_status()
@@ -98,7 +98,7 @@ async def _lalal_split(file_id: str, stem: str) -> tuple:
             await asyncio.sleep(10)
             check = await http.post(
                 f"{LALAL_BASE}/check/",
-                json={"id": file_id},
+                json={"id": [file_id]},
                 headers={**auth, "Content-Type": "application/json"},
             )
             check.raise_for_status()
