@@ -76,10 +76,10 @@ const AdminPage = () => {
         <div className="mb-10 flex items-end justify-between">
           <div>
             <span className="text-xs font-bold uppercase tracking-[0.25em] text-electric">
-              Internal
+              Catalog
             </span>
             <h1 className="mt-3 font-heading text-3xl font-semibold text-white lg:text-4xl">
-              Admin Panel
+              My Vault
             </h1>
           </div>
           {authed && (

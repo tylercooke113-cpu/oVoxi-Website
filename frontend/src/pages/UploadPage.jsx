@@ -3,6 +3,7 @@ import axios from 'axios';
 import { toast } from 'sonner';
 import { Loader2, Upload, CheckCircle2, Music2 } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { Link } from 'react-router-dom';
 import { PageHero } from '../components/PageHero';
 import { Reveal } from '../components/Reveal';
 import { Input } from '../components/ui/input';
@@ -142,18 +143,26 @@ const UploadPage = () => {
               ID: {submissionId}
             </p>
           )}
-          <button
-            onClick={() => {
-              setStage('idle');
-              setFile(null);
-              setForm({ artist_name: '', track_name: '', genre: '' });
-              setSubmissionId(null);
-              setUploadProgress(0);
-            }}
-            className="mt-8 inline-flex items-center gap-2 rounded-full border border-white/10 px-6 py-2.5 text-sm text-slate-300 transition-colors hover:border-electric/40 hover:text-white"
-          >
-            Upload another track
-          </button>
+          <div className="mt-8 flex flex-col items-center gap-3">
+            <Link
+              to="/admin"
+              className="inline-flex items-center gap-2 rounded-full bg-electric px-7 py-3 text-sm font-semibold text-white transition-all duration-300 hover:shadow-[0_0_28px_rgba(0,102,255,0.55)]"
+            >
+              Go to My Vault →
+            </Link>
+            <button
+              onClick={() => {
+                setStage('idle');
+                setFile(null);
+                setForm({ artist_name: '', track_name: '', genre: '' });
+                setSubmissionId(null);
+                setUploadProgress(0);
+              }}
+              className="inline-flex items-center gap-2 rounded-full border border-white/10 px-6 py-2.5 text-sm text-slate-300 transition-colors hover:border-electric/40 hover:text-white"
+            >
+              Upload another track
+            </button>
+          </div>
         </motion.div>
       </div>
     );
