@@ -394,6 +394,9 @@ async def upload_artist_tracks(
     email: str,
     titles: List[str] = Form(...),
     files: List[UploadFile] = File(...),
+    pro_registered: bool = Form(False),
+    pro_org: str = Form(''),
+    pro_register_us: bool = Form(False),
 ):
     artist = await db.artists.find_one({"email": email}, {"_id": 0})
     if not artist:
@@ -422,7 +425,14 @@ async def upload_artist_tracks(
         safe_filename = f"{safe_email}_{uuid.uuid4().hex}{ext}"
         with open(UPLOADS_DIR / safe_filename, 'wb') as f:
             f.write(content)
-        saved_tracks.append({"id": str(uuid.uuid4()), "title": title, "filename": safe_filename})
+        saved_tracks.append({
+            "id": str(uuid.uuid4()),
+            "title": title,
+            "filename": safe_filename,
+            "pro_registered": pro_registered,
+            "pro_org": pro_org,
+            "pro_register_us": pro_register_us,
+        })
 
     await db.artists.update_one(
         {"email": email},
