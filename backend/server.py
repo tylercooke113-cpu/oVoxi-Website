@@ -280,6 +280,9 @@ class PresignRequest(BaseModel):
     track_name: str = Field(..., min_length=1, max_length=120)
     genre: str
     filename: str = Field(..., min_length=1, max_length=200)
+    pro_registered: bool = False
+    pro_org: str = ''
+    pro_register_us: bool = False
 
 
 class CompleteUploadRequest(BaseModel):
@@ -297,6 +300,9 @@ class TrackSubmission(BaseModel):
     upload_date: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     status: str = "pending"
     error: Optional[str] = None
+    pro_registered: bool = False
+    pro_org: str = ''
+    pro_register_us: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -499,6 +505,9 @@ async def presign_upload(payload: PresignRequest):
         genre=payload.genre,
         original_r2_path=r2_key,
         status="pending",
+        pro_registered=payload.pro_registered,
+        pro_org=payload.pro_org,
+        pro_register_us=payload.pro_register_us,
     )
     doc = submission.model_dump()
     doc['upload_date'] = doc['upload_date'].isoformat()
