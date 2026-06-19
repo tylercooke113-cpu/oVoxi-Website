@@ -22,6 +22,7 @@ from starlette.middleware.cors import CORSMiddleware
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
+from slowapi.middleware import SlowAPIMiddleware
 
 
 ROOT_DIR = Path(__file__).parent
@@ -64,6 +65,7 @@ app.add_exception_handler(
         content={"error": "Too many requests. Please try again in a minute."},
     ),
 )
+app.add_middleware(SlowAPIMiddleware)
 
 api_router = APIRouter(prefix="/api")
 
