@@ -14,10 +14,14 @@ import httpx
 from botocore.config import Config
 from dotenv import load_dotenv
 from fastapi import BackgroundTasks, FastAPI, APIRouter, UploadFile, File, Form, HTTPException, Header, Request
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field, ConfigDict, EmailStr, field_validator
 from starlette.middleware.cors import CORSMiddleware
+from slowapi import Limiter
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
 
 ROOT_DIR = Path(__file__).parent
@@ -50,6 +54,16 @@ AUDIO_CONTENT_TYPES = {".mp3": "audio/mpeg", ".wav": "audio/wav"}
 
 app = FastAPI()
 app.mount("/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="uploads")
+
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(
+    RateLimitExceeded,
+    lambda request, exc: JSONResponse(
+        status_code=429,
+        content={"error": "Too many requests. Please try again in a minute."},
+    ),
+)
 
 api_router = APIRouter(prefix="/api")
 
@@ -471,7 +485,8 @@ async def get_artists(
 # ---------------------------------------------------------------------------
 
 @api_router.post("/upload/presign")
-async def presign_upload(payload: PresignRequest):
+@limiter.limit("5/minute")
+async def presign_upload(request: Request, payload: PresignRequest):
     if payload.genre not in VALID_GENRES:
         raise HTTPException(status_code=400, detail=f"Invalid genre")
 
@@ -522,7 +537,8 @@ async def presign_upload(payload: PresignRequest):
 
 
 @api_router.post("/upload/complete")
-async def complete_upload(payload: CompleteUploadRequest, background_tasks: BackgroundTasks):
+@limiter.limit("5/minute")
+async def complete_upload(request: Request, payload: CompleteUploadRequest, background_tasks: BackgroundTasks):
     sub = await db.track_submissions.find_one({"id": payload.submission_id}, {"_id": 0})
     if not sub:
         raise HTTPException(status_code=404, detail="Submission not found")
