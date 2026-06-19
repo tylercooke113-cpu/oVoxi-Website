@@ -26,7 +26,6 @@ from slowapi.middleware import SlowAPIMiddleware
 
 
 def get_real_client_ip(request: Request) -> str:
-    print(f"DEBUG HEADERS: {dict(request.headers)}")
     forwarded = request.headers.get("x-forwarded-for")
     if forwarded:
         return forwarded.split(",")[0].strip()
