@@ -57,7 +57,7 @@ export const HeroCanvas = () => {
           const dist = Math.hypot(dx, dy);
           if (dist < LINK_DIST) {
             const op = (1 - dist / LINK_DIST) * 0.35;
-            ctx.strokeStyle = `rgba(59, 130, 246, ${op})`;
+            ctx.strokeStyle = `rgba(106, 27, 154, ${op})`;
             ctx.lineWidth = 1;
             ctx.beginPath();
             ctx.moveTo(a.x, a.y);
@@ -71,9 +71,9 @@ export const HeroCanvas = () => {
       for (const n of nodes) {
         ctx.beginPath();
         ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(0, 229, 255, 0.9)';
+        ctx.fillStyle = 'rgba(194, 24, 91, 0.9)';
         ctx.shadowBlur = 8;
-        ctx.shadowColor = 'rgba(0, 102, 255, 0.8)';
+        ctx.shadowColor = 'rgba(106, 27, 154, 0.8)';
         ctx.fill();
         ctx.shadowBlur = 0;
       }
@@ -81,8 +81,8 @@ export const HeroCanvas = () => {
       // Waveform along lower portion
       const baseY = height * 0.72;
       const layers = [
-        { amp: 26, speed: 1.0, color: 'rgba(0, 102, 255, 0.55)', freq: 0.014 },
-        { amp: 18, speed: 1.6, color: 'rgba(0, 229, 255, 0.35)', freq: 0.022 },
+        { amp: 26, speed: 1.0, color: 'rgba(194, 24, 91, 0.55)', freq: 0.014 },
+        { amp: 18, speed: 1.6, color: 'rgba(106, 27, 154, 0.35)', freq: 0.022 },
       ];
       layers.forEach((l, li) => {
         ctx.beginPath();

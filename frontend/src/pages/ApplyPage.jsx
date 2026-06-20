@@ -151,7 +151,7 @@ const ApplyPage = () => {
                 type="submit"
                 data-testid="apply-submit-button"
                 disabled={submitting}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-electric px-7 py-3.5 text-sm font-semibold text-white transition-all duration-300 hover:shadow-[0_0_28px_rgba(0,102,255,0.55)] disabled:opacity-60 sm:w-auto"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-gradient-brand px-7 py-3.5 text-sm font-semibold text-white transition-all duration-300 hover:shadow-[0_0_28px_rgba(194,24,91,0.55)] disabled:opacity-60 sm:w-auto"
               >
                 {submitting ? (
                   <Loader2 size={16} className="animate-spin" />

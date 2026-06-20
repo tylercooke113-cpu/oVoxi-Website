@@ -153,7 +153,7 @@ const UploadPage = () => {
           <div className="mt-8 flex flex-col items-center gap-3">
             <Link
               to="/admin"
-              className="inline-flex items-center gap-2 rounded-full bg-electric px-7 py-3 text-sm font-semibold text-white transition-all duration-300 hover:shadow-[0_0_28px_rgba(0,102,255,0.55)]"
+              className="inline-flex items-center gap-2 rounded-full bg-gradient-brand px-7 py-3 text-sm font-semibold text-white transition-all duration-300 hover:shadow-[0_0_28px_rgba(194,24,91,0.55)]"
             >
               Go to My Vault →
             </Link>
@@ -262,7 +262,7 @@ const UploadPage = () => {
                       setProRegistered(e.target.checked);
                       if (e.target.checked) setProRegisterUs(false);
                     }}
-                    className="mt-0.5 accent-[#0066FF]"
+                    className="mt-0.5 accent-[#6A1B9A]"
                   />
                   <span className="text-sm text-slate-300">
                     These works are registered with a Performing Rights Organization
@@ -301,7 +301,7 @@ const UploadPage = () => {
                       setProRegisterUs(e.target.checked);
                       if (e.target.checked) setProRegistered(false);
                     }}
-                    className="mt-0.5 accent-[#0066FF]"
+                    className="mt-0.5 accent-[#6A1B9A]"
                   />
                   <span className="text-sm text-slate-300">
                     I would like oVoxi to register these songs on my behalf
@@ -386,7 +386,7 @@ const UploadPage = () => {
                 type="submit"
                 data-testid="upload-submit-button"
                 disabled={isUploading}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-electric px-7 py-3.5 text-sm font-semibold text-white transition-all duration-300 hover:shadow-[0_0_28px_rgba(0,102,255,0.55)] disabled:opacity-60 sm:w-auto"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-gradient-brand px-7 py-3.5 text-sm font-semibold text-white transition-all duration-300 hover:shadow-[0_0_28px_rgba(194,24,91,0.55)] disabled:opacity-60 sm:w-auto"
               >
                 {isUploading ? (
                   <Loader2 size={16} className="animate-spin" />

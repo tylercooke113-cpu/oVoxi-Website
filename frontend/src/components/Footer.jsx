@@ -20,18 +20,17 @@ const COLUMNS = [
 ];
 
 export const Footer = () => (
-  <footer data-testid="site-footer" className="border-t border-white/10 bg-ink">
+  <footer data-testid="site-footer" className="border-t border-white/10 bg-black">
     <div className="mx-auto max-w-7xl px-6 lg:px-8 py-16">
       <div className="grid grid-cols-1 gap-12 md:grid-cols-3">
         <div>
-          <div className="flex items-center gap-2.5">
-            <img src={BRAND.logo} alt="oVoxi" className="h-9 w-9 rounded-lg object-cover" />
-            <span className="font-heading text-lg font-semibold text-white">oVoxi</span>
+          <div className="flex items-center">
+            <img src={BRAND.logo} alt="oVoxi" className="h-10 w-auto" />
           </div>
           <a
             href={`mailto:${BRAND.email}`}
             data-testid="footer-email"
-            className="mt-6 inline-flex items-center gap-2 text-sm font-medium text-slate-300 hover:text-electric transition-colors"
+            className="mt-6 inline-flex items-center gap-2 text-sm font-medium text-slate-300 hover-text-gradient transition-colors"
           >
             <Mail size={16} /> {BRAND.email}
           </a>
@@ -46,7 +45,7 @@ export const Footer = () => (
                   <Link
                     to={l.to}
                     data-testid={`footer-link-${l.label.toLowerCase().replace(/[^a-z]+/g, '-')}`}
-                    className="text-sm text-slate-400 hover:text-white transition-colors"
+                    className="text-sm text-slate-400 hover-text-gradient transition-colors"
                   >
                     {l.label}
                   </Link>

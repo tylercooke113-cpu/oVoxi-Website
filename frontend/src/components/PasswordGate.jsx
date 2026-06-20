@@ -30,7 +30,7 @@ export default function PasswordGate({ onUnlock }) {
       vx: (Math.random() - 0.5) * 0.4,
       vy: (Math.random() - 0.5) * 0.4,
       r: Math.random() * 1.5 + 0.5,
-      hue: Math.random() > 0.5 ? 185 : 270, // cyan or purple
+      hue: Math.random() > 0.5 ? 336 : 277, // magenta or purple
     }));
 
     let t = 0;
@@ -45,7 +45,7 @@ export default function PasswordGate({ onUnlock }) {
       for (let c = 0; c < cols; c++) {
         const x = c * spacing;
         const alpha = 0.06 + 0.04 * Math.sin(t * 0.01 + c * 0.3);
-        ctx.strokeStyle = `rgba(0, 230, 255, ${alpha})`;
+        ctx.strokeStyle = `rgba(194, 24, 91, ${alpha})`;
         ctx.beginPath();
         ctx.moveTo(x, 0);
         ctx.lineTo(x, canvas.height);
@@ -54,7 +54,7 @@ export default function PasswordGate({ onUnlock }) {
       for (let r = 0; r < rows; r++) {
         const y = r * spacing;
         const alpha = 0.06 + 0.04 * Math.sin(t * 0.01 + r * 0.3);
-        ctx.strokeStyle = `rgba(160, 0, 255, ${alpha})`;
+        ctx.strokeStyle = `rgba(106, 27, 154, ${alpha})`;
         ctx.beginPath();
         ctx.moveTo(0, y);
         ctx.lineTo(canvas.width, y);
@@ -181,8 +181,8 @@ export default function PasswordGate({ onUnlock }) {
             fontSize: "11px",
             fontVariant: "small-caps",
             letterSpacing: "0.35em",
-            color: "#00e5ff",
-            textShadow: "0 0 12px rgba(0, 229, 255, 0.7)",
+            color: "#6A1B9A",
+            textShadow: "0 0 12px rgba(106, 27, 154, 0.7)",
             textTransform: "uppercase",
             opacity: 0.9,
           }}
@@ -196,7 +196,7 @@ export default function PasswordGate({ onUnlock }) {
             width: "100%",
             height: "1px",
             background:
-              "linear-gradient(90deg, transparent, rgba(0,229,255,0.4), rgba(160,0,255,0.4), transparent)",
+              "linear-gradient(90deg, transparent, rgba(194,24,91,0.4), rgba(106,27,154,0.4), transparent)",
           }}
         />
 
@@ -224,8 +224,8 @@ export default function PasswordGate({ onUnlock }) {
               width: "100%",
               background: "transparent",
               border: "none",
-              borderBottom: "1.5px solid rgba(0, 229, 255, 0.7)",
-              boxShadow: "0 4px 16px -4px rgba(0, 229, 255, 0.35)",
+              borderBottom: "1.5px solid rgba(106, 27, 154, 0.7)",
+              boxShadow: "0 4px 16px -4px rgba(106, 27, 154, 0.35)",
               outline: "none",
               color: "#ffffff",
               fontFamily: "'Kode Mono', monospace",
@@ -233,16 +233,16 @@ export default function PasswordGate({ onUnlock }) {
               letterSpacing: "0.2em",
               textAlign: "center",
               padding: "12px 0",
-              caretColor: "#00e5ff",
+              caretColor: "#6A1B9A",
               transition: "border-color 0.2s, box-shadow 0.2s",
             }}
             onFocus={(e) => {
-              e.target.style.borderBottomColor = "#00e5ff";
-              e.target.style.boxShadow = "0 4px 20px -4px rgba(0, 229, 255, 0.6)";
+              e.target.style.borderBottomColor = "#6A1B9A";
+              e.target.style.boxShadow = "0 4px 20px -4px rgba(106, 27, 154, 0.6)";
             }}
             onBlur={(e) => {
-              e.target.style.borderBottomColor = "rgba(0, 229, 255, 0.7)";
-              e.target.style.boxShadow = "0 4px 16px -4px rgba(0, 229, 255, 0.35)";
+              e.target.style.borderBottomColor = "rgba(106, 27, 154, 0.7)";
+              e.target.style.boxShadow = "0 4px 16px -4px rgba(106, 27, 154, 0.35)";
             }}
           />
 
@@ -270,8 +270,8 @@ export default function PasswordGate({ onUnlock }) {
             className="auth-btn"
             style={{
               background: "transparent",
-              border: "1px solid rgba(0, 229, 255, 0.6)",
-              color: "#00e5ff",
+              border: "1px solid rgba(106, 27, 154, 0.6)",
+              color: "#6A1B9A",
               fontFamily: "'Kode Mono', monospace",
               fontSize: "11px",
               letterSpacing: "0.35em",
@@ -279,22 +279,22 @@ export default function PasswordGate({ onUnlock }) {
               padding: "12px 40px",
               cursor: "pointer",
               boxShadow:
-                "0 0 18px rgba(0, 229, 255, 0.2), inset 0 0 18px rgba(0, 229, 255, 0.04)",
+                "0 0 18px rgba(106, 27, 154, 0.2), inset 0 0 18px rgba(106, 27, 154, 0.04)",
               transition: "box-shadow 0.2s, border-color 0.2s, color 0.2s",
               animation: "btnPulse 2.5s ease-in-out infinite",
               outline: "none",
             }}
             onMouseEnter={(e) => {
               e.currentTarget.style.boxShadow =
-                "0 0 32px rgba(0, 229, 255, 0.6), inset 0 0 24px rgba(0, 229, 255, 0.1)";
-              e.currentTarget.style.borderColor = "#00e5ff";
+                "0 0 32px rgba(106, 27, 154, 0.6), inset 0 0 24px rgba(106, 27, 154, 0.1)";
+              e.currentTarget.style.borderColor = "#6A1B9A";
               e.currentTarget.style.color = "#ffffff";
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.boxShadow =
-                "0 0 18px rgba(0, 229, 255, 0.2), inset 0 0 18px rgba(0, 229, 255, 0.04)";
-              e.currentTarget.style.borderColor = "rgba(0, 229, 255, 0.6)";
-              e.currentTarget.style.color = "#00e5ff";
+                "0 0 18px rgba(106, 27, 154, 0.2), inset 0 0 18px rgba(106, 27, 154, 0.04)";
+              e.currentTarget.style.borderColor = "rgba(106, 27, 154, 0.6)";
+              e.currentTarget.style.color = "#6A1B9A";
             }}
           >
             Authenticate

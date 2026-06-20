@@ -36,7 +36,7 @@ export const HeroSection = () => (
         className="font-heading text-4xl font-semibold leading-[1.05] tracking-tighter text-white sm:text-5xl lg:text-7xl"
       >
         The Curated Music Catalog
-        <span className="block text-gradient-blue">Built for the AI Economy</span>
+        <span className="block text-gradient-brand">Built for the AI Economy</span>
       </motion.h1>
 
       <motion.p

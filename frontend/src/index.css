@@ -2,38 +2,46 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Fonts: Outfit (headings) + Manrope (body) */
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Manrope:wght@300;400;500;600;700&display=swap');
+/* Fonts: Space Grotesk (headings) + Inter (body) */
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap');
 @import url('https://fonts.googleapis.com/css2?family=Kode+Mono:wght@400;500;600;700&display=swap');
 
 body {
     margin: 0;
-    font-family: 'Manrope', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    background-color: #030712;
-    color: #F8FAFC;
+    background-color: #000000;
+    color: #FFFFFF;
 }
 
 h1, h2, h3, h4, h5, h6 {
-    font-family: 'Outfit', system-ui, sans-serif;
+    font-family: 'Space Grotesk', system-ui, sans-serif;
 }
 
 /* Selection */
 ::selection {
-    background-color: rgba(0, 102, 255, 0.35);
+    background-color: rgba(106, 27, 154, 0.35);
     color: #ffffff;
 }
 
 /* Custom scrollbar */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-track { background: #030712; }
-::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 8px; }
-::-webkit-scrollbar-thumb:hover { background: #0066FF; }
+::-webkit-scrollbar-track { background: #000000; }
+::-webkit-scrollbar-thumb { background: #2A2A2A; border-radius: 8px; }
+::-webkit-scrollbar-thumb:hover { background: linear-gradient(180deg, #C2185B 0%, #6A1B9A 50%, #1565C0 100%); }
 
-/* Utility helpers */
-.text-gradient-blue {
-    background: linear-gradient(90deg, #F8FAFC 0%, #3B82F6 60%, #00E5FF 100%);
+/* Gradient text utility */
+.text-gradient-brand {
+    background: linear-gradient(90deg, #C2185B 0%, #6A1B9A 50%, #1565C0 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+/* Hover gradient text — for nav links and inline link hovers */
+.hover-text-gradient:hover {
+    background: linear-gradient(90deg, #C2185B 0%, #6A1B9A 50%, #1565C0 100%);
     -webkit-background-clip: text;
     background-clip: text;
     -webkit-text-fill-color: transparent;
@@ -46,8 +54,15 @@ h1, h2, h3, h4, h5, h6 {
     background-size: 56px 56px;
 }
 
-.glow-electric {
-    box-shadow: 0 0 40px rgba(0, 102, 255, 0.35);
+.glow-brand {
+    box-shadow: 0 0 40px rgba(106, 27, 154, 0.35);
+}
+
+/* 1px gradient section divider — apply as a background on a height-px element */
+.section-divider {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, #C2185B, #6A1B9A, #1565C0, transparent);
+    border: none;
 }
 
 code {
@@ -57,25 +72,25 @@ code {
 
 @layer base {
     :root {
-        --background: 222 47% 4%;
-        --foreground: 210 40% 98%;
-        --card: 222 40% 7%;
-        --card-foreground: 210 40% 98%;
-        --popover: 222 47% 5%;
-        --popover-foreground: 210 40% 98%;
-        --primary: 217 100% 50%;
+        --background: 0 0% 0%;
+        --foreground: 0 0% 100%;
+        --card: 0 0% 7%;
+        --card-foreground: 0 0% 100%;
+        --popover: 0 0% 0%;
+        --popover-foreground: 0 0% 100%;
+        --primary: 277 70% 36%;
         --primary-foreground: 0 0% 100%;
-        --secondary: 222 30% 12%;
-        --secondary-foreground: 210 40% 98%;
-        --muted: 222 30% 12%;
-        --muted-foreground: 215 20% 65%;
-        --accent: 217 100% 50%;
+        --secondary: 0 0% 7%;
+        --secondary-foreground: 0 0% 64%;
+        --muted: 0 0% 7%;
+        --muted-foreground: 0 0% 64%;
+        --accent: 277 70% 36%;
         --accent-foreground: 0 0% 100%;
         --destructive: 0 62.8% 45%;
         --destructive-foreground: 0 0% 98%;
-        --border: 215 28% 17%;
-        --input: 215 28% 17%;
-        --ring: 217 100% 50%;
+        --border: 0 0% 16%;
+        --input: 0 0% 16%;
+        --ring: 277 70% 36%;
         --radius: 0.75rem;
     }
 }

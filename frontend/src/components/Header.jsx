@@ -4,13 +4,12 @@ import { Menu, X } from 'lucide-react';
 import { NAV_LINKS, BRAND } from '../content';
 
 const Logo = () => (
-  <Link to="/" data-testid="logo-link" className="flex items-center gap-2.5 group">
+  <Link to="/" data-testid="logo-link" className="flex items-center group">
     <img
       src={BRAND.logo}
       alt="oVoxi"
-      className="h-9 w-9 rounded-lg object-cover transition-transform group-hover:scale-105"
+      className="h-10 w-auto transition-transform group-hover:scale-105"
     />
-    <span className="font-heading text-lg font-semibold tracking-tight text-white">oVoxi</span>
   </Link>
 );
 
@@ -30,7 +29,7 @@ export const Header = () => {
     <header
       data-testid="site-header"
       className={`fixed top-0 inset-x-0 z-50 transition-colors duration-300 ${
-        scrolled ? 'bg-ink/80 backdrop-blur-xl border-b border-white/10' : 'bg-transparent'
+        scrolled ? 'bg-black/80 backdrop-blur-xl border-b border-white/10' : 'bg-transparent'
       }`}
     >
       <div className="mx-auto max-w-7xl px-6 lg:px-8">
@@ -45,7 +44,7 @@ export const Header = () => {
                 data-testid={`nav-${l.label.toLowerCase()}`}
                 className={({ isActive }) =>
                   `text-sm font-medium transition-colors ${
-                    isActive ? 'text-white' : 'text-slate-400 hover:text-white'
+                    isActive ? 'text-gradient-brand' : 'text-slate-400 hover-text-gradient'
                   }`
                 }
               >
@@ -60,14 +59,14 @@ export const Header = () => {
               target="_blank"
               rel="noopener noreferrer"
               data-testid="header-artist-cta"
-              className="text-sm font-medium text-slate-300 hover:text-white transition-colors"
+              className="text-sm font-medium text-slate-300 hover-text-gradient transition-colors"
             >
               Join as Artist
             </a>
             <Link
               to="/contact?interest=ai_company"
               data-testid="header-partnership-cta"
-              className="rounded-full bg-electric px-5 py-2 text-sm font-semibold text-white transition-all hover:shadow-[0_0_24px_rgba(0,102,255,0.6)]"
+              className="rounded-full bg-gradient-brand px-5 py-2 text-sm font-semibold text-white transition-all hover:shadow-[0_0_24px_rgba(194,24,91,0.6)]"
             >
               Request Partnership
             </Link>
@@ -85,7 +84,7 @@ export const Header = () => {
       </div>
 
       {open && (
-        <div data-testid="mobile-menu" className="md:hidden bg-ink/95 backdrop-blur-xl border-b border-white/10">
+        <div data-testid="mobile-menu" className="md:hidden bg-black/95 backdrop-blur-xl border-b border-white/10">
           <div className="px-6 py-4 flex flex-col gap-4">
             {NAV_LINKS.map((l) => (
               <Link
@@ -93,7 +92,7 @@ export const Header = () => {
                 to={l.to}
                 onClick={closeMenu}
                 data-testid={`mobile-nav-${l.label.toLowerCase()}`}
-                className="text-base font-medium text-slate-300 hover:text-white"
+                className="text-base font-medium text-slate-300 hover-text-gradient"
               >
                 {l.label}
               </Link>
@@ -102,7 +101,7 @@ export const Header = () => {
               to="/contact?interest=ai_company"
               onClick={closeMenu}
               data-testid="mobile-partnership-cta"
-              className="mt-2 rounded-full bg-electric px-5 py-2.5 text-center text-sm font-semibold text-white"
+              className="mt-2 rounded-full bg-gradient-brand px-5 py-2.5 text-center text-sm font-semibold text-white"
             >
               Request Partnership
             </Link>

@@ -8,9 +8,12 @@ module.exports = {
   theme: {
         extend: {
                 fontFamily: {
-                        heading: ['Outfit', 'system-ui', 'sans-serif'],
-                        sans: ['Manrope', 'system-ui', 'sans-serif'],
+                        heading: ['Space Grotesk', 'system-ui', 'sans-serif'],
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
                         mono: ['Kode Mono', 'monospace'],
+                },
+                backgroundImage: {
+                        'gradient-brand': 'linear-gradient(90deg, #C2185B 0%, #6A1B9A 50%, #1565C0 100%)',
                 },
                 borderRadius: {
                         lg: 'var(--radius)',
@@ -18,12 +21,11 @@ module.exports = {
                         sm: 'calc(var(--radius) - 4px)'
                 },
                 colors: {
-                        ink: '#030712',
-                        'ink-2': '#0B1120',
-                        electric: '#0066FF',
-                        'electric-light': '#3B82F6',
-                        cyan: '#00E5FF',
-                        'neon-blue': '#0066FF',
+                        ink: '#000000',
+                        'ink-2': '#121212',
+                        electric: '#6A1B9A',
+                        'electric-light': '#C2185B',
+                        cyan: '#C2185B',
                         background: 'hsl(var(--background))',
                         foreground: 'hsl(var(--foreground))',
                         card: {

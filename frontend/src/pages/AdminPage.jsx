@@ -122,7 +122,7 @@ const AdminPage = () => {
               <button
                 type="submit"
                 disabled={loading || !password}
-                className="inline-flex items-center gap-2 rounded-full bg-electric px-6 py-2.5 text-sm font-semibold text-white transition-all hover:shadow-[0_0_20px_rgba(0,102,255,0.5)] disabled:opacity-60"
+                className="inline-flex items-center gap-2 rounded-full bg-gradient-brand px-6 py-2.5 text-sm font-semibold text-white transition-all hover:shadow-[0_0_20px_rgba(194,24,91,0.5)] disabled:opacity-60"
               >
                 {loading && <Loader2 size={14} className="animate-spin" />}
                 {loading ? 'Loading…' : 'View Panel'}
@@ -147,7 +147,7 @@ const AdminPage = () => {
                   onClick={() => setTab(key)}
                   className={`rounded-full px-5 py-2 text-sm font-medium transition-all ${
                     tab === key
-                      ? 'bg-electric text-white shadow-[0_0_16px_rgba(0,102,255,0.4)]'
+                      ? 'bg-gradient-brand text-white shadow-[0_0_16px_rgba(194,24,91,0.4)]'
                       : 'text-slate-400 hover:text-white'
                   }`}
                 >
