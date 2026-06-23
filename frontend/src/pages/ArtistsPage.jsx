@@ -4,7 +4,6 @@ import { PageHero } from '../components/PageHero';
 import { Reveal, SectionLabel } from '../components/Reveal';
 import { PrimaryCTA } from '../components/CtaButtons';
 import { ARTIST_BENEFITS } from '../content';
-import ParticleHero from '../components/ParticleHero';
 
 const BENEFITS_CARDS = [
   { num: '01', title: 'PRO Registration', description: 'Handled for you at no cost. Your rights, properly registered from day one.' },
@@ -93,7 +92,12 @@ const PILLARS = [
 
 const ArtistsPage = () => (
   <div data-testid="artists-page">
-    <ParticleHero />
+    <PageHero
+      testid="artists-hero"
+      label="For Emerging Artists"
+      title="Turn Your Music Into Licensing Revenue."
+      subtitle="oVoxi is the only catalog company built exclusively for emerging artists. We prepare your music for AI platforms — and pay you when it licenses."
+    />
 
     <section className="bg-ink pt-10 pb-20 lg:pt-14 lg:pb-28">
       <div className="mx-auto max-w-3xl px-6 text-center lg:px-8 mb-12">
