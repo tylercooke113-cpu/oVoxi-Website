@@ -2,7 +2,7 @@ import React from 'react';
 import { motion } from 'framer-motion';
 
 // Compact hero used at the top of inner pages.
-export const PageHero = ({ label, title, subtitle, testid }) => (
+export const PageHero = ({ label, title, subtitle, testid, centered }) => (
   <section
     data-testid={testid}
     className="relative overflow-hidden border-b border-white/10 bg-ink pt-36 pb-16 lg:pt-44 lg:pb-24"
@@ -14,6 +14,7 @@ export const PageHero = ({ label, title, subtitle, testid }) => (
         initial={{ opacity: 0, y: 18 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6 }}
+        className={centered ? 'text-center' : undefined}
       >
         {label && (
           <span className="text-xs font-bold uppercase tracking-[0.25em] text-electric">{label}</span>
@@ -22,7 +23,7 @@ export const PageHero = ({ label, title, subtitle, testid }) => (
           {title}
         </h1>
         {subtitle && (
-          <p className="mt-6 max-w-2xl text-base leading-relaxed text-slate-400 sm:text-lg">
+          <p className={`mt-6 max-w-2xl text-base leading-relaxed text-slate-400 sm:text-lg${centered ? ' mx-auto' : ''}`}>
             {subtitle}
           </p>
         )}

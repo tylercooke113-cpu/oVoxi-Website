@@ -97,6 +97,7 @@ const ArtistsPage = () => (
       label="For Emerging Artists"
       title="Turn Your Music Into Licensing Revenue."
       subtitle="oVoxi is the only catalog company built exclusively for emerging artists. We prepare your music for AI platforms — and pay you when it licenses."
+      centered={true}
     />
 
     <section className="bg-ink pt-10 pb-20 lg:pt-14 lg:pb-28">
