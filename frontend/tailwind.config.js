@@ -8,8 +8,8 @@ module.exports = {
   theme: {
         extend: {
                 fontFamily: {
-                        heading: ['Space Grotesk', 'system-ui', 'sans-serif'],
-                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                        heading: ['Syne', 'system-ui', 'sans-serif'],
+                        sans: ['DM Sans', 'system-ui', 'sans-serif'],
                         mono: ['Kode Mono', 'monospace'],
                 },
                 backgroundImage: {

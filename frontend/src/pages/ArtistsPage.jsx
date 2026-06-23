@@ -1,9 +1,88 @@
-import React from 'react';
-import { Check, Music2, Sparkles, FileCheck2, Layers } from 'lucide-react';
+import React, { useState } from 'react';
+import { Music2, Sparkles, FileCheck2, Layers } from 'lucide-react';
 import { PageHero } from '../components/PageHero';
 import { Reveal, SectionLabel } from '../components/Reveal';
 import { PrimaryCTA } from '../components/CtaButtons';
 import { ARTIST_BENEFITS } from '../content';
+import ParticleHero from '../components/ParticleHero';
+
+const BENEFITS_CARDS = [
+  { num: '01', title: 'PRO Registration', description: 'Handled for you at no cost. Your rights, properly registered from day one.' },
+  { num: '02', title: 'Professional Mastering', description: 'Delivered via LANDR. Industry-standard quality that platforms require.' },
+  { num: '03', title: '4-Stem Separation', description: 'Vocals, drums, bass, melody — delivered to AI platforms in the format they need.' },
+  { num: '04', title: 'Chain-of-Title', description: 'Fingerprinting and documentation that makes your catalog enterprise-grade.' },
+  { num: '05', title: 'Licensing Revenue', description: 'Every time your music is used. Paid directly. No label cut.' },
+  { num: '06', title: 'No Upfront Cost', description: 'We only win when you win. Zero cost to apply or onboard.' },
+];
+
+function BenefitCard({ num, title, description }) {
+  const [hovered, setHovered] = useState(false);
+  return (
+    <div
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        position: 'relative',
+        backgroundColor: hovered ? '#060606' : '#000000',
+        padding: '26px 22px',
+        transition: 'background 0.2s',
+        overflow: 'hidden',
+      }}
+    >
+      <div
+        style={{
+          position: 'absolute',
+          left: 0,
+          top: 0,
+          bottom: 0,
+          width: 2,
+          background: 'linear-gradient(180deg, #C2185B, #6A1B9A)',
+          opacity: hovered ? 1 : 0,
+          transition: 'opacity 0.3s',
+        }}
+      />
+      <span
+        style={{
+          display: 'block',
+          fontFamily: "'Syne', system-ui, sans-serif",
+          fontWeight: 800,
+          fontSize: '11px',
+          letterSpacing: '0.15em',
+          background: 'linear-gradient(90deg, #C2185B, #6A1B9A)',
+          WebkitBackgroundClip: 'text',
+          WebkitTextFillColor: 'transparent',
+          backgroundClip: 'text',
+          marginBottom: '10px',
+        }}
+      >
+        {num}
+      </span>
+      <h3
+        style={{
+          fontFamily: "'Syne', system-ui, sans-serif",
+          fontWeight: 700,
+          fontSize: '15px',
+          color: '#ffffff',
+          margin: '0 0 6px',
+        }}
+      >
+        {title}
+      </h3>
+      <p
+        style={{
+          fontFamily: "'DM Sans', system-ui, sans-serif",
+          fontWeight: 300,
+          fontSize: '12px',
+          color: '#555',
+          lineHeight: 1.6,
+          margin: 0,
+        }}
+      >
+        {description}
+      </p>
+    </div>
+  );
+}
 
 const PILLARS = [
   { icon: FileCheck2, title: 'PRO Registration', body: 'Every artist registered with ASCAP, BMI, or SESAC — handled entirely by us. Automated at onboarding, zero friction.' },
@@ -14,36 +93,33 @@ const PILLARS = [
 
 const ArtistsPage = () => (
   <div data-testid="artists-page">
-    <PageHero
-      testid="artists-hero"
-      label="For Artists"
-      title="Turn Your Music Into Licensing Revenue"
-      subtitle="oVoxi is the only catalog company built exclusively for emerging artists. We prepare your music for AI platforms and enterprise clients — and pay you when it licenses."
-    />
+    <ParticleHero />
 
     <section className="bg-ink py-20 lg:py-28">
-      <div className="mx-auto max-w-3xl px-6 text-center lg:px-8">
-          <Reveal>
-            <SectionLabel>What You Get</SectionLabel>
-            <h2 className="font-heading text-3xl font-semibold tracking-tight text-white sm:text-4xl">
-              Built for the artist, end to end.
-            </h2>
-            <ul className="mt-8 mx-auto w-fit space-y-4">
-              {ARTIST_BENEFITS.map((b) => (
-                <li key={b} className="flex items-start gap-3 text-base text-slate-300">
-                  <span className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-electric/15 text-cyan">
-                    <Check size={13} strokeWidth={3} />
-                  </span>
-                  {b}
-                </li>
-              ))}
-            </ul>
-            <div className="mt-10">
-              <PrimaryCTA to="https://airtable.com/appmcBnXvP82ydQCz/pag6udQiv3QTWYG3m/form" testid="artists-page-apply-cta">
-                Apply to Join
-              </PrimaryCTA>
-            </div>
-          </Reveal>
+      <div className="mx-auto max-w-3xl px-6 text-center lg:px-8 mb-12">
+        <Reveal>
+          <SectionLabel>What You Get</SectionLabel>
+          <h2 className="font-heading text-3xl font-semibold tracking-tight text-white sm:text-4xl">
+            Built for the artist, end to end.
+          </h2>
+        </Reveal>
+      </div>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(3, 1fr)',
+          gap: '1px',
+          backgroundColor: '#1a1a1a',
+        }}
+      >
+        {BENEFITS_CARDS.map((b) => (
+          <BenefitCard key={b.num} {...b} />
+        ))}
+      </div>
+      <div className="mt-10 text-center">
+        <PrimaryCTA to="https://airtable.com/appmcBnXvP82ydQCz/pag6udQiv3QTWYG3m/form" testid="artists-page-apply-cta">
+          Apply to Join
+        </PrimaryCTA>
       </div>
     </section>
 
