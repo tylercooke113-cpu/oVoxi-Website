@@ -95,7 +95,7 @@ const ArtistsPage = () => (
   <div data-testid="artists-page">
     <ParticleHero />
 
-    <section className="bg-ink py-20 lg:py-28">
+    <section className="bg-ink pt-10 pb-20 lg:pt-14 lg:pb-28">
       <div className="mx-auto max-w-3xl px-6 text-center lg:px-8 mb-12">
         <Reveal>
           <SectionLabel>What You Get</SectionLabel>

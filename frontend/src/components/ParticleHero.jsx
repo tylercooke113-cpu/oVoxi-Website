@@ -38,6 +38,7 @@ export default function ParticleHero() {
     resize();
     const ro = new ResizeObserver(resize);
     ro.observe(canvas);
+    console.log('ParticleHero outer div height:', canvasRef.current?.parentElement?.offsetHeight);
 
     const draw = () => {
       const { width, height } = canvas;
