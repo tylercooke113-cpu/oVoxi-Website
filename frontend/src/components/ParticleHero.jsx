@@ -107,7 +107,6 @@ export default function ParticleHero() {
       style={{
         position: 'relative',
         backgroundColor: '#000000',
-        minHeight: '280px',
         overflow: 'hidden',
         width: '100%',
       }}

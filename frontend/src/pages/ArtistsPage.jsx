@@ -61,7 +61,7 @@ function BenefitCard({ num, title, description }) {
         style={{
           fontFamily: "'Syne', system-ui, sans-serif",
           fontWeight: 700,
-          fontSize: '15px',
+          fontSize: '17px',
           color: '#ffffff',
           margin: '0 0 6px',
         }}
@@ -72,8 +72,8 @@ function BenefitCard({ num, title, description }) {
         style={{
           fontFamily: "'DM Sans', system-ui, sans-serif",
           fontWeight: 300,
-          fontSize: '12px',
-          color: '#555',
+          fontSize: '13px',
+          color: '#666',
           lineHeight: 1.6,
           margin: 0,
         }}
@@ -123,7 +123,7 @@ const ArtistsPage = () => (
       </div>
     </section>
 
-    <section className="border-t border-white/10 bg-ink-2 py-20 lg:py-28">
+    <section className="border-t border-white/10 bg-ink py-20 lg:py-28">
       <div className="mx-auto max-w-7xl px-6 lg:px-8">
         <Reveal className="max-w-3xl">
           <SectionLabel>How We Build The Catalog</SectionLabel>

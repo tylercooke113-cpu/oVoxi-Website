@@ -4,7 +4,7 @@ import { PrimaryCTA } from './CtaButtons';
 import { AI_COPY, ARTIST_COPY } from '../content';
 
 export const AudienceSection = () => (
-  <section data-testid="audience-section" className="relative border-y border-white/10 bg-ink-2 py-24 lg:py-32">
+  <section data-testid="audience-section" className="relative border-y border-white/10 bg-ink py-24 lg:py-32">
     <div className="mx-auto max-w-7xl px-6 lg:px-8">
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Reveal>

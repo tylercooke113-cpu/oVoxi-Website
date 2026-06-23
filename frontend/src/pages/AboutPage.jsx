@@ -19,7 +19,7 @@ const AboutPage = () => (
       subtitle="oVoxi is building the world's first emerging-first, fully licensed, AI-ready music catalog — the provenance and licensing layer the generative music economy is missing."
     />
 
-    <section className="border-y border-white/10 bg-ink-2 py-20 lg:py-28">
+    <section className="border-y border-white/10 bg-ink py-20 lg:py-28">
       <div className="mx-auto max-w-7xl px-6 lg:px-8">
         <Reveal>
           <SectionLabel>What We Stand For</SectionLabel>

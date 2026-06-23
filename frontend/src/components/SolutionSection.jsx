@@ -4,7 +4,7 @@ import { Reveal, SectionLabel } from './Reveal';
 import { PROCESS } from '../content';
 
 export const SolutionSection = () => (
-  <section data-testid="solution-section" className="relative border-y border-white/10 bg-ink-2 py-24 lg:py-32">
+  <section data-testid="solution-section" className="relative border-y border-white/10 bg-ink py-24 lg:py-32">
     <div className="absolute inset-0 grid-bg opacity-30" />
     <div className="relative mx-auto max-w-7xl px-6 lg:px-8">
       <Reveal className="max-w-3xl">
