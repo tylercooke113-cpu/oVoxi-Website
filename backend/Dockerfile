@@ -7,7 +7,7 @@ RUN apt-get update && apt-get install -y \
     xz-utils \
     libsndfile1 \
     ffmpeg \
-    libtbb-dev \
+    libtbb2 \
     && rm -rf /var/lib/apt/lists/*
 
 RUN curl -L https://github.com/ai-mastering/phaselimiter/releases/download/v0.2.0/release.tar.xz \
