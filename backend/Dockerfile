@@ -7,8 +7,10 @@ RUN apt-get update && apt-get install -y \
     xz-utils \
     libsndfile1 \
     ffmpeg \
-    libtbb2 \
+    libtbb12 \
     && rm -rf /var/lib/apt/lists/*
+
+RUN ln -s /usr/lib/x86_64-linux-gnu/libtbb.so.12 /usr/lib/x86_64-linux-gnu/libtbb.so.2
 
 RUN curl -L https://github.com/ai-mastering/phaselimiter/releases/download/v0.2.0/release.tar.xz \
     -o /tmp/release.tar.xz && \
