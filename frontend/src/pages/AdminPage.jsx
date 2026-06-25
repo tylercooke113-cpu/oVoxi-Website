@@ -15,6 +15,7 @@ const StatusBadge = ({ status }) => {
     pending:    { icon: Clock,        color: 'text-slate-400',  label: 'Pending' },
     uploaded:   { icon: Clock,        color: 'text-blue-400',   label: 'Uploaded' },
     processing: { icon: Zap,          color: 'text-yellow-400', label: 'Processing' },
+    mastering:  { icon: Zap,          color: 'text-purple-400', label: 'Mastering' },
     completed:  { icon: CheckCircle2, color: 'text-green-400',  label: 'Completed' },
     failed:     { icon: AlertCircle,  color: 'text-red-400',    label: 'Failed' },
   };
@@ -209,6 +210,17 @@ const AdminPage = () => {
                               )}
                             </td>
                             <td className="px-4 py-3">
+                              {s.mastered_url && (
+                                <a
+                                  href={s.mastered_url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 rounded-md border border-purple-400/30 bg-purple-400/[0.06] px-2 py-0.5 text-xs font-medium text-purple-400 whitespace-nowrap hover:bg-purple-400/[0.12] transition-colors mb-1"
+                                >
+                                  Mastered WAV
+                                  <ExternalLink size={10} />
+                                </a>
+                              )}
                               {s.status === 'completed' && Object.keys(s.stem_urls ?? {}).length > 0 ? (
                                 <div className="flex flex-col gap-1">
                                   {Object.entries(s.stem_urls).map(([stem, url]) => (

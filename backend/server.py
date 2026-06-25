@@ -162,6 +162,55 @@ async def _r2_put(key: str, data: bytes, content_type: str) -> None:
     await asyncio.to_thread(_blocking)
 
 
+async def _master_track(submission_id: str, r2_key: str) -> str:
+    """
+    Downloads raw track from R2, masters it with phaselimiter,
+    uploads mastered WAV to R2, returns the mastered R2 key.
+    """
+    import tempfile, os, subprocess
+
+    # Derive mastered key from original key
+    # original: catalog/{artist}/{track}/original/filename.wav
+    # mastered: catalog/{artist}/{track}/mastered/filename.wav
+    mastered_r2_key = r2_key.replace("/original/", "/mastered/")
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        raw_path = os.path.join(tmpdir, "input.wav")
+        mastered_path = os.path.join(tmpdir, "mastered.wav")
+
+        # 1. Download raw file from R2
+        audio_data = await _r2_get(r2_key)
+        with open(raw_path, "wb") as f:
+            f.write(audio_data)
+
+        # 2. Run phaselimiter
+        result = subprocess.run(
+            [
+                "phase_limiter",
+                "--input", raw_path,
+                "--output", mastered_path,
+                "--mastering", "true",
+                "--mastering_mode", "mastering5",
+                "--sound_quality2_cache",
+                "/etc/phaselimiter/resource/sound_quality2_cache"
+            ],
+            capture_output=True,
+            text=True,
+            timeout=300
+        )
+
+        if result.returncode != 0:
+            raise RuntimeError(f"phaselimiter failed: {result.stderr}")
+
+        # 3. Read mastered file and upload to R2
+        with open(mastered_path, "rb") as f:
+            mastered_data = f.read()
+
+        await _r2_put(mastered_r2_key, mastered_data, "audio/wav")
+
+    return mastered_r2_key
+
+
 async def _process_stems(submission_id: str, r2_key: str, artist_name: str, track_name: str) -> None:
     try:
         await db.track_submissions.update_one(
@@ -169,7 +218,18 @@ async def _process_stems(submission_id: str, r2_key: str, artist_name: str, trac
             {"$set": {"status": "processing"}},
         )
 
-        audio_data = await _r2_get(r2_key)
+        # Master the track first
+        await db.track_submissions.update_one(
+            {"id": submission_id},
+            {"$set": {"status": "mastering"}},
+        )
+        mastered_r2_key = await _master_track(submission_id, r2_key)
+        await db.track_submissions.update_one(
+            {"id": submission_id},
+            {"$set": {"status": "processing", "mastered_r2_key": mastered_r2_key}},
+        )
+
+        audio_data = await _r2_get(mastered_r2_key)
         filename = Path(r2_key).name
         lalal_file_id = await _lalal_upload(audio_data, filename)
         logger.info("Lalal.ai upload complete, file_id=%s submission=%s", lalal_file_id, submission_id)
@@ -596,6 +656,12 @@ async def get_submissions(x_admin_password: Optional[str] = Header(default=None)
             except Exception as exc:
                 logger.warning("Could not generate stem presigned URLs: %s", exc)
                 s["stem_urls"] = {}
+        if s.get("mastered_r2_key"):
+            try:
+                s["mastered_url"] = await asyncio.to_thread(_presign_get, s["mastered_r2_key"])
+            except Exception as exc:
+                logger.warning("Could not generate mastered presigned URL: %s", exc)
+                s["mastered_url"] = None
     return subs
 
 
