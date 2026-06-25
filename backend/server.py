@@ -164,15 +164,16 @@ async def _r2_put(key: str, data: bytes, content_type: str) -> None:
 
 async def _master_track(submission_id: str, r2_key: str) -> str:
     """
-    Downloads raw track from R2, masters it with phaselimiter,
+    Downloads raw track from R2, masters it with Matchering,
     uploads mastered WAV to R2, returns the mastered R2 key.
     """
-    import tempfile, os, subprocess
+    import tempfile, os
+    import matchering as mg
 
-    # Derive mastered key from original key
-    # original: catalog/{artist}/{track}/original/filename.wav
-    # mastered: catalog/{artist}/{track}/mastered/filename.wav
     mastered_r2_key = r2_key.replace("/original/", "/mastered/")
+
+    # Reference track bundled in the repo
+    reference_path = os.path.join(os.path.dirname(__file__), "reference", "default.wav")
 
     with tempfile.TemporaryDirectory() as tmpdir:
         raw_path = os.path.join(tmpdir, "input.wav")
@@ -183,24 +184,15 @@ async def _master_track(submission_id: str, r2_key: str) -> str:
         with open(raw_path, "wb") as f:
             f.write(audio_data)
 
-        # 2. Run phaselimiter
-        result = subprocess.run(
-            [
-                "phase_limiter",
-                "--input", raw_path,
-                "--output", mastered_path,
-                "--mastering", "true",
-                "--mastering_mode", "mastering5",
-                "--sound_quality2_cache",
-                "/etc/phaselimiter/resource/sound_quality2_cache"
-            ],
-            capture_output=True,
-            text=True,
-            timeout=300
-        )
+        # 2. Run Matchering in a thread (CPU-bound)
+        def _run_matchering():
+            mg.process(
+                target=raw_path,
+                reference=reference_path,
+                results=[mg.pcm24(mastered_path)],
+            )
 
-        if result.returncode != 0:
-            raise RuntimeError(f"phaselimiter failed: {result.stderr}")
+        await asyncio.to_thread(_run_matchering)
 
         # 3. Read mastered file and upload to R2
         with open(mastered_path, "rb") as f:
