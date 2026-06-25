@@ -167,7 +167,7 @@ const AdminPage = () => {
                     <table className="w-full text-left text-sm">
                       <thead>
                         <tr className="border-b border-white/10 bg-white/[0.02]">
-                          {['Artist', 'Track', 'Genre', 'Date', 'Status', 'Stems'].map((h) => (
+                          {['Artist', 'Track', 'Genre', 'Date', 'Status', 'Mastered', 'Stems'].map((h) => (
                             <th
                               key={h}
                               className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-400 whitespace-nowrap"
@@ -210,17 +210,21 @@ const AdminPage = () => {
                               )}
                             </td>
                             <td className="px-4 py-3">
-                              {s.mastered_url && (
+                              {s.mastered_url ? (
                                 <a
                                   href={s.mastered_url}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="inline-flex items-center gap-1 rounded-md border border-purple-400/30 bg-purple-400/[0.06] px-2 py-0.5 text-xs font-medium text-purple-400 whitespace-nowrap hover:bg-purple-400/[0.12] transition-colors mb-1"
+                                  className="inline-flex items-center gap-1 rounded-md border border-purple-400/30 bg-purple-400/[0.06] px-2 py-0.5 text-xs font-medium text-purple-400 whitespace-nowrap hover:bg-purple-400/[0.12] transition-colors"
                                 >
                                   Mastered WAV
                                   <ExternalLink size={10} />
                                 </a>
+                              ) : (
+                                <span className="text-slate-600">—</span>
                               )}
+                            </td>
+                            <td className="px-4 py-3">
                               {s.status === 'completed' && Object.keys(s.stem_urls ?? {}).length > 0 ? (
                                 <div className="flex flex-col gap-1">
                                   {Object.entries(s.stem_urls).map(([stem, url]) => (
