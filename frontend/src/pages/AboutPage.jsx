@@ -12,8 +12,8 @@ const PILLARS = [
 
 const AboutPage = () => (
   <div data-testid="about-page">
-    <div className="flex justify-center pt-28 pb-4 bg-ink">
-      <img src="/logo.png" alt="oVoxi" className="h-16 w-auto opacity-90" />
+    <div className="flex justify-center pt-28 pb-4 bg-ink px-6">
+      <img src="/logo.png" alt="oVoxi" className="w-full max-w-2xl h-auto opacity-90" />
     </div>
     <PageHero
       testid="about-hero"

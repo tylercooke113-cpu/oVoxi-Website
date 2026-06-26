@@ -137,13 +137,13 @@ export const HeroCanvas = () => {
       initNodes();
     };
     window.addEventListener('resize', onResize);
-    canvas.addEventListener('mousemove', onMouseMove);
-    canvas.addEventListener('mouseleave', onMouseLeave);
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseleave', onMouseLeave);
     return () => {
       cancelAnimationFrame(rafRef.current);
       window.removeEventListener('resize', onResize);
-      canvas.removeEventListener('mousemove', onMouseMove);
-      canvas.removeEventListener('mouseleave', onMouseLeave);
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseleave', onMouseLeave);
     };
   }, []);
 
