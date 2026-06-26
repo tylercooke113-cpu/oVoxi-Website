@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, NavLink } from 'react-router-dom';
-import { Menu, X } from 'lucide-react';
-import { NAV_LINKS, BRAND } from '../content';
+import { Menu, X, ChevronDown } from 'lucide-react';
+import { NAV_LINKS } from '../content';
 
 const Logo = () => (
   <Link to="/" data-testid="logo-link" className="flex items-center group">
@@ -16,11 +16,20 @@ const Logo = () => (
 export const Header = () => {
   const [open, setOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 16);
     window.addEventListener('scroll', onScroll, { passive: true });
     return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+
+  useEffect(() => {
+    const handler = (e) => {
+      if (!e.target.closest('[data-dropdown]')) setDropdownOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
   }, []);
 
   const closeMenu = () => setOpen(false);
@@ -34,24 +43,36 @@ export const Header = () => {
     >
       <div className="mx-auto max-w-7xl px-6 lg:px-8">
         <div className="flex h-16 items-center justify-between">
-          <Logo />
 
-          <nav className="hidden md:flex items-center gap-8">
-            {NAV_LINKS.map((l) => (
-              <NavLink
-                key={l.to}
-                to={l.to}
-                data-testid={`nav-${l.label.toLowerCase()}`}
-                className={({ isActive }) =>
-                  `text-sm font-medium transition-colors ${
-                    isActive ? 'text-gradient-brand' : 'text-slate-400 hover-text-gradient'
-                  }`
-                }
+          <div className="flex items-center gap-3">
+            <Logo />
+            <div className="relative" data-dropdown>
+              <button
+                onClick={() => setDropdownOpen((v) => !v)}
+                className="flex items-center gap-1.5 text-sm font-medium text-slate-400 hover:text-white transition-colors"
               >
-                {l.label}
-              </NavLink>
-            ))}
-          </nav>
+                <ChevronDown
+                  size={16}
+                  className={`transition-transform duration-200 ${dropdownOpen ? 'rotate-180' : ''}`}
+                />
+              </button>
+              {dropdownOpen && (
+                <div className="absolute top-full left-0 mt-2 w-48 rounded-xl border border-white/10 bg-black/95 backdrop-blur-xl py-2 shadow-xl">
+                  {NAV_LINKS.map((l) => (
+                    <NavLink
+                      key={l.to}
+                      to={l.to}
+                      data-testid={`nav-${l.label.toLowerCase()}`}
+                      onClick={() => setDropdownOpen(false)}
+                      className="block px-4 py-2.5 text-sm text-slate-300 hover:text-white hover-text-gradient transition-colors"
+                    >
+                      {l.label}
+                    </NavLink>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
 
           <div className="hidden md:flex items-center gap-3">
             <a
