@@ -49,8 +49,8 @@ export const HeroCanvas = () => {
           mouse.x, mouse.y, 0,
           mouse.x, mouse.y, 180
         );
-        cursorGlow.addColorStop(0, 'rgba(180, 79, 212, 0.12)');
-        cursorGlow.addColorStop(0.5, 'rgba(107, 127, 212, 0.06)');
+        cursorGlow.addColorStop(0, 'rgba(180, 79, 212, 0.6)');
+        cursorGlow.addColorStop(0.5, 'rgba(107, 127, 212, 0.3)');
         cursorGlow.addColorStop(1, 'rgba(79, 195, 247, 0)');
         ctx.fillStyle = cursorGlow;
         ctx.fillRect(0, 0, width, height);
@@ -121,6 +121,7 @@ export const HeroCanvas = () => {
       const rect = canvas.getBoundingClientRect();
       mouse.x = e.clientX - rect.left;
       mouse.y = e.clientY - rect.top;
+      console.log('mouse', mouse.x, mouse.y);
     };
 
     const onMouseLeave = () => {

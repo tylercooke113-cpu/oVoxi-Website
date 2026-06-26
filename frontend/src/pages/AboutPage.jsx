@@ -12,11 +12,12 @@ const PILLARS = [
 
 const AboutPage = () => (
   <div data-testid="about-page">
-    <div className="flex justify-center pt-28 pb-4 bg-ink px-6">
+    <div className="flex justify-center pt-24 pb-0 bg-ink px-6">
       <img src="/logo.png" alt="oVoxi" className="w-full max-w-2xl h-auto opacity-90" />
     </div>
     <PageHero
       testid="about-hero"
+      centered={true}
       title="A Licensed Music Infrastructure Company for the AI Era"
       subtitle="oVoxi is building the world's first emerging-first, fully licensed, AI-ready music catalog — the provenance and licensing layer the generative music economy is missing."
     />
