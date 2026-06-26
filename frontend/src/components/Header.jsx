@@ -34,53 +34,52 @@ export const Header = () => {
     >
       <div className="mx-auto max-w-7xl px-6 lg:px-8">
         <div className="flex h-16 items-center justify-between">
-          <div className="flex-1 flex justify-start items-center">
-            <nav className="hidden md:flex items-center gap-8">
-              {NAV_LINKS.map((l) => (
-                <NavLink
-                  key={l.to}
-                  to={l.to}
-                  data-testid={`nav-${l.label.toLowerCase()}`}
-                  className={({ isActive }) =>
-                    `text-sm font-medium transition-colors ${
-                      isActive ? 'text-gradient-brand' : 'text-slate-400 hover-text-gradient'
-                    }`
-                  }
-                >
-                  {l.label}
-                </NavLink>
-              ))}
-            </nav>
-            <button
-              data-testid="mobile-menu-toggle"
-              className="md:hidden text-white"
-              onClick={() => setOpen((v) => !v)}
-              aria-label="Toggle menu"
-            >
-              {open ? <X size={24} /> : <Menu size={24} />}
-            </button>
-          </div>
-
           <Logo />
 
-          <div className="flex-1 flex justify-end items-center gap-3">
+          <nav className="hidden md:flex items-center gap-8">
+            {NAV_LINKS.map((l) => (
+              <NavLink
+                key={l.to}
+                to={l.to}
+                data-testid={`nav-${l.label.toLowerCase()}`}
+                className={({ isActive }) =>
+                  `text-sm font-medium transition-colors ${
+                    isActive ? 'text-gradient-brand' : 'text-slate-400 hover-text-gradient'
+                  }`
+                }
+              >
+                {l.label}
+              </NavLink>
+            ))}
+          </nav>
+
+          <div className="hidden md:flex items-center gap-3">
             <a
               href="https://airtable.com/appmcBnXvP82ydQCz/pag6udQiv3QTWYG3m/form"
               target="_blank"
               rel="noopener noreferrer"
               data-testid="header-artist-cta"
-              className="hidden md:block text-sm font-medium text-slate-300 hover-text-gradient transition-colors"
+              className="text-sm font-medium text-slate-300 hover-text-gradient transition-colors"
             >
               Join as Artist
             </a>
             <Link
               to="/contact?interest=ai_company"
               data-testid="header-partnership-cta"
-              className="hidden md:block rounded-full bg-gradient-brand px-5 py-2 text-sm font-semibold text-white transition-all hover:shadow-[0_0_24px_rgba(180,79,212,0.6)]"
+              className="rounded-full bg-gradient-brand px-5 py-2 text-sm font-semibold text-white transition-all hover:shadow-[0_0_24px_rgba(180,79,212,0.6)]"
             >
               Request Partnership
             </Link>
           </div>
+
+          <button
+            data-testid="mobile-menu-toggle"
+            className="md:hidden text-white"
+            onClick={() => setOpen((v) => !v)}
+            aria-label="Toggle menu"
+          >
+            {open ? <X size={24} /> : <Menu size={24} />}
+          </button>
         </div>
       </div>
 

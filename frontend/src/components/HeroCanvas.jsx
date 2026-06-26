@@ -44,7 +44,7 @@ export const HeroCanvas = () => {
       t += 0.012;
       ctx.clearRect(0, 0, width, height);
 
-      if (mouse.x && mouse.y) {
+      if (mouse.x !== null && mouse.y !== null) {
         const cursorGlow = ctx.createRadialGradient(
           mouse.x, mouse.y, 0,
           mouse.x, mouse.y, 180
