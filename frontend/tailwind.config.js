@@ -13,7 +13,7 @@ module.exports = {
                         mono: ['Kode Mono', 'monospace'],
                 },
                 backgroundImage: {
-                        'gradient-brand': 'linear-gradient(90deg, #C2185B 0%, #6A1B9A 50%, #1565C0 100%)',
+                        'gradient-brand': 'linear-gradient(90deg, #B44FD4 0%, #7B5EA7 50%, #6B7FD4 100%)',
                 },
                 borderRadius: {
                         lg: 'var(--radius)',
@@ -22,10 +22,10 @@ module.exports = {
                 },
                 colors: {
                         ink: '#000000',
-                        'ink-2': '#121212',
-                        electric: '#6A1B9A',
-                        'electric-light': '#C2185B',
-                        cyan: '#C2185B',
+                        'ink-2': '#111111',
+                        electric: '#9B59D4',
+                        'electric-light': '#B44FD4',
+                        cyan: '#4FC3F7',
                         background: 'hsl(var(--background))',
                         foreground: 'hsl(var(--foreground))',
                         card: {

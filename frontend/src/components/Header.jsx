@@ -6,9 +6,9 @@ import { NAV_LINKS, BRAND } from '../content';
 const Logo = () => (
   <Link to="/" data-testid="logo-link" className="flex items-center group">
     <img
-      src={BRAND.logo}
+      src="/logo.png"
       alt="oVoxi"
-      className="h-10 w-auto transition-transform group-hover:scale-105"
+      className="h-10 w-auto transition-opacity group-hover:opacity-80"
     />
   </Link>
 );

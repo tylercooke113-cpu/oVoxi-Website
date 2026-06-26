@@ -6,10 +6,12 @@ import React, { useRef, useEffect } from 'react';
 export const HeroCanvas = () => {
   const canvasRef = useRef(null);
   const rafRef = useRef(null);
+  const mouseRef = useRef({ x: null, y: null });
 
   useEffect(() => {
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
+    const mouse = mouseRef.current;
     let width = 0;
     let height = 0;
     let dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -42,6 +44,18 @@ export const HeroCanvas = () => {
       t += 0.012;
       ctx.clearRect(0, 0, width, height);
 
+      if (mouse.x && mouse.y) {
+        const cursorGlow = ctx.createRadialGradient(
+          mouse.x, mouse.y, 0,
+          mouse.x, mouse.y, 180
+        );
+        cursorGlow.addColorStop(0, 'rgba(180, 79, 212, 0.12)');
+        cursorGlow.addColorStop(0.5, 'rgba(107, 127, 212, 0.06)');
+        cursorGlow.addColorStop(1, 'rgba(79, 195, 247, 0)');
+        ctx.fillStyle = cursorGlow;
+        ctx.fillRect(0, 0, width, height);
+      }
+
       // Links
       for (let i = 0; i < nodes.length; i++) {
         const a = nodes[i];
@@ -57,7 +71,7 @@ export const HeroCanvas = () => {
           const dist = Math.hypot(dx, dy);
           if (dist < LINK_DIST) {
             const op = (1 - dist / LINK_DIST) * 0.35;
-            ctx.strokeStyle = `rgba(106, 27, 154, ${op})`;
+            ctx.strokeStyle = `rgba(155, 89, 212, ${op})`;
             ctx.lineWidth = 1;
             ctx.beginPath();
             ctx.moveTo(a.x, a.y);
@@ -71,9 +85,9 @@ export const HeroCanvas = () => {
       for (const n of nodes) {
         ctx.beginPath();
         ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(194, 24, 91, 0.9)';
+        ctx.fillStyle = 'rgba(180, 79, 212, 0.9)';
         ctx.shadowBlur = 8;
-        ctx.shadowColor = 'rgba(106, 27, 154, 0.8)';
+        ctx.shadowColor = 'rgba(155, 89, 212, 0.8)';
         ctx.fill();
         ctx.shadowBlur = 0;
       }
@@ -81,8 +95,8 @@ export const HeroCanvas = () => {
       // Waveform along lower portion
       const baseY = height * 0.72;
       const layers = [
-        { amp: 26, speed: 1.0, color: 'rgba(194, 24, 91, 0.55)', freq: 0.014 },
-        { amp: 18, speed: 1.6, color: 'rgba(106, 27, 154, 0.35)', freq: 0.022 },
+        { amp: 26, speed: 1.0, color: 'rgba(180, 79, 212, 0.55)', freq: 0.014 },
+        { amp: 18, speed: 1.6, color: 'rgba(107, 127, 212, 0.35)', freq: 0.022 },
       ];
       layers.forEach((l, li) => {
         ctx.beginPath();
@@ -103,6 +117,17 @@ export const HeroCanvas = () => {
       rafRef.current = requestAnimationFrame(draw);
     };
 
+    const onMouseMove = (e) => {
+      const rect = canvas.getBoundingClientRect();
+      mouse.x = e.clientX - rect.left;
+      mouse.y = e.clientY - rect.top;
+    };
+
+    const onMouseLeave = () => {
+      mouse.x = null;
+      mouse.y = null;
+    };
+
     resize();
     initNodes();
     draw();
@@ -112,9 +137,13 @@ export const HeroCanvas = () => {
       initNodes();
     };
     window.addEventListener('resize', onResize);
+    canvas.addEventListener('mousemove', onMouseMove);
+    canvas.addEventListener('mouseleave', onMouseLeave);
     return () => {
       cancelAnimationFrame(rafRef.current);
       window.removeEventListener('resize', onResize);
+      canvas.removeEventListener('mousemove', onMouseMove);
+      canvas.removeEventListener('mouseleave', onMouseLeave);
     };
   }, []);
 

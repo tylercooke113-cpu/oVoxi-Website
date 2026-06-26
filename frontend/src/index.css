@@ -21,7 +21,7 @@ h1, h2, h3, h4, h5, h6 {
 
 /* Selection */
 ::selection {
-    background-color: rgba(106, 27, 154, 0.35);
+    background-color: rgba(180, 79, 212, 0.25);
     color: #ffffff;
 }
 
@@ -78,7 +78,7 @@ code {
         --card-foreground: 0 0% 100%;
         --popover: 0 0% 0%;
         --popover-foreground: 0 0% 100%;
-        --primary: 277 70% 36%;
+        --primary: 285 60% 58%;
         --primary-foreground: 0 0% 100%;
         --secondary: 0 0% 7%;
         --secondary-foreground: 0 0% 64%;
