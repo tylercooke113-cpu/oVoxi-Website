@@ -14,14 +14,13 @@ const AboutPage = () => (
   <div data-testid="about-page">
     <PageHero
       testid="about-hero"
-      label="Company"
       title="A Licensed Music Infrastructure Company for the AI Era"
       subtitle="oVoxi is building the world's first emerging-first, fully licensed, AI-ready music catalog — the provenance and licensing layer the generative music economy is missing."
     />
 
     <section className="border-y border-white/10 bg-ink py-20 lg:py-28">
       <div className="mx-auto max-w-7xl px-6 lg:px-8">
-        <Reveal>
+        <Reveal className="text-center">
           <SectionLabel>What We Stand For</SectionLabel>
           <h2 className="font-heading text-3xl font-semibold tracking-tight text-white sm:text-4xl">
             Three pillars. One catalog.

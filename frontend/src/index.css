@@ -33,7 +33,7 @@ h1, h2, h3, h4, h5, h6 {
 
 /* Gradient text utility */
 .text-gradient-brand {
-    background: linear-gradient(90deg, #C2185B 0%, #6A1B9A 50%, #1565C0 100%);
+    background: linear-gradient(90deg, #B44FD4 0%, #7B5EA7 50%, #6B7FD4 100%);
     -webkit-background-clip: text;
     background-clip: text;
     -webkit-text-fill-color: transparent;
@@ -41,7 +41,7 @@ h1, h2, h3, h4, h5, h6 {
 
 /* Hover gradient text — for nav links and inline link hovers */
 .hover-text-gradient:hover {
-    background: linear-gradient(90deg, #C2185B 0%, #6A1B9A 50%, #1565C0 100%);
+    background: linear-gradient(90deg, #B44FD4 0%, #7B5EA7 50%, #6B7FD4 100%);
     -webkit-background-clip: text;
     background-clip: text;
     -webkit-text-fill-color: transparent;

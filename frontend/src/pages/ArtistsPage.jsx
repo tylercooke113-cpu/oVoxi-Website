@@ -1,9 +1,7 @@
 import React, { useState } from 'react';
-import { Music2, Sparkles, FileCheck2, Layers } from 'lucide-react';
 import { PageHero } from '../components/PageHero';
 import { Reveal, SectionLabel } from '../components/Reveal';
 import { PrimaryCTA } from '../components/CtaButtons';
-import { ARTIST_BENEFITS } from '../content';
 
 const BENEFITS_CARDS = [
   { num: '01', title: 'PRO Registration', description: 'Handled for you at no cost. Your rights, properly registered from day one.' },
@@ -35,7 +33,7 @@ function BenefitCard({ num, title, description }) {
           top: 0,
           bottom: 0,
           width: 2,
-          background: 'linear-gradient(180deg, #C2185B, #6A1B9A)',
+          background: 'linear-gradient(180deg, #B44FD4, #7B5EA7)',
           opacity: hovered ? 1 : 0,
           transition: 'opacity 0.3s',
         }}
@@ -47,7 +45,7 @@ function BenefitCard({ num, title, description }) {
           fontWeight: 800,
           fontSize: '11px',
           letterSpacing: '0.15em',
-          background: 'linear-gradient(90deg, #C2185B, #6A1B9A)',
+          background: 'linear-gradient(90deg, #B44FD4, #7B5EA7)',
           WebkitBackgroundClip: 'text',
           WebkitTextFillColor: 'transparent',
           backgroundClip: 'text',
@@ -82,13 +80,6 @@ function BenefitCard({ num, title, description }) {
     </div>
   );
 }
-
-const PILLARS = [
-  { icon: FileCheck2, title: 'PRO Registration', body: 'Every artist registered with ASCAP, BMI, or SESAC — handled entirely by us. Automated at onboarding, zero friction.' },
-  { icon: Sparkles, title: 'In-House Mastering', body: 'Every track mastered to broadcast standard. Clean, normalized audio trains AI models better and increases per-asset value.' },
-  { icon: Layers, title: 'Stems Delivery', body: 'Stems are required alongside masters. AI platforms pay 2–3× more for them. We build it in from day one.' },
-  { icon: Music2, title: 'Ownership Verification', body: 'Our in-house chain-of-title system documents every split and rights holder at ingestion. No ambiguous ownership.' },
-];
 
 const ArtistsPage = () => (
   <div data-testid="artists-page">
@@ -125,32 +116,6 @@ const ArtistsPage = () => (
         <PrimaryCTA to="https://airtable.com/appmcBnXvP82ydQCz/pag6udQiv3QTWYG3m/form" testid="artists-page-apply-cta">
           Apply to Join
         </PrimaryCTA>
-      </div>
-    </section>
-
-    <section className="border-t border-white/10 bg-ink py-20 lg:py-28">
-      <div className="mx-auto max-w-7xl px-6 lg:px-8">
-        <Reveal className="max-w-3xl">
-          <SectionLabel>How We Build The Catalog</SectionLabel>
-          <h2 className="font-heading text-3xl font-semibold tracking-tight text-white sm:text-4xl">
-            We Remove Every Barrier Between Artists and Licensing Revenue
-          </h2>
-        </Reveal>
-        <div className="mt-12 grid grid-cols-1 gap-6 sm:grid-cols-2">
-          {PILLARS.map((p, i) => (
-            <Reveal key={p.title} delay={i * 0.08}>
-              <div className="flex h-full items-start gap-4 rounded-2xl border border-white/10 bg-white/[0.02] p-7 transition-all duration-300 hover:-translate-y-1 hover:border-electric/40">
-                <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-electric/10 ring-1 ring-electric/30">
-                  <p.icon size={20} className="text-cyan" />
-                </span>
-                <div>
-                  <h3 className="font-heading text-lg font-medium text-white">{p.title}</h3>
-                  <p className="mt-2 text-sm leading-relaxed text-slate-400">{p.body}</p>
-                </div>
-              </div>
-            </Reveal>
-          ))}
-        </div>
       </div>
     </section>
   </div>
