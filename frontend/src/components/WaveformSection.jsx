@@ -1,15 +1,15 @@
 import React, { useRef, useEffect } from 'react';
 
 const WAVES = [
-  { color: '#C2185B', opacity: 0.65, freq: 0.018, speed: 0.032 },
-  { color: '#6A1B9A', opacity: 0.53, freq: 0.022, speed: 0.024 },
-  { color: '#1565C0', opacity: 0.41, freq: 0.015, speed: 0.040 },
+  { color: '#B44FD4', opacity: 0.65, freq: 0.018, speed: 0.032 },
+  { color: '#7B5EA7', opacity: 0.53, freq: 0.022, speed: 0.024 },
+  { color: '#6B7FD4', opacity: 0.41, freq: 0.015, speed: 0.040 },
 ];
 
 const TAGS = [
-  { color: '#C2185B', label: 'Cleared' },
-  { color: '#6A1B9A', label: 'Mastered' },
-  { color: '#1565C0', label: 'AI-Ready' },
+  { color: '#B44FD4', label: 'Cleared' },
+  { color: '#7B5EA7', label: 'Mastered' },
+  { color: '#6B7FD4', label: 'AI-Ready' },
 ];
 
 export default function WaveformSection() {
