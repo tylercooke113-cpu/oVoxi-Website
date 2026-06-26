@@ -10,8 +10,8 @@ const HomePage = () => (
     <HeroSection />
     <SolutionSection />
     <AudienceSection />
-    <WaveformSection />
     <FinalCTASection />
+    <WaveformSection />
   </div>
 );
 
