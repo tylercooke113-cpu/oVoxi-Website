@@ -75,15 +75,13 @@ export const Header = () => {
           </div>
 
           <div className="hidden md:flex items-center gap-3">
-            <a
-              href="https://airtable.com/appmcBnXvP82ydQCz/pag6udQiv3QTWYG3m/form"
-              target="_blank"
-              rel="noopener noreferrer"
+            <Link
+              to="/signup"
               data-testid="header-artist-cta"
               className="text-sm font-medium text-slate-300 hover-text-gradient transition-colors"
             >
               Join as Artist
-            </a>
+            </Link>
             <Link
               to="/contact?interest=ai_company"
               data-testid="header-partnership-cta"
