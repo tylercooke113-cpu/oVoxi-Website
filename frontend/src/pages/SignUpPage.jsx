@@ -21,6 +21,10 @@ const SignUpPage = () => (
             colorInputBackground: '#1a1a1a',
             colorInputText: '#ffffff',
             borderRadius: '0.75rem',
+          },
+          elements: {
+            socialButtonsBlockButton: 'text-white border-white/20',
+            socialButtonsBlockButtonText: 'text-white font-medium',
           }
         }}
       />

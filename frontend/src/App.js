@@ -32,9 +32,13 @@ function App() {
     () => sessionStorage.getItem(SESSION_KEY) === "1"
   );
 
+  const isAuthRoute = ['/signup', '/login', '/vault'].some(path =>
+    window.location.pathname.startsWith(path)
+  );
+
   return (
     <div className="App min-h-screen bg-ink">
-      {!unlocked && <PasswordGate onUnlock={() => setUnlocked(true)} />}
+      {!unlocked && !isAuthRoute && <PasswordGate onUnlock={() => setUnlocked(true)} />}
       <BrowserRouter>
         <ScrollToTop />
         <Header />
