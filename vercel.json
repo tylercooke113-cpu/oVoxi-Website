@@ -5,7 +5,7 @@
       "headers": [
         {
           "key": "Content-Security-Policy",
-          "value": "script-src 'self'; script-src-elem 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://ovoxi-website-production.up.railway.app"
+          "value": "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://clerk.com https://*.clerk.accounts.dev https://*.clerk.com; script-src-elem 'self' 'unsafe-inline' https://clerk.com https://*.clerk.accounts.dev https://*.clerk.com; style-src 'self' 'unsafe-inline'; connect-src 'self' https://ovoxi-website-production.up.railway.app https://clerk.com https://*.clerk.accounts.dev https://api.clerk.com https://*.clerk.com;"
         },
         {
           "key": "Strict-Transport-Security",
