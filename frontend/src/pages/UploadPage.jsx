@@ -3,7 +3,8 @@ import axios from 'axios';
 import { toast } from 'sonner';
 import { Loader2, Upload, CheckCircle2, Music2 } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { Link } from 'react-router-dom';
+import { Link, Navigate } from 'react-router-dom';
+import { useAuth } from '@clerk/clerk-react';
 import { PageHero } from '../components/PageHero';
 import { Reveal } from '../components/Reveal';
 import { Input } from '../components/ui/input';
@@ -35,6 +36,7 @@ const STATUS_LABELS = {
 
 const UploadPage = () => {
   const fileRef = useRef(null);
+  const { getToken, isSignedIn, isLoaded } = useAuth();
 
   const [form, setForm] = useState({ artist_name: '', track_name: '', genre: '' });
   const [file, setFile] = useState(null);
@@ -45,6 +47,8 @@ const UploadPage = () => {
   const [proRegisterUs, setProRegisterUs] = useState(false);
   const [proOrg, setProOrg] = useState('');
   const [proOther, setProOther] = useState('');
+
+  if (isLoaded && !isSignedIn) return <Navigate to='/login' replace />;
 
   const update = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
 
@@ -83,6 +87,7 @@ const UploadPage = () => {
 
     try {
       // Step 1: get presigned URL
+      const token = await getToken();
       const { data: presignData } = await axios.post(`${API}/upload/presign`, {
         artist_name: form.artist_name,
         track_name: form.track_name,
@@ -91,6 +96,8 @@ const UploadPage = () => {
         pro_registered: proRegistered,
         pro_org: proRegistered ? (proOrg === 'Other' ? proOther : proOrg) : '',
         pro_register_us: proRegisterUs,
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
       });
 
       const { presigned_url, submission_id, content_type } = presignData;
@@ -107,7 +114,9 @@ const UploadPage = () => {
       });
 
       // Step 3: notify backend to start stem processing
-      await axios.post(`${API}/upload/complete`, { submission_id });
+      await axios.post(`${API}/upload/complete`, { submission_id }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
 
       setStage('done');
     } catch (err) {
@@ -152,7 +161,7 @@ const UploadPage = () => {
           )}
           <div className="mt-8 flex flex-col items-center gap-3">
             <Link
-              to="/admin"
+              to="/vault"
               className="inline-flex items-center gap-2 rounded-full bg-gradient-brand px-7 py-3 text-sm font-semibold text-white transition-all duration-300 hover:shadow-[0_0_28px_rgba(194,24,91,0.55)]"
             >
               Go to My Vault →
