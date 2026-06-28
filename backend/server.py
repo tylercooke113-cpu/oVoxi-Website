@@ -13,8 +13,7 @@ import boto3
 import httpx
 from botocore.config import Config
 from dotenv import load_dotenv
-import jwt
-from jwt import PyJWKClient
+from jose import jwt, JWTError
 from fastapi import BackgroundTasks, Depends, FastAPI, APIRouter, UploadFile, File, Form, HTTPException, Header, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -84,27 +83,25 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-CLERK_JWKS_URL = os.environ.get("CLERK_JWKS_URL", "")
-_jwks_client: Optional[PyJWKClient] = None
-
-
-def _get_jwks_client() -> PyJWKClient:
-    global _jwks_client
-    if _jwks_client is None:
-        _jwks_client = PyJWKClient(CLERK_JWKS_URL)
-    return _jwks_client
+CLERK_JWKS_URL = os.environ.get('CLERK_JWKS_URL', '')
+CLERK_SECRET_KEY = os.environ.get('CLERK_SECRET_KEY', '')
 
 
 async def verify_clerk_token(authorization: str = Header(default=None)) -> dict:
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
-    token = authorization.split(" ", 1)[1]
+    if not authorization or not authorization.startswith('Bearer '):
+        raise HTTPException(status_code=401, detail='Missing or invalid Authorization header')
+    token = authorization.split(' ', 1)[1]
     try:
-        signing_key = _get_jwks_client().get_signing_key_from_jwt(token)
-        return jwt.decode(token, signing_key.key, algorithms=["RS256"])
-    except Exception as exc:
-        logger.error("Clerk token verification failed: %s", exc)
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                CLERK_JWKS_URL,
+                headers={'Authorization': f'Bearer {CLERK_SECRET_KEY}'}
+            )
+            jwks = resp.json()
+        payload = jwt.decode(token, jwks, algorithms=['RS256'])
+        return payload
+    except JWTError as exc:
+        raise HTTPException(status_code=401, detail=f'Invalid token: {exc}')
 
 
 # ---------------------------------------------------------------------------
@@ -647,6 +644,40 @@ async def complete_upload(request: Request, payload: CompleteUploadRequest, back
     )
     logger.info("Queued stem processing for submission=%s", payload.submission_id)
     return {"status": "processing", "submission_id": payload.submission_id}
+
+
+@api_router.get('/vault/tracks')
+async def get_vault_tracks(clerk_payload: dict = Depends(verify_clerk_token)):
+    clerk_user_id = clerk_payload.get('sub')
+    subs = await db.track_submissions.find(
+        {'clerk_user_id': clerk_user_id},
+        {'_id': 0}
+    ).sort('upload_date', -1).to_list(1000)
+
+    def _presign_get(key: str) -> str:
+        return r2_client.generate_presigned_url(
+            'get_object',
+            Params={'Bucket': R2_BUCKET, 'Key': key},
+            ExpiresIn=3600,
+        )
+
+    for s in subs:
+        if isinstance(s.get('upload_date'), str):
+            s['upload_date'] = datetime.fromisoformat(s['upload_date'])
+        if s.get('stem_paths'):
+            try:
+                s['stem_urls'] = {
+                    stem: await asyncio.to_thread(_presign_get, key)
+                    for stem, key in s['stem_paths'].items()
+                }
+            except Exception:
+                s['stem_urls'] = {}
+        if s.get('mastered_r2_key'):
+            try:
+                s['mastered_url'] = await asyncio.to_thread(_presign_get, s['mastered_r2_key'])
+            except Exception:
+                s['mastered_url'] = None
+    return subs
 
 
 @api_router.get("/submissions")
