@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useUser, useAuth, SignOutButton } from '@clerk/clerk-react';
 import { Navigate } from 'react-router-dom';
 import axios from 'axios';
@@ -31,7 +31,7 @@ const VaultPage = () => {
   const [tracks, setTracks] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchTracks = async () => {
+  const fetchTracks = useCallback(async () => {
     if (!isLoaded || !isSignedIn) return;
     setLoading(true);
     try {
@@ -45,11 +45,11 @@ const VaultPage = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [isLoaded, isSignedIn, getToken]);
 
   useEffect(() => {
     fetchTracks();
-  }, [isLoaded, isSignedIn, getToken]);
+  }, [fetchTracks]);
 
   if (!isLoaded) return null;
   if (!isSignedIn) return <Navigate to="/login" replace />;
