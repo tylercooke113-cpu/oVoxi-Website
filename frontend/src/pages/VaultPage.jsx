@@ -60,7 +60,7 @@ const VaultPage = () => {
             <h1 className="font-heading text-3xl font-semibold text-white">
               My Vault
             </h1>
-            <p className="text-slate-400 text-sm mt-1">{user?.primaryEmailAddress?.emailAddress}</p>
+            <p className="text-slate-400 text-sm mt-1">{user?.firstName} {user?.lastName}</p>
           </div>
           <div className="flex items-center gap-3">
             <Link

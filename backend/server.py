@@ -13,7 +13,9 @@ import boto3
 import httpx
 from botocore.config import Config
 from dotenv import load_dotenv
-from fastapi import BackgroundTasks, FastAPI, APIRouter, UploadFile, File, Form, HTTPException, Header, Request
+import jwt
+from jwt import PyJWKClient
+from fastapi import BackgroundTasks, Depends, FastAPI, APIRouter, UploadFile, File, Form, HTTPException, Header, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -81,6 +83,28 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+CLERK_JWKS_URL = os.environ.get("CLERK_JWKS_URL", "")
+_jwks_client: Optional[PyJWKClient] = None
+
+
+def _get_jwks_client() -> PyJWKClient:
+    global _jwks_client
+    if _jwks_client is None:
+        _jwks_client = PyJWKClient(CLERK_JWKS_URL)
+    return _jwks_client
+
+
+async def verify_clerk_token(authorization: str = Header(default=None)) -> dict:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
+    token = authorization.split(" ", 1)[1]
+    try:
+        signing_key = _get_jwks_client().get_signing_key_from_jwt(token)
+        return jwt.decode(token, signing_key.key, algorithms=["RS256"])
+    except Exception as exc:
+        logger.error("Clerk token verification failed: %s", exc)
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
 
 
 # ---------------------------------------------------------------------------
@@ -378,6 +402,7 @@ class TrackSubmission(BaseModel):
     pro_registered: bool = False
     pro_org: str = ''
     pro_register_us: bool = False
+    clerk_user_id: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -547,7 +572,7 @@ async def get_artists(
 
 @api_router.post("/upload/presign")
 @limiter.limit("5/minute")
-async def presign_upload(request: Request, payload: PresignRequest):
+async def presign_upload(request: Request, payload: PresignRequest, clerk_payload: dict = Depends(verify_clerk_token)):
     if payload.genre not in VALID_GENRES:
         raise HTTPException(status_code=400, detail=f"Invalid genre")
 
@@ -574,16 +599,18 @@ async def presign_upload(request: Request, payload: PresignRequest):
         logger.error("Failed to generate presigned URL: %s", exc)
         raise HTTPException(status_code=500, detail="Failed to generate upload URL")
 
+    clerk_user_id = clerk_payload.get('sub')
     submission = TrackSubmission(
         id=submission_id,
         artist_name=payload.artist_name,
         track_name=payload.track_name,
         genre=payload.genre,
         original_r2_path=r2_key,
-        status="pending",
+        status='pending',
         pro_registered=payload.pro_registered,
         pro_org=payload.pro_org,
         pro_register_us=payload.pro_register_us,
+        clerk_user_id=clerk_user_id,
     )
     doc = submission.model_dump()
     doc['upload_date'] = doc['upload_date'].isoformat()

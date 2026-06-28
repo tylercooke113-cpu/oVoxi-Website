@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, NavLink } from 'react-router-dom';
 import { Menu, X, ChevronDown } from 'lucide-react';
+import { useUser } from '@clerk/clerk-react';
 import { NAV_LINKS } from '../content';
 
 const Logo = () => (
@@ -14,6 +15,7 @@ const Logo = () => (
 );
 
 export const Header = () => {
+  const { isSignedIn } = useUser();
   const [open, setOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -58,6 +60,15 @@ export const Header = () => {
               </button>
               {dropdownOpen && (
                 <div className="absolute top-full left-0 mt-2 w-48 rounded-xl border border-white/10 bg-black/95 backdrop-blur-xl py-2 shadow-xl">
+                  {isSignedIn && (
+                    <NavLink
+                      to='/vault'
+                      onClick={() => setDropdownOpen(false)}
+                      className='block px-4 py-2.5 text-sm text-slate-300 hover:text-white hover-text-gradient transition-colors'
+                    >
+                      My Vault
+                    </NavLink>
+                  )}
                   {NAV_LINKS.map((l) => (
                     <NavLink
                       key={l.to}
