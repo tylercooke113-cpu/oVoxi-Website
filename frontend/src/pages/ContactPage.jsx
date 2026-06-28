@@ -66,7 +66,6 @@ const ContactPage = () => {
         testid="contact-hero"
         label="Contact"
         title="Let's Build the Catalog Together"
-        subtitle="Whether you're an AI platform, an enterprise buyer, an emerging artist, or an investor — tell us how you'd like to work with oVoxi."
       />
 
       <section className="bg-ink py-20 lg:py-28">
