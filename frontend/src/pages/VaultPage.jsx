@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useUser, useAuth, SignOutButton } from '@clerk/clerk-react';
 import { Navigate } from 'react-router-dom';
 import axios from 'axios';
-import { Loader2, Music2, ExternalLink } from 'lucide-react';
+import { Loader2, Music2, ExternalLink, RefreshCw } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 const API = 'https://ovoxi-website-production.up.railway.app/api';
@@ -31,21 +31,23 @@ const VaultPage = () => {
   const [tracks, setTracks] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const fetchTracks = async () => {
     if (!isLoaded || !isSignedIn) return;
-    const fetchTracks = async () => {
-      try {
-        const token = await getToken();
-        const res = await axios.get(`${API}/vault/tracks`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        setTracks(res.data);
-      } catch (err) {
-        console.error('Failed to fetch tracks', err);
-      } finally {
-        setLoading(false);
-      }
-    };
+    setLoading(true);
+    try {
+      const token = await getToken();
+      const res = await axios.get(`${API}/vault/tracks`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setTracks(res.data);
+    } catch (err) {
+      console.error('Failed to fetch tracks', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     fetchTracks();
   }, [isLoaded, isSignedIn, getToken]);
 
@@ -63,6 +65,13 @@ const VaultPage = () => {
             <p className="text-slate-400 text-sm mt-1">{user?.firstName} {user?.lastName}</p>
           </div>
           <div className="flex items-center gap-3">
+            <button
+              onClick={fetchTracks}
+              className="text-sm text-slate-400 hover:text-white transition-colors flex items-center gap-1.5"
+            >
+              <RefreshCw size={14} />
+              Refresh
+            </button>
             <Link
               to="/upload"
               className="rounded-full bg-gradient-brand px-5 py-2 text-sm font-semibold text-white transition-all hover:shadow-[0_0_24px_rgba(180,79,212,0.6)]"
