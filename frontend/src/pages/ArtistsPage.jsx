@@ -113,8 +113,8 @@ const ArtistsPage = () => (
         ))}
       </div>
       <div className="mt-10 text-center">
-        <PrimaryCTA to="https://airtable.com/appmcBnXvP82ydQCz/pag6udQiv3QTWYG3m/form" testid="artists-page-apply-cta">
-          Apply to Join
+        <PrimaryCTA to="/signup" testid="artists-page-apply-cta">
+          Join as an Artist
         </PrimaryCTA>
       </div>
     </section>
