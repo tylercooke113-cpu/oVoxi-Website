@@ -17,7 +17,6 @@ export const AudienceSection = () => (
             <h3 className="font-heading text-2xl font-semibold text-white sm:text-3xl">
               {AI_COPY.headline}
             </h3>
-            <p className="mt-5 text-base leading-relaxed text-slate-400">{AI_COPY.body}</p>
             <div className="mt-8">
               <PrimaryCTA to="/contact?interest=ai_company" testid="ai-companies-cta">
                 Discuss Licensing
@@ -36,10 +35,9 @@ export const AudienceSection = () => (
             <h3 className="font-heading text-2xl font-semibold text-white sm:text-3xl">
               {ARTIST_COPY.headline}
             </h3>
-            <p className="mt-5 text-base leading-relaxed text-slate-400">{ARTIST_COPY.body}</p>
             <div className="mt-8">
-              <PrimaryCTA to="/contact?interest=artist" testid="artists-section-cta">
-                Apply to Join
+              <PrimaryCTA to="/signup" testid="artists-section-cta">
+                Join as an Artist
               </PrimaryCTA>
             </div>
           </div>
