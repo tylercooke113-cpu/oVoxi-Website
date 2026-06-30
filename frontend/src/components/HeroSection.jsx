@@ -58,7 +58,7 @@ export const HeroSection = () => (
         <PrimaryCTA to="/contact?interest=ai_company" testid="hero-partnership-cta">
           Request Partnership
         </PrimaryCTA>
-        <GhostCTA to="/artists" testid="hero-artist-cta">
+        <GhostCTA to="/signup" testid="hero-artist-cta">
           Join as an Artist
         </GhostCTA>
       </motion.div>
