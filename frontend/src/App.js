@@ -6,8 +6,6 @@ import { Toaster } from 'sonner';
 import { Header } from './components/Header';
 import { Footer } from './components/Footer';
 import HomePage from './pages/HomePage';
-import ArtistsPage from './pages/ArtistsPage';
-import AboutPage from './pages/AboutPage';
 import ContactPage from './pages/ContactPage';
 import UploadPage from './pages/UploadPage';
 import ApplyPage from './pages/ApplyPage';
@@ -47,8 +45,6 @@ function AppContent() {
       <main>
         <Routes>
           <Route path='/' element={<HomePage />} />
-          <Route path='/artists' element={<ArtistsPage />} />
-          <Route path='/about' element={<AboutPage />} />
           <Route path='/contact' element={<ContactPage />} />
           <Route path='/artist-upload' element={<Navigate to='/signup' replace />} />
           <Route path='/upload' element={<UploadPage />} />

@@ -10,8 +10,6 @@ export const BRAND = {
 };
 
 export const NAV_LINKS = [
-  { label: "Company", to: "/about" },
-  { label: "Artists", to: "/artists" },
   { label: "Contact", to: "/contact" },
 ];
 
