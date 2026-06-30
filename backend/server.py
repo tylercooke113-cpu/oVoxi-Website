@@ -816,7 +816,12 @@ async def presign_appeal(
         )
 
     appeal_id = str(uuid.uuid4())
-    r2_key = f"appeals/{payload.submission_id}/{appeal_id}{ext}"
+    orig_parts = sub.get("original_r2_path", "").split("/")
+    if len(orig_parts) >= 3:
+        track_folder = "/".join(orig_parts[:3])  # catalog/{safe_artist}/{safe_track}
+    else:
+        track_folder = f"catalog/{_slugify(payload.artist_name)}/{_slugify(payload.track_name)}"
+    r2_key = f"{track_folder}/appeals/{appeal_id}{ext}"
     content_type = PROOF_CONTENT_TYPES[ext]
 
     def _presign():
