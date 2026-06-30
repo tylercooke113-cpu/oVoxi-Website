@@ -3,6 +3,7 @@ import json
 import os
 import logging
 import re
+import tempfile
 import uuid
 from datetime import datetime, timezone
 from io import BytesIO
@@ -24,6 +25,8 @@ from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 from slowapi.middleware import SlowAPIMiddleware
+
+import acrcloud_check
 
 
 def get_real_client_ip(request: Request) -> str:
@@ -188,7 +191,6 @@ async def _master_track(submission_id: str, r2_key: str) -> str:
     Downloads raw track from R2, masters it with Matchering,
     uploads mastered WAV to R2, returns the mastered R2 key.
     """
-    import tempfile, os
     import matchering as mg
 
     mastered_r2_key = r2_key.replace("/original/", "/mastered/")
@@ -226,6 +228,35 @@ async def _master_track(submission_id: str, r2_key: str) -> str:
 
 async def _process_stems(submission_id: str, r2_key: str, artist_name: str, track_name: str) -> None:
     try:
+        # ── ACRCloud gate ─────────────────────────────────────────────────────
+        await db.track_submissions.update_one(
+            {"id": submission_id},
+            {"$set": {"status": "scanning"}},
+        )
+        audio_data = await _r2_get(r2_key)
+        ext = Path(r2_key).suffix
+        with tempfile.TemporaryDirectory() as scan_dir:
+            scan_path = os.path.join(scan_dir, f"scan{ext}")
+            with open(scan_path, "wb") as f:
+                f.write(audio_data)
+            acr_result = await asyncio.to_thread(acrcloud_check.scan_file, scan_path)
+
+        acr_status = acr_result["status"]
+        logger.info("ACRCloud result submission=%s status=%s", submission_id, acr_status)
+
+        if acr_status != "CLEARED":
+            update: dict = {"status": acr_status}
+            for field in ("matched_title", "matched_artist", "matched_label",
+                          "matched_isrc", "confidence", "acrid", "raw_code"):
+                if acr_result.get(field) is not None:
+                    update[field] = acr_result[field]
+            await db.track_submissions.update_one(
+                {"id": submission_id},
+                {"$set": update},
+            )
+            return
+        # ─────────────────────────────────────────────────────────────────────
+
         await db.track_submissions.update_one(
             {"id": submission_id},
             {"$set": {"status": "processing"}},
@@ -400,6 +431,13 @@ class TrackSubmission(BaseModel):
     pro_org: str = ''
     pro_register_us: bool = False
     clerk_user_id: Optional[str] = None
+    matched_title: Optional[str] = None
+    matched_artist: Optional[str] = None
+    matched_label: Optional[str] = None
+    matched_isrc: Optional[str] = None
+    confidence: Optional[int] = None
+    acrid: Optional[str] = None
+    raw_code: Optional[int] = None
 
 
 # ---------------------------------------------------------------------------

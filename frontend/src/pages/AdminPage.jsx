@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
-import { Loader2, ExternalLink, RefreshCw, CheckCircle2, Clock, AlertCircle, Zap } from 'lucide-react';
+import { Loader2, ExternalLink, RefreshCw, CheckCircle2, Clock, AlertCircle, Zap, ChevronDown } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
@@ -18,8 +18,13 @@ const StatusBadge = ({ status }) => {
     mastering:  { icon: Zap,          color: 'text-purple-400', label: 'Mastering' },
     completed:  { icon: CheckCircle2, color: 'text-green-400',  label: 'Completed' },
     failed:     { icon: AlertCircle,  color: 'text-red-400',    label: 'Failed' },
+    scanning:   { icon: Loader2,      color: 'text-blue-400',   label: 'Scanning...' },
+    CLEARED:    { icon: CheckCircle2, color: 'text-green-400',  label: 'Cleared' },
+    NEEDS_DOCS: { icon: AlertCircle,  color: 'text-amber-400',  label: 'Needs Docs' },
+    CONFLICT:   { icon: AlertCircle,  color: 'text-red-500',    label: 'Conflict' },
+    SCAN_ERROR: { icon: AlertCircle,  color: 'text-orange-400', label: 'Scan Error' },
   };
-  const { icon: Icon, color, label } = map[status] || map.pending;
+  const { icon: Icon, color, label } = map[status] ?? { icon: Clock, color: 'text-slate-400', label: status };
   return (
     <span className={`inline-flex items-center gap-1 text-xs font-medium ${color}`}>
       <Icon size={12} />
@@ -36,6 +41,7 @@ const AdminPage = () => {
   const [messages, setMessages] = useState(null);
   const [loading, setLoading] = useState(false);
   const [authed, setAuthed] = useState(false);
+  const [expandedId, setExpandedId] = useState(null);
 
   const fetchAll = async (pw = password) => {
     if (!pw) return;
@@ -179,8 +185,8 @@ const AdminPage = () => {
                       </thead>
                       <tbody>
                         {submissions.map((s, i) => (
+                          <React.Fragment key={s.id}>
                           <tr
-                            key={s.id}
                             className={`border-b border-white/5 transition-colors hover:bg-white/[0.03] ${
                               i % 2 === 0 ? '' : 'bg-white/[0.01]'
                             }`}
@@ -203,6 +209,18 @@ const AdminPage = () => {
                             </td>
                             <td className="px-4 py-3 whitespace-nowrap">
                               <StatusBadge status={s.status} />
+                              {(s.status === 'NEEDS_DOCS' || s.status === 'CONFLICT') && (
+                                <button
+                                  onClick={() => setExpandedId(expandedId === s.id ? null : s.id)}
+                                  className="mt-1 flex items-center gap-0.5 text-xs text-slate-500 hover:text-slate-300 transition-colors"
+                                >
+                                  <ChevronDown
+                                    size={12}
+                                    className={`transition-transform duration-150 ${expandedId === s.id ? 'rotate-180' : ''}`}
+                                  />
+                                  {expandedId === s.id ? 'Hide' : 'Details'}
+                                </button>
+                              )}
                               {s.status === 'failed' && s.error && (
                                 <p className="mt-1 text-xs text-red-400/70 max-w-[200px] break-words">
                                   {s.error}
@@ -245,6 +263,41 @@ const AdminPage = () => {
                               )}
                             </td>
                           </tr>
+                          {expandedId === s.id && (s.status === 'NEEDS_DOCS' || s.status === 'CONFLICT') && (
+                            <tr className={`border-b border-white/5 ${
+                              s.status === 'CONFLICT' ? 'bg-red-500/[0.04]' : 'bg-amber-400/[0.04]'
+                            }`}>
+                              <td colSpan={7} className="px-6 py-4">
+                                <div className="grid grid-cols-2 gap-x-8 gap-y-3 text-xs md:grid-cols-5">
+                                  <div>
+                                    <p className="text-slate-500 uppercase tracking-wider mb-0.5">Matched Title</p>
+                                    <p className="text-white font-medium">{s.matched_title ?? '—'}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-slate-500 uppercase tracking-wider mb-0.5">Matched Artist</p>
+                                    <p className="text-white font-medium">{s.matched_artist ?? '—'}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-slate-500 uppercase tracking-wider mb-0.5">Label</p>
+                                    <p className="text-white font-medium">{s.matched_label ?? '—'}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-slate-500 uppercase tracking-wider mb-0.5">ISRC</p>
+                                    <p className="text-white font-mono">{s.matched_isrc ?? '—'}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-slate-500 uppercase tracking-wider mb-0.5">Confidence</p>
+                                    <p className={`font-semibold ${
+                                      s.status === 'CONFLICT' ? 'text-red-400' : 'text-amber-400'
+                                    }`}>
+                                      {s.confidence != null ? `${s.confidence}%` : '—'}
+                                    </p>
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                          </React.Fragment>
                         ))}
                       </tbody>
                     </table>

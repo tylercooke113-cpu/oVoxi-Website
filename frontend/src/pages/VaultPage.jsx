@@ -2,27 +2,61 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useUser, useAuth, SignOutButton } from '@clerk/clerk-react';
 import { Navigate } from 'react-router-dom';
 import axios from 'axios';
-import { Loader2, Music2, ExternalLink, RefreshCw } from 'lucide-react';
+import { Loader2, Music2, ExternalLink, RefreshCw, CheckCircle2, XCircle } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 const API = 'https://ovoxi-website-production.up.railway.app/api';
 
-const STATUS_LABELS = {
-  pending: 'Queued',
-  uploaded: 'Uploaded',
-  mastering: 'Mastering...',
-  processing: 'Processing stems...',
-  completed: 'Ready',
-  failed: 'Failed',
-};
-
-const STATUS_COLORS = {
-  pending: 'text-slate-400',
-  uploaded: 'text-blue-400',
-  mastering: 'text-purple-400',
-  processing: 'text-yellow-400',
-  completed: 'text-green-400',
-  failed: 'text-red-400',
+const TrackStatusBadge = ({ status }) => {
+  const inProgress = {
+    pending:    { text: 'Queued',               color: 'text-slate-400' },
+    uploaded:   { text: 'Uploaded',             color: 'text-blue-400' },
+    mastering:  { text: 'Mastering…',      color: 'text-purple-400', spin: true },
+    processing: { text: 'Processing stems…', color: 'text-yellow-400', spin: true },
+    scanning:   { text: 'Checking…',       color: 'text-blue-400',   spin: true },
+  };
+  if (inProgress[status]) {
+    const { text, color, spin } = inProgress[status];
+    return (
+      <span className={`inline-flex items-center gap-1 text-sm font-medium ${color}`}>
+        {spin && <Loader2 size={14} className="animate-spin" />}
+        {text}
+      </span>
+    );
+  }
+  if (status === 'completed' || status === 'CLEARED') {
+    return (
+      <span className="inline-flex items-center gap-1 text-sm font-medium text-green-400">
+        <CheckCircle2 size={14} />
+        {status === 'completed' ? 'Ready' : 'Cleared'}
+      </span>
+    );
+  }
+  if (status === 'NEEDS_DOCS' || status === 'SCAN_ERROR') {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-sm font-medium text-red-400">
+        <XCircle size={14} />
+        Under Review
+      </span>
+    );
+  }
+  if (status === 'CONFLICT') {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-sm font-medium text-red-400">
+        <XCircle size={14} />
+        this recording appears to match existing copyrighted material
+      </span>
+    );
+  }
+  if (status === 'failed') {
+    return (
+      <span className="inline-flex items-center gap-1 text-sm font-medium text-red-400">
+        <XCircle size={14} />
+        Failed
+      </span>
+    );
+  }
+  return <span className="text-sm font-medium text-slate-400">{status}</span>;
 };
 
 const VaultPage = () => {
@@ -107,9 +141,7 @@ const VaultPage = () => {
                     <h3 className="font-heading text-lg font-medium text-white">{t.track_name}</h3>
                     <p className="text-slate-400 text-sm mt-0.5">{t.genre} · {new Date(t.upload_date).toLocaleDateString()}</p>
                   </div>
-                  <span className={`text-sm font-medium ${STATUS_COLORS[t.status] ?? 'text-slate-400'}`}>
-                    {STATUS_LABELS[t.status] ?? t.status}
-                  </span>
+                  <TrackStatusBadge status={t.status} />
                 </div>
                 {t.status === 'completed' && (
                   <div className="mt-4 flex flex-wrap gap-2">
