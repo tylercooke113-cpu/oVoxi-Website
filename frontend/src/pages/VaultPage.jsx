@@ -7,7 +7,7 @@ import { Link } from 'react-router-dom';
 
 const API = 'https://ovoxi-website-production.up.railway.app/api';
 
-const TrackStatusBadge = ({ status }) => {
+const TrackStatusBadge = ({ status, submissionId }) => {
   const inProgress = {
     pending:    { text: 'Queued',               color: 'text-slate-400' },
     uploaded:   { text: 'Uploaded',             color: 'text-blue-400' },
@@ -42,10 +42,18 @@ const TrackStatusBadge = ({ status }) => {
   }
   if (status === 'CONFLICT') {
     return (
-      <span className="inline-flex items-center gap-1.5 text-sm font-medium text-red-400">
-        <XCircle size={14} />
-        this recording appears to match existing copyrighted material
-      </span>
+      <div className="flex flex-col items-end gap-2">
+        <span className="inline-flex items-center gap-1.5 text-sm font-medium text-red-400">
+          <XCircle size={14} />
+          this recording appears to match existing copyrighted material
+        </span>
+        <Link
+          to={`/appeal/${submissionId}`}
+          className="rounded-full border border-electric/40 bg-electric/[0.08] px-4 py-1.5 text-xs font-semibold text-electric hover:bg-electric/[0.16] transition-colors"
+        >
+          File Appeal
+        </Link>
+      </div>
     );
   }
   if (status === 'failed') {
@@ -141,7 +149,7 @@ const VaultPage = () => {
                     <h3 className="font-heading text-lg font-medium text-white">{t.track_name}</h3>
                     <p className="text-slate-400 text-sm mt-0.5">{t.genre} · {new Date(t.upload_date).toLocaleDateString()}</p>
                   </div>
-                  <TrackStatusBadge status={t.status} />
+                  <TrackStatusBadge status={t.status} submissionId={t.id} />
                 </div>
                 {t.status === 'completed' && (
                   <div className="mt-4 flex flex-wrap gap-2">

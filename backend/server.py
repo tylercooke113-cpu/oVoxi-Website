@@ -64,6 +64,15 @@ LALAL_BASE = "https://www.lalal.ai/api"
 
 AUDIO_CONTENT_TYPES = {".mp3": "audio/mpeg", ".wav": "audio/wav"}
 
+PROOF_CONTENT_TYPES = {
+    ".pdf":  "application/pdf",
+    ".jpg":  "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png":  "image/png",
+    ".doc":  "application/msword",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+}
+
 app = FastAPI()
 app.mount("/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="uploads")
 
@@ -416,6 +425,32 @@ class CompleteUploadRequest(BaseModel):
     submission_id: str
 
 
+class AppealPresignRequest(BaseModel):
+    submission_id: str = Field(..., min_length=1, max_length=100)
+    artist_name: str = Field(..., min_length=1, max_length=120)
+    track_name: str = Field(..., min_length=1, max_length=120)
+    filename: str = Field(..., min_length=1, max_length=200)
+    message: Optional[str] = Field(default=None, max_length=2000)
+
+
+class AppealCompleteRequest(BaseModel):
+    appeal_id: str
+
+
+class Appeal(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    submission_id: str
+    clerk_user_id: Optional[str] = None
+    artist_name: str
+    track_name: str
+    proof_r2_key: str = ""
+    filename: str = ""
+    message: Optional[str] = None
+    status: str = "pending"
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
 class TrackSubmission(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -751,6 +786,126 @@ async def get_submissions(x_admin_password: Optional[str] = Header(default=None)
                 logger.warning("Could not generate mastered presigned URL: %s", exc)
                 s["mastered_url"] = None
     return subs
+
+
+# ---------------------------------------------------------------------------
+# Appeal routes
+# ---------------------------------------------------------------------------
+
+@api_router.post("/appeal/presign")
+@limiter.limit("5/minute")
+async def presign_appeal(
+    request: Request,
+    payload: AppealPresignRequest,
+    clerk_payload: dict = Depends(verify_clerk_token),
+):
+    sub = await db.track_submissions.find_one({"id": payload.submission_id}, {"_id": 0})
+    if not sub:
+        raise HTTPException(status_code=404, detail="Submission not found")
+    clerk_user_id = clerk_payload.get("sub")
+    if sub.get("clerk_user_id") != clerk_user_id:
+        raise HTTPException(status_code=403, detail="Not your submission")
+    if sub.get("status") != "CONFLICT":
+        raise HTTPException(status_code=400, detail="Appeals can only be filed for tracks with a conflict status")
+
+    ext = Path(payload.filename).suffix.lower()
+    if ext not in PROOF_CONTENT_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail="Proof file must be PDF, JPG, PNG, DOC, or DOCX",
+        )
+
+    appeal_id = str(uuid.uuid4())
+    r2_key = f"appeals/{payload.submission_id}/{appeal_id}{ext}"
+    content_type = PROOF_CONTENT_TYPES[ext]
+
+    def _presign():
+        return r2_client.generate_presigned_url(
+            "put_object",
+            Params={"Bucket": R2_BUCKET, "Key": r2_key, "ContentType": content_type},
+            ExpiresIn=3600,
+        )
+
+    try:
+        presigned_url = await asyncio.to_thread(_presign)
+    except Exception as exc:
+        logger.error("Failed to generate appeal presigned URL: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to generate upload URL")
+
+    appeal = Appeal(
+        id=appeal_id,
+        submission_id=payload.submission_id,
+        clerk_user_id=clerk_user_id,
+        artist_name=payload.artist_name,
+        track_name=payload.track_name,
+        filename=payload.filename,
+        proof_r2_key=r2_key,
+        message=payload.message,
+        status="pending_upload",
+    )
+    doc = appeal.model_dump()
+    doc["created_at"] = doc["created_at"].isoformat()
+    await db.appeals.insert_one(doc)
+
+    return {
+        "presigned_url": presigned_url,
+        "appeal_id": appeal_id,
+        "r2_key": r2_key,
+        "content_type": content_type,
+    }
+
+
+@api_router.post("/appeal/complete")
+@limiter.limit("5/minute")
+async def complete_appeal(
+    request: Request,
+    payload: AppealCompleteRequest,
+    clerk_payload: dict = Depends(verify_clerk_token),
+):
+    appeal = await db.appeals.find_one({"id": payload.appeal_id}, {"_id": 0})
+    if not appeal:
+        raise HTTPException(status_code=404, detail="Appeal not found")
+    clerk_user_id = clerk_payload.get("sub")
+    if appeal.get("clerk_user_id") != clerk_user_id:
+        raise HTTPException(status_code=403, detail="Not your appeal")
+    if appeal["status"] != "pending_upload":
+        raise HTTPException(status_code=400, detail=f"Appeal status is already '{appeal['status']}'")
+
+    await db.appeals.update_one(
+        {"id": payload.appeal_id},
+        {"$set": {"status": "pending"}},
+    )
+    logger.info("Appeal submitted appeal=%s submission=%s", payload.appeal_id, appeal["submission_id"])
+    return {"status": "pending", "appeal_id": payload.appeal_id}
+
+
+@api_router.get("/appeals")
+async def get_appeals(x_admin_password: Optional[str] = Header(default=None)):
+    admin_password = os.environ.get("ADMIN_PASSWORD", "")
+    if not admin_password or x_admin_password != admin_password:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    appeals = await db.appeals.find(
+        {"status": {"$ne": "pending_upload"}}, {"_id": 0}
+    ).sort("created_at", -1).to_list(1000)
+
+    def _presign_get(key: str) -> str:
+        return r2_client.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": R2_BUCKET, "Key": key},
+            ExpiresIn=3600,
+        )
+
+    for a in appeals:
+        if isinstance(a.get("created_at"), str):
+            a["created_at"] = datetime.fromisoformat(a["created_at"])
+        if a.get("proof_r2_key"):
+            try:
+                a["proof_url"] = await asyncio.to_thread(_presign_get, a["proof_r2_key"])
+            except Exception as exc:
+                logger.warning("Could not generate proof presigned URL: %s", exc)
+                a["proof_url"] = None
+    return appeals
 
 
 # ---------------------------------------------------------------------------

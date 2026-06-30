@@ -39,6 +39,7 @@ const AdminPage = () => {
   const [artists, setArtists] = useState(null);
   const [submissions, setSubmissions] = useState(null);
   const [messages, setMessages] = useState(null);
+  const [appeals, setAppeals] = useState(null);
   const [loading, setLoading] = useState(false);
   const [authed, setAuthed] = useState(false);
   const [expandedId, setExpandedId] = useState(null);
@@ -48,14 +49,16 @@ const AdminPage = () => {
     setLoading(true);
     try {
       const headers = { 'x-admin-password': pw };
-      const [artRes, subRes, msgRes] = await Promise.all([
+      const [artRes, subRes, msgRes, apRes] = await Promise.all([
         axios.get(`${API}/artists`, { headers }),
         axios.get(`${API}/submissions`, { headers }),
         axios.get(`${API}/contact`, { headers }),
+        axios.get(`${API}/appeals`, { headers }),
       ]);
       setArtists(artRes.data);
       setSubmissions(subRes.data);
       setMessages(msgRes.data);
+      setAppeals(apRes.data);
       setAuthed(true);
     } catch (err) {
       if (err.response?.status === 401) {
@@ -148,6 +151,7 @@ const AdminPage = () => {
                 { key: 'submissions', label: `Submissions (${submissions?.length ?? 0})` },
                 { key: 'applications', label: `Applications (${artists?.length ?? 0})` },
                 { key: 'messages', label: `Messages (${messages?.length ?? 0})` },
+                { key: 'appeals', label: `Appeals (${appeals?.length ?? 0})` },
               ].map(({ key, label }) => (
                 <button
                   key={key}
@@ -439,6 +443,101 @@ const AdminPage = () => {
                             </td>
                           </tr>
                         ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </>
+            )}
+            {/* Appeals tab */}
+            {tab === 'appeals' && (
+              <>
+                {appeals?.length === 0 ? (
+                  <p className="text-slate-500">No appeals yet.</p>
+                ) : (
+                  <div className="overflow-x-auto rounded-2xl border border-white/10">
+                    <table className="w-full text-left text-sm">
+                      <thead>
+                        <tr className="border-b border-white/10 bg-white/[0.02]">
+                          {['Artist', 'Track', 'Match', 'Note', 'Proof', 'Status', 'Date'].map((h) => (
+                            <th
+                              key={h}
+                              className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-400 whitespace-nowrap"
+                            >
+                              {h}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {appeals?.map((a, i) => {
+                          const sub = submissions?.find((s) => s.id === a.submission_id);
+                          return (
+                            <tr
+                              key={a.id}
+                              className={`border-b border-white/5 transition-colors hover:bg-white/[0.03] ${
+                                i % 2 === 0 ? '' : 'bg-white/[0.01]'
+                              }`}
+                            >
+                              <td className="px-4 py-3 font-medium text-white whitespace-nowrap">
+                                {a.artist_name}
+                              </td>
+                              <td className="px-4 py-3 text-slate-300 whitespace-nowrap">
+                                {a.track_name}
+                              </td>
+                              <td className="px-4 py-3 text-slate-400 max-w-[180px]">
+                                {sub?.matched_title ? (
+                                  <div>
+                                    <p className="text-white text-xs font-medium truncate">{sub.matched_title}</p>
+                                    <p className="text-slate-500 text-xs truncate">{sub.matched_artist ?? '—'}</p>
+                                    {sub.confidence != null && (
+                                      <p className="text-red-400 text-xs font-semibold">{sub.confidence}%</p>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <span className="text-slate-600">—</span>
+                                )}
+                              </td>
+                              <td className="px-4 py-3 text-slate-300 max-w-xs">
+                                {a.message ? (
+                                  <p className="whitespace-pre-wrap break-words text-xs">{a.message}</p>
+                                ) : (
+                                  <span className="text-slate-600">—</span>
+                                )}
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap">
+                                {a.proof_url ? (
+                                  <a
+                                    href={a.proof_url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-1 rounded-md border border-cyan/30 bg-cyan/[0.06] px-2 py-0.5 text-xs font-medium text-cyan hover:bg-cyan/[0.12] transition-colors"
+                                  >
+                                    {a.filename || 'Download'} <ExternalLink size={10} />
+                                  </a>
+                                ) : (
+                                  <span className="text-slate-600">—</span>
+                                )}
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap">
+                                <span className={`text-xs font-medium ${
+                                  a.status === 'pending'  ? 'text-amber-400' :
+                                  a.status === 'approved' ? 'text-green-400' :
+                                  a.status === 'rejected' ? 'text-red-400'   : 'text-slate-400'
+                                }`}>
+                                  {a.status.charAt(0).toUpperCase() + a.status.slice(1)}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 text-slate-400 whitespace-nowrap">
+                                {new Date(a.created_at).toLocaleDateString('en-US', {
+                                  month: 'short',
+                                  day: 'numeric',
+                                  year: 'numeric',
+                                })}
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>

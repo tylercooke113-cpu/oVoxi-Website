@@ -14,6 +14,7 @@ import AdminPage from './pages/AdminPage';
 import SignUpPage from './pages/SignUpPage';
 import LoginPage from './pages/LoginPage';
 import VaultPage from './pages/VaultPage';
+import AppealPage from './pages/AppealPage';
 
 function ScrollToTop() {
   const { pathname } = useLocation();
@@ -22,7 +23,7 @@ function ScrollToTop() {
 }
 
 const SESSION_KEY = 'ovoxi_access_granted';
-const AUTH_PATHS = ['/signup', '/login', '/vault'];
+const AUTH_PATHS = ['/signup', '/login', '/vault', '/appeal'];
 
 function AppContent() {
   const { pathname } = useLocation();
@@ -54,6 +55,7 @@ function AppContent() {
           <Route path='/signup/*' element={<SignUpPage />} />
           <Route path='/login/*' element={<LoginPage />} />
           <Route path='/vault' element={<VaultPage />} />
+          <Route path='/appeal/:submissionId' element={<AppealPage />} />
         </Routes>
       </main>
       <Footer />
