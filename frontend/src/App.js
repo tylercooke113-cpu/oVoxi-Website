@@ -28,13 +28,10 @@ function AppContent() {
 
   const isAuthRoute = AUTH_PATHS.some(p => pathname.startsWith(p));
 
-  return (
-    <>
-      <ScrollToTop />
-  
-        }} />
-      )}
-      <Header />
+ return (
+  <>
+    <ScrollToTop />
+    <Header />
       <main>
         <Routes>
           <Route path='/' element={<HomePage />} />
