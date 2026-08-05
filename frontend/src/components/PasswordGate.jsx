@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef } from "react";
-
 const CORRECT_PASSWORD = "oVoxi999**";
 const SESSION_KEY = "ovoxi_access_granted";
 
