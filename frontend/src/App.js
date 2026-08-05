@@ -1,7 +1,6 @@
 import './App.css';
 import { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
-import PasswordGate from './components/PasswordGate';
 import { Toaster } from 'sonner';
 import { Header } from './components/Header';
 import { Footer } from './components/Footer';
@@ -22,24 +21,17 @@ function ScrollToTop() {
   return null;
 }
 
-const SESSION_KEY = 'ovoxi_access_granted';
 const AUTH_PATHS = ['/signup', '/login', '/vault', '/appeal'];
 
 function AppContent() {
   const { pathname } = useLocation();
-  const [unlocked, setUnlocked] = useState(
-    () => sessionStorage.getItem(SESSION_KEY) === '1'
-  );
 
   const isAuthRoute = AUTH_PATHS.some(p => pathname.startsWith(p));
 
   return (
     <>
       <ScrollToTop />
-      {!unlocked && !isAuthRoute && (
-        <PasswordGate onUnlock={() => {
-          sessionStorage.setItem(SESSION_KEY, '1');
-          setUnlocked(true);
+  
         }} />
       )}
       <Header />
