@@ -43,10 +43,6 @@ const UploadPage = () => {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [stage, setStage] = useState('idle'); // idle | uploading | processing | done | error
   const [submissionId, setSubmissionId] = useState(null);
-  const [proRegistered, setProRegistered] = useState(false);
-  const [proRegisterUs, setProRegisterUs] = useState(false);
-  const [proOrg, setProOrg] = useState('');
-  const [proOther, setProOther] = useState('');
 
   if (isLoaded && !isSignedIn) return <Navigate to='/login' replace />;
 
@@ -93,9 +89,6 @@ const UploadPage = () => {
         track_name: form.track_name,
         genre: form.genre,
         filename: file.name,
-        pro_registered: proRegistered,
-        pro_org: proRegistered ? (proOrg === 'Other' ? proOther : proOrg) : '',
-        pro_register_us: proRegisterUs,
       }, {
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -255,67 +248,6 @@ const UploadPage = () => {
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
-
-              {/* PRO Registration */}
-              <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-6 space-y-4">
-                <span className="text-xs font-bold uppercase tracking-[0.2em] text-electric">
-                  PRO Registration
-                </span>
-
-                <label className="flex items-start gap-3 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={proRegistered}
-                    onChange={(e) => {
-                      setProRegistered(e.target.checked);
-                      if (e.target.checked) setProRegisterUs(false);
-                    }}
-                    className="mt-0.5 accent-[#6A1B9A]"
-                  />
-                  <span className="text-sm text-slate-300">
-                    These works are registered with a Performing Rights Organization
-                  </span>
-                </label>
-
-                {proRegistered && (
-                  <div className="ml-6 space-y-3">
-                    <select
-                      value={proOrg}
-                      onChange={(e) => setProOrg(e.target.value)}
-                      className="w-full rounded-lg border border-white/10 bg-ink px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-electric"
-                    >
-                      <option value="">Select PRO…</option>
-                      <option value="ASCAP">ASCAP</option>
-                      <option value="BMI">BMI</option>
-                      <option value="Other">Other</option>
-                    </select>
-                    {proOrg === 'Other' && (
-                      <input
-                        type="text"
-                        value={proOther}
-                        onChange={(e) => setProOther(e.target.value)}
-                        placeholder="Enter PRO name"
-                        className="w-full rounded-lg border border-white/10 bg-ink px-3 py-2 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-electric"
-                      />
-                    )}
-                  </div>
-                )}
-
-                <label className="flex items-start gap-3 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={proRegisterUs}
-                    onChange={(e) => {
-                      setProRegisterUs(e.target.checked);
-                      if (e.target.checked) setProRegistered(false);
-                    }}
-                    className="mt-0.5 accent-[#6A1B9A]"
-                  />
-                  <span className="text-sm text-slate-300">
-                    I would like oVoxi to register these songs on my behalf
-                  </span>
-                </label>
               </div>
 
               {/* File drop zone */}
