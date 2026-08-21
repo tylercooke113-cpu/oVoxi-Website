@@ -28,13 +28,12 @@ const AUTH_PATHS = ['/signup', '/login', '/vault', '/appeal'];
 
 function AppContent() {
   const { pathname } = useLocation();
-
-  const isAuthRoute = AUTH_PATHS.some(p => pathname.startsWith(p));
+  const isMarketingHome = NEW_MARKETING && pathname === '/';
 
  return (
   <>
     <ScrollToTop />
-    <Header />
+    {!isMarketingHome && <Header />}
       <main>
         <Routes>
           <Route
@@ -55,7 +54,7 @@ function AppContent() {
           <Route path='/appeal/:submissionId' element={<AppealPage />} />
         </Routes>
       </main>
-      <Footer />
+      {!isMarketingHome && <Footer />}
       <Toaster theme='dark' position='bottom-right' richColors />
     </>
   );
