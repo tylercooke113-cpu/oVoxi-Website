@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useRef, lazy, Suspense } from 'react';
 import './styles/fonts.css';
 import './styles/tokens.css';
 import { MarketingPathProvider } from './MarketingPathContext';
@@ -13,13 +13,34 @@ import Fork from './sections/Fork';
 import Category from './sections/Category';
 import Close from './sections/Close';
 
+// Lazy: three.js stays out of the main bundle entirely
+const Scene = lazy(() => import('./three/Scene'));
+
+// Evaluated once at load time — not reactive, intentionally
+const canRender3D = (() => {
+  if (typeof window === 'undefined') return false;
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return false;
+  try {
+    const c = document.createElement('canvas');
+    return !!(c.getContext('webgl2') || c.getContext('webgl'));
+  } catch {
+    return false;
+  }
+})();
+
 function MarketingContent() {
   const progressRef = useRef(0);
   useLenis(progressRef);
 
   return (
     <ScrollProgressProvider progressRef={progressRef}>
-      <div className="bg-ovx-void min-h-screen text-white" data-marketing-page="">
+      {canRender3D && (
+        <Suspense fallback={null}>
+          <Scene />
+        </Suspense>
+      )}
+      {/* z-[10] keeps DOM content above the fixed canvas */}
+      <div className="relative z-[10] min-h-screen text-white" data-marketing-page="">
         <Nav />
         <Hero />
         <Reckoning />
