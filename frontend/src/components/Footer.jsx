@@ -60,8 +60,12 @@ export const Footer = () => (
           © {new Date().getFullYear()} oVoxi · {BRAND.domain}
         </p>
         <div className="flex items-center gap-6 text-xs text-slate-500">
-          <span className="hover:text-slate-300 transition-colors cursor-default">Privacy</span>
-          <span className="hover:text-slate-300 transition-colors cursor-default">Terms</span>
+          <Link to="/privacy" data-testid="footer-link-privacy" className="hover:text-slate-300 transition-colors">
+            Privacy
+          </Link>
+          <Link to="/terms" data-testid="footer-link-terms" className="hover:text-slate-300 transition-colors">
+            Terms
+          </Link>
         </div>
       </div>
     </div>

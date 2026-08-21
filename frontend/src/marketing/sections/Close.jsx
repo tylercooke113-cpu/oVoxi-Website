@@ -44,10 +44,16 @@ export default function Close() {
               Contact
             </a>
             <Link
-              to="/contact"
+              to="/privacy"
               className="font-body text-sm text-ovx-faint hover:text-white transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-ovx-cyan focus-visible:ring-offset-2 focus-visible:ring-offset-black"
             >
-              Legal
+              Privacy
+            </Link>
+            <Link
+              to="/terms"
+              className="font-body text-sm text-ovx-faint hover:text-white transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-ovx-cyan focus-visible:ring-offset-2 focus-visible:ring-offset-black"
+            >
+              Terms
             </Link>
           </div>
         </footer>

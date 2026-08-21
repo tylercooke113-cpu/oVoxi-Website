@@ -14,6 +14,8 @@ import SignUpPage from './pages/SignUpPage';
 import LoginPage from './pages/LoginPage';
 import VaultPage from './pages/VaultPage';
 import AppealPage from './pages/AppealPage';
+import PrivacyPage from './pages/PrivacyPage';
+import TermsPage from './pages/TermsPage';
 
 const NEW_MARKETING = process.env.REACT_APP_NEW_MARKETING === 'true';
 const MarketingPage = lazy(() => import('./marketing/MarketingPage'));
@@ -52,6 +54,8 @@ function AppContent() {
           <Route path='/login/*' element={<LoginPage />} />
           <Route path='/vault' element={<VaultPage />} />
           <Route path='/appeal/:submissionId' element={<AppealPage />} />
+          <Route path='/privacy' element={<PrivacyPage />} />
+          <Route path='/terms' element={<TermsPage />} />
         </Routes>
       </main>
       {!isMarketingHome && <Footer />}
