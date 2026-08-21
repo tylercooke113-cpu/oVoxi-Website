@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { useMarketingPath } from '../MarketingPathContext';
+import { Reveal } from '../components/Reveal';
 
 export default function Close() {
   const { path } = useMarketingPath();
@@ -7,6 +8,7 @@ export default function Close() {
   return (
     <section className="py-24 md:py-40 border-t border-ovx-line">
       <div className="max-w-[1440px] mx-auto px-6 md:px-[120px]">
+        <Reveal delay={0}>
         <div className="flex flex-col sm:flex-row gap-4 mb-32">
           {(path === 'artists' || !path) && (
             <Link
@@ -31,6 +33,7 @@ export default function Close() {
             </Link>
           )}
         </div>
+        </Reveal>
 
         <footer className="border-t border-ovx-line pt-8 flex flex-col sm:flex-row justify-between items-start gap-6">
           <span className="font-jetmono text-[13px] text-ovx-faint uppercase tracking-[0.12em]">

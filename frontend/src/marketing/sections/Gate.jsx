@@ -1,3 +1,5 @@
+import { Reveal } from '../components/Reveal';
+
 export default function Gate() {
   return (
     <section className="relative min-h-screen flex flex-col items-center justify-center py-24 md:py-40 border-t border-ovx-line overflow-hidden">
@@ -11,15 +13,19 @@ export default function Gate() {
         }}
       />
       <div className="relative max-w-[1440px] mx-auto px-6 md:px-[120px] w-full text-center">
-        <p
-          className="font-display font-extrabold text-white leading-[0.95] tracking-[-0.02em] mb-16"
-          style={{ fontSize: 'var(--fs-h1)' }}
-        >
-          Every track passes<br />through the gate.
-        </p>
-        <p className="font-jetmono text-[13px] uppercase tracking-[0.12em] text-ovx-faint">
-          Cleared&nbsp;&nbsp;&#183;&nbsp;&nbsp;Needs Docs&nbsp;&nbsp;&#183;&nbsp;&nbsp;Conflict
-        </p>
+        <Reveal delay={0}>
+          <p
+            className="font-display font-extrabold text-white leading-[0.95] tracking-[-0.02em] mb-16"
+            style={{ fontSize: 'var(--fs-h1)' }}
+          >
+            Every track passes<br />through the gate.
+          </p>
+        </Reveal>
+        <Reveal delay={0.12}>
+          <p className="font-jetmono text-[13px] uppercase tracking-[0.12em] text-ovx-faint">
+            Cleared&nbsp;&nbsp;&#183;&nbsp;&nbsp;Needs Docs&nbsp;&nbsp;&#183;&nbsp;&nbsp;Conflict
+          </p>
+        </Reveal>
       </div>
     </section>
   );

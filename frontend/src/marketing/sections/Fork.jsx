@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { useMarketingPath } from '../MarketingPathContext';
+import { Reveal } from '../components/Reveal';
 
 const platformFeatures = [
   'Verified clearance',
@@ -17,9 +18,9 @@ const artistFeatures = [
 
 function FeatureList({ items }) {
   return (
-    <ul className="space-y-5 mt-8">
-      {items.map((f) => (
-        <li key={f} className="flex items-start gap-3">
+    <div className="space-y-5 mt-8">
+      {items.map((f, i) => (
+        <Reveal key={f} delay={i * 0.08} className="flex items-start gap-3">
           <span
             className="w-1.5 h-1.5 rounded-full shrink-0 mt-[6px]"
             style={{ background: 'linear-gradient(135deg, #B44FD4 0%, #7B5EA7 50%, #6B7FD4 100%)' }}
@@ -28,9 +29,9 @@ function FeatureList({ items }) {
           <span className="font-body text-ovx-dim" style={{ fontSize: 'var(--fs-body)' }}>
             {f}
           </span>
-        </li>
+        </Reveal>
       ))}
-    </ul>
+    </div>
   );
 }
 
@@ -43,9 +44,11 @@ export default function Fork() {
   return (
     <section id="fork-section" className="py-24 md:py-40 border-t border-ovx-line">
       <div className="max-w-[1440px] mx-auto px-6 md:px-[120px]">
-        <p className="font-jetmono text-[13px] uppercase tracking-[0.12em] bg-ovx-gradient bg-clip-text text-transparent mb-16">
-          What you get
-        </p>
+        <Reveal delay={0}>
+          <p className="font-jetmono text-[13px] uppercase tracking-[0.12em] bg-ovx-gradient bg-clip-text text-transparent mb-16">
+            What you get
+          </p>
+        </Reveal>
 
         <div className="flex flex-col md:flex-row gap-px bg-ovx-line">
           {/* Platforms column */}
@@ -64,19 +67,23 @@ export default function Fork() {
               </button>
             ) : (
               <>
-                <h3
-                  className="font-display font-extrabold text-white leading-[0.95] tracking-[-0.02em]"
-                  style={{ fontSize: 'var(--fs-h2)' }}
-                >
-                  For platforms
-                </h3>
+                <Reveal delay={0}>
+                  <h3
+                    className="font-display font-extrabold text-white leading-[0.95] tracking-[-0.02em]"
+                    style={{ fontSize: 'var(--fs-h2)' }}
+                  >
+                    For platforms
+                  </h3>
+                </Reveal>
                 <FeatureList items={platformFeatures} />
-                <Link
-                  to="/contact"
-                  className="inline-block mt-10 px-6 py-3 border border-ovx-cyan text-ovx-cyan font-body text-sm hover:bg-ovx-cyan hover:text-black transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-ovx-cyan focus-visible:ring-offset-2 focus-visible:ring-offset-black"
-                >
-                  Request a sample pack
-                </Link>
+                <Reveal delay={0.4}>
+                  <Link
+                    to="/contact"
+                    className="inline-block mt-10 px-6 py-3 border border-ovx-cyan text-ovx-cyan font-body text-sm hover:bg-ovx-cyan hover:text-black transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-ovx-cyan focus-visible:ring-offset-2 focus-visible:ring-offset-black"
+                  >
+                    Request a sample pack
+                  </Link>
+                </Reveal>
               </>
             )}
           </div>
@@ -97,19 +104,23 @@ export default function Fork() {
               </button>
             ) : (
               <>
-                <h3
-                  className="font-display font-extrabold text-white leading-[0.95] tracking-[-0.02em]"
-                  style={{ fontSize: 'var(--fs-h2)' }}
-                >
-                  For artists
-                </h3>
+                <Reveal delay={0}>
+                  <h3
+                    className="font-display font-extrabold text-white leading-[0.95] tracking-[-0.02em]"
+                    style={{ fontSize: 'var(--fs-h2)' }}
+                  >
+                    For artists
+                  </h3>
+                </Reveal>
                 <FeatureList items={artistFeatures} />
-                <Link
-                  to="/apply"
-                  className="inline-block mt-10 px-6 py-3 border border-ovx-cyan text-ovx-cyan font-body text-sm hover:bg-ovx-cyan hover:text-black transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-ovx-cyan focus-visible:ring-offset-2 focus-visible:ring-offset-black"
-                >
-                  Start an application
-                </Link>
+                <Reveal delay={0.4}>
+                  <Link
+                    to="/apply"
+                    className="inline-block mt-10 px-6 py-3 border border-ovx-cyan text-ovx-cyan font-body text-sm hover:bg-ovx-cyan hover:text-black transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-ovx-cyan focus-visible:ring-offset-2 focus-visible:ring-offset-black"
+                  >
+                    Start an application
+                  </Link>
+                </Reveal>
               </>
             )}
           </div>
