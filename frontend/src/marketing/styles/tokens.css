@@ -1,0 +1,10 @@
+/* oVoxi design tokens — marketing page only. Do not import from other pages. */
+:root {
+  --fs-hero:  clamp(3.5rem, 9vw, 8rem);
+  --fs-h1:    clamp(2.5rem, 5vw, 4.5rem);
+  --fs-h2:    clamp(1.75rem, 3vw, 2.75rem);
+  --fs-lead:  clamp(1.125rem, 1.6vw, 1.5rem);
+  --fs-body:  1rem;
+  --fs-label: 0.8125rem;
+  --fs-data:  clamp(2rem, 4vw, 3.5rem);
+}

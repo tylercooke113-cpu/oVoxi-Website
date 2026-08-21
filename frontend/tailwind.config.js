@@ -8,12 +8,17 @@ module.exports = {
   theme: {
         extend: {
                 fontFamily: {
-                        heading: ['Syne', 'system-ui', 'sans-serif'],
-                        sans: ['DM Sans', 'system-ui', 'sans-serif'],
-                        mono: ['Kode Mono', 'monospace'],
+                        heading:  ['Syne', 'system-ui', 'sans-serif'],
+                        sans:     ['DM Sans', 'system-ui', 'sans-serif'],
+                        mono:     ['Kode Mono', 'monospace'],
+                        // marketing design system (ovx-*)
+                        display:  ['Syne', 'system-ui', 'sans-serif'],
+                        body:     ['DM Sans', 'system-ui', 'sans-serif'],
+                        jetmono:  ['JetBrains Mono', 'monospace'],
                 },
                 backgroundImage: {
                         'gradient-brand': 'linear-gradient(90deg, #B44FD4 0%, #7B5EA7 50%, #6B7FD4 100%)',
+                        'ovx-gradient':   'linear-gradient(135deg, #B44FD4 0%, #7B5EA7 50%, #6B7FD4 100%)',
                 },
                 borderRadius: {
                         lg: 'var(--radius)',
@@ -21,6 +26,19 @@ module.exports = {
                         sm: 'calc(var(--radius) - 4px)'
                 },
                 colors: {
+                        // marketing design system
+                        ovx: {
+                                void:    '#000000',
+                                g1:      '#B44FD4',
+                                g2:      '#7B5EA7',
+                                g3:      '#6B7FD4',
+                                cyan:    '#4FC3F7',
+                                surface: '#0A0A0C',
+                                line:    '#1C1C21',
+                                dim:     '#8A8A94',
+                                faint:   '#4A4A52',
+                        },
+                        // existing (untouched)
                         ink: '#000000',
                         'ink-2': '#111111',
                         electric: '#9B59D4',
