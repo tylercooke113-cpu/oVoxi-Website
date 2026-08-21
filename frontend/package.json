@@ -57,6 +57,7 @@
     "react-resizable-panels": "^3.0.1",
     "react-router-dom": "^7.5.1",
     "react-scripts": "5.0.1",
+    "react-snap": "^1.23.0",
     "recharts": "^3.6.0",
     "sonner": "^2.0.3",
     "tailwind-merge": "^3.2.0",
@@ -68,7 +69,15 @@
   "scripts": {
     "start": "craco start",
     "build": "craco build",
-    "test": "craco test"
+    "test": "craco test",
+    "postbuild": "[ \"$REACT_APP_NEW_MARKETING\" = \"true\" ] && react-snap || true"
+  },
+  "reactSnap": {
+    "include": ["/", "/privacy", "/terms"],
+    "crawl": false,
+    "puppeteerArgs": ["--no-sandbox", "--disable-setuid-sandbox"],
+    "saveAs": "html",
+    "minifyHtml": { "collapseWhitespace": false }
   },
   "browserslist": {
     "production": [

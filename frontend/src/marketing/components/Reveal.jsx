@@ -1,12 +1,16 @@
 import { useRef } from 'react';
 import { motion, useInView, useReducedMotion } from 'framer-motion';
 
+// Headless Chrome (react-snap) sets navigator.webdriver = true.
+// Skip animation so prerendered HTML has visible text, not opacity:0.
+const isPrerender = typeof window !== 'undefined' && Boolean(window.navigator.webdriver);
+
 export function Reveal({ children, delay = 0, className = '' }) {
   const prefersReduced = useReducedMotion();
   const ref = useRef(null);
   const inView = useInView(ref, { once: true, amount: 0.2 });
 
-  if (prefersReduced) {
+  if (prefersReduced || isPrerender) {
     return (
       <div ref={ref} className={className}>
         {children}
