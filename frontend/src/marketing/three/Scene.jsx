@@ -9,6 +9,16 @@ const COUNT_MOBILE  = 6000;
 const p2in  = (t) => t < 0.5 ? 2*t*t : 1 - Math.pow(-2*t+2, 2)/2;
 const p3out = (t) => 1 - Math.pow(1-t, 3);
 
+// Gate state helper -- shared by BarField and GatePlane
+function computeGateState(p) {
+  if (p < 0.35 || p >= 0.72) return { gateZ: -200, gateAmt: 0 };
+  if (p < 0.52) return { gateZ: -150, gateAmt: (p - 0.35) / 0.17 };
+  if (p < 0.62) return { gateZ: -150 + ((p - 0.52) / 0.10) * 300, gateAmt: 1 };
+  return { gateZ: 150, gateAmt: Math.max(0, 1 - (p - 0.62) / 0.10) };
+}
+
+// ---- Bar shaders ----
+
 const VERTEX_SHADER = /* glsl */`
   attribute vec3  aTargetA;
   attribute vec3  aTargetB;
@@ -24,11 +34,13 @@ const VERTEX_SHADER = /* glsl */`
 
   varying float vCleared;
   varying float vFogDepth;
+  varying float vPosZ;
 
   void main() {
     vec3 pos   = mix(aTargetA, aTargetB, uProgress);
     vec3 scale = mix(aScaleA,  aScaleB,  uProgress);
     vCleared   = mix(aCleared, aClearedB, uProgress);
+    vPosZ      = pos.z;
 
     float drift = sin(aSeed * 6.28318 + uTime * 0.4) * 1.2;
     pos.y += drift * (1.0 - clamp(uGlobalP * 10.0, 0.0, 1.0));
@@ -41,19 +53,77 @@ const VERTEX_SHADER = /* glsl */`
 
 const FRAGMENT_SHADER = /* glsl */`
   precision mediump float;
+
+  uniform float uGateZ;
+  uniform float uGateAmt;
+
   varying float vCleared;
   varying float vFogDepth;
+  varying float vPosZ;
 
   void main() {
     vec3 grey  = vec3(0.541, 0.541, 0.580);
     vec3 grad1 = vec3(0.706, 0.310, 0.831);
     vec3 grad3 = vec3(0.420, 0.498, 0.831);
+    vec3 cyan  = vec3(0.310, 0.765, 0.969);
+
     vec3 color = mix(grey, mix(grad1, grad3, 0.5), vCleared);
-    float fog  = clamp(exp(-0.006 * vFogDepth), 0.0, 1.0);
+
+    if (uGateAmt > 0.001 && vCleared > 0.1) {
+      // dist > 0: bar is ahead of scan (not yet reached), dist < 0: bar passed scan
+      float d = vPosZ - uGateZ;
+      vec3 gateColor = color;
+
+      if (d > 8.0) {
+        // Well ahead of scan: force grey
+        gateColor = grey;
+      } else if (d >= 0.0) {
+        // Approaching -- grey flashing to cyan as gate closes in
+        float t = 1.0 - d / 8.0;
+        gateColor = mix(grey, cyan, t * t);
+      } else if (d >= -12.0) {
+        // Departing -- cyan to gradient with additive bloom
+        float t = -d / 12.0;
+        vec3 gradColor = mix(grad1, grad3, 0.5);
+        gateColor = mix(cyan, gradColor, t) + (1.0 - t) * 0.45 * cyan;
+      }
+      // d < -12: already full gradient (base color above)
+
+      color = mix(color, gateColor, uGateAmt);
+    }
+
+    float fog = clamp(exp(-0.006 * vFogDepth), 0.0, 1.0);
     color *= fog;
     gl_FragColor = vec4(color, 1.0);
   }
 `;
+
+// ---- Gate plane shaders ----
+
+const GATE_PLANE_VERT = /* glsl */`
+  varying vec2 vUv;
+  void main() {
+    vUv = uv;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+const GATE_PLANE_FRAG = /* glsl */`
+  precision mediump float;
+  uniform float uTime;
+  uniform float uOpacity;
+  varying vec2 vUv;
+
+  void main() {
+    float dx   = abs(vUv.x - 0.5) * 2.0;
+    float dy   = abs(vUv.y - 0.5) * 2.0;
+    float core = pow(clamp(1.0 - max(dx, dy), 0.0, 1.0), 3.0);
+    float scan = sin(vUv.y * 60.0 - uTime * 0.5) * 0.03 + 0.97;
+    gl_FragColor = vec4(0.310, 0.765, 0.969, core * scan * uOpacity * 0.55);
+  }
+`;
+
+// ---- Layout generators ----
 
 function genNoise(count) {
   const pos = new Float32Array(count*3), scales = new Float32Array(count*3), cleared = new Float32Array(count);
@@ -117,7 +187,7 @@ function genArc(count) {
   return { pos, scales, cleared };
 }
 
-// [fromActIdx, toActIdx, segStart, segEnd, useGateEasing]
+// Scroll segments: [fromActIdx, toActIdx, segStart, segEnd, useGateEasing]
 const SEGS = [
   [0,0,0.00,0.10,false],
   [0,1,0.10,0.25,false],
@@ -136,20 +206,22 @@ const _ct = new THREE.Vector3();
 
 const camCurve = new THREE.CatmullRomCurve3([
   new THREE.Vector3(0,  5, 120),
-  new THREE.Vector3(0, 20, 180),
-  new THREE.Vector3(0,  3,  60),
-  new THREE.Vector3(40,15, -20),
-  new THREE.Vector3(5,  3,  20),
+  new THREE.Vector3(0, 25, 200),
+  new THREE.Vector3(0,  5,  80),
+  new THREE.Vector3(50,20,  40),
+  new THREE.Vector3(0,  5,  30),
   new THREE.Vector3(0, 40, 180),
 ]);
 const tgtCurve = new THREE.CatmullRomCurve3([
   new THREE.Vector3(0, 0,   0),
   new THREE.Vector3(0, 0, -60),
   new THREE.Vector3(0, 0,   0),
-  new THREE.Vector3(0, 0,  -5),
+  new THREE.Vector3(0, 5,   0),
   new THREE.Vector3(0, 0,   0),
   new THREE.Vector3(0, 0,   0),
 ]);
+
+// ---- CameraRig ----
 
 function CameraRig({ progressRef }) {
   useFrame(({ camera }) => {
@@ -161,6 +233,37 @@ function CameraRig({ progressRef }) {
   });
   return null;
 }
+
+// ---- Gate plane ----
+
+function GatePlane({ progressRef }) {
+  const meshRef = useRef();
+  const mat = useMemo(() => new THREE.ShaderMaterial({
+    vertexShader:   GATE_PLANE_VERT,
+    fragmentShader: GATE_PLANE_FRAG,
+    uniforms: { uTime: { value: 0 }, uOpacity: { value: 0 } },
+    transparent: true,
+    depthWrite:  false,
+    blending:    THREE.AdditiveBlending,
+  }), []);
+
+  useFrame(({ clock }) => {
+    const p = Math.max(0, Math.min(1, progressRef.current));
+    const { gateZ, gateAmt } = computeGateState(p);
+    if (meshRef.current) meshRef.current.position.z = gateZ;
+    mat.uniforms.uOpacity.value = gateAmt;
+    mat.uniforms.uTime.value    = clock.getElapsedTime();
+  });
+
+  return (
+    <mesh ref={meshRef} position={[0, 0, -200]}>
+      <planeGeometry args={[300, 160]} />
+      <primitive object={mat} attach="material" />
+    </mesh>
+  );
+}
+
+// ---- Bar field ----
 
 function BarField({ count, progressRef }) {
   const prevSegRef = useRef(-1);
@@ -194,6 +297,8 @@ function BarField({ count, progressRef }) {
         uProgress: { value: 0 },
         uGlobalP:  { value: 0 },
         uTime:     { value: 0 },
+        uGateZ:    { value: -200 },
+        uGateAmt:  { value: 0 },
       },
     });
 
@@ -224,10 +329,16 @@ function BarField({ count, progressRef }) {
     mat.uniforms.uProgress.value = ge ? p3out(raw) : p2in(raw);
     mat.uniforms.uGlobalP.value  = p;
     mat.uniforms.uTime.value     = clock.getElapsedTime();
+
+    const { gateZ, gateAmt } = computeGateState(p);
+    mat.uniforms.uGateZ.value   = gateZ;
+    mat.uniforms.uGateAmt.value = gateAmt;
   });
 
   return <instancedMesh args={[geo, mat, count]} frustumCulled={false} />;
 }
+
+// ---- Scene ----
 
 export default function Scene() {
   const progressRef = useScrollProgress();
@@ -241,6 +352,7 @@ export default function Scene() {
         style={{ background: '#000000', width: '100%', height: '100%' }}
       >
         <CameraRig progressRef={progressRef} />
+        <GatePlane progressRef={progressRef} />
         <BarField count={count} progressRef={progressRef} />
       </Canvas>
     </div>
