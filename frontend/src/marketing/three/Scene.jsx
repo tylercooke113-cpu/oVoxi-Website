@@ -1,4 +1,4 @@
-import { useRef, useMemo } from 'react';
+import { useRef, useMemo, useState } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useScrollProgress } from '../hooks/useScrollProgress';
@@ -338,11 +338,49 @@ function BarField({ count, progressRef }) {
   return <instancedMesh args={[geo, mat, count]} frustumCulled={false} />;
 }
 
+// ---- FPS guard ----
+
+function FPSGuard({ onHalf, onHide }) {
+  const t0    = useRef(null);
+  const fc    = useRef(0);
+  const phase = useRef(0); // 0 = initial, 1 = post-halve, 2 = done
+
+  useFrame(({ clock }) => {
+    if (phase.current === 2) return;
+    const t = clock.getElapsedTime();
+    if (t0.current === null) { t0.current = t; return; }
+    fc.current++;
+    if (t - t0.current < 2) return;
+
+    const fps = fc.current / (t - t0.current);
+
+    if (fps < 30) {
+      if (phase.current === 0) {
+        phase.current = 1;
+        t0.current = t;
+        fc.current = 0;
+        onHalf();
+      } else {
+        phase.current = 2;
+        onHide();
+      }
+    } else {
+      phase.current = 2;
+    }
+  });
+  return null;
+}
+
 // ---- Scene ----
 
 export default function Scene() {
+  const [halved,  setHalved]  = useState(false);
+  const [visible, setVisible] = useState(true);
   const progressRef = useScrollProgress();
-  const count = window.innerWidth < 768 ? COUNT_MOBILE : COUNT_DESKTOP;
+  const baseCount   = useMemo(() => window.innerWidth < 768 ? COUNT_MOBILE : COUNT_DESKTOP, []);
+  const count = halved ? Math.floor(baseCount / 2) : baseCount;
+
+  if (!visible) return null;
 
   return (
     <div aria-hidden="true" style={{ position: 'fixed', inset: 0, zIndex: 0, pointerEvents: 'none' }}>
@@ -354,6 +392,10 @@ export default function Scene() {
         <CameraRig progressRef={progressRef} />
         <GatePlane progressRef={progressRef} />
         <BarField count={count} progressRef={progressRef} />
+        <FPSGuard
+          onHalf={() => setHalved(true)}
+          onHide={() => setVisible(false)}
+        />
       </Canvas>
     </div>
   );
