@@ -30,6 +30,10 @@ DEMUCS_MODEL   = "htdemucs_ft.yaml"               # htdemucs_ft 4-stem
 # L4 GPU billing rate — used by test_modal_stems.py for cost estimate
 L4_RATE_PER_SEC = 0.000222  # $/sec as of Modal pricing page (PRD §2)
 
+# Bump this string on every meaningful deploy so Modal logs confirm which
+# code version executed. A warm container on old code logs the old string.
+WORKER_VERSION = "guards-v1-vocal-keyword-fix"
+
 # ---------------------------------------------------------------------------
 # Image: CUDA-capable Python 3.12 with models baked in at build time
 # ---------------------------------------------------------------------------
@@ -99,6 +103,7 @@ def separate_stems(
     mastered_r2_key: str,
     artist_slug: str,
     track_slug: str,
+    key_prefix: str = "catalog",
 ) -> dict:
     """
     Download mastered audio from R2, separate into six stems, upload back to R2,
@@ -138,6 +143,8 @@ def separate_stems(
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s %(levelname)s %(message)s")
 
+    log.info("stem_worker %s  submission_id=%s", WORKER_VERSION, submission_id)
+
     r2 = boto3.client(
         "s3",
         endpoint_url=os.environ["R2_ENDPOINT"],
@@ -149,7 +156,7 @@ def separate_stems(
     bucket       = os.environ["R2_BUCKET_NAME"]
     callback_url = os.environ["STEM_CALLBACK_URL"]
     webhook_secret = os.environ["STEM_WEBHOOK_SECRET"]
-    stem_prefix  = f"catalog/{artist_slug}/{track_slug}/stems"
+    stem_prefix  = f"{key_prefix}/{artist_slug}/{track_slug}/stems"
 
     def _ffprobe_sr(path: Path) -> int:
         out = subprocess.check_output(
@@ -231,9 +238,10 @@ def separate_stems(
                 )
 
             # audio-separator names outputs as: input_(STEM_LABEL)_MODEL_NAME.wav
-            # The model name "vocals_mel_band_roformer" contains "vocal", so matching
-            # bare "vocal" hits both files. Match the parenthetical label instead.
-            vocals_wav       = _pick(roformer_outputs, ["_(vocal", "vocal"])
+            # The model name "vocals_mel_band_roformer" contains "vocal", so bare "vocal"
+            # matches both files — the (other) file sorts first alphabetically and wins.
+            # Match only the parenthetical label: "_(vocal" hits (vocals) not (other).
+            vocals_wav       = _pick(roformer_outputs, ["_(vocal"])
             instrumental_wav = _pick(
                 roformer_outputs,
                 ["_(other", "instrumental", "instrum", "no_vocal", "no vocal", "no-vocal"],
@@ -268,6 +276,54 @@ def separate_stems(
             other_htdemucs_wav = _pick_d(["other", "residual"])
             # htdemucs vocals output — loaded only for the subtraction; not uploaded
             htdemucs_vocals_wav = _pick_d(["vocal"])
+
+            # Sanity: every resolved stem path must be unique.
+            # A duplicate means two stems point to the same file on disk —
+            # the vocal keyword bug produced exactly this failure mode.
+            # .resolve() normalises symlinks so two Path objects pointing to
+            # the same inode compare equal.
+            _resolved = {
+                "vocals":          vocals_wav,
+                "instrumental":    instrumental_wav,
+                "drums":           drums_wav,
+                "bass":            bass_wav,
+                "other_htdemucs":  other_htdemucs_wav,
+                "htdemucs_vocals": htdemucs_vocals_wav,
+            }
+            _seen_paths: set[Path] = set()
+            for _stem_name, _stem_path in _resolved.items():
+                _canonical = _stem_path.resolve()
+                if _canonical in _seen_paths:
+                    raise RuntimeError(
+                        f"Stem path collision: '{_stem_name}' resolved to a path "
+                        f"already claimed by another stem.\n"
+                        f"Resolved mapping: "
+                        f"{ {k: str(v.resolve()) for k, v in _resolved.items()} }"
+                    )
+                _seen_paths.add(_canonical)
+
+            # Reject if vocals and instrumental are byte-identical.
+            # The path-collision guard above catches same Path object; this
+            # catches two *different* files on disk with identical content —
+            # e.g., the pipeline wrote the same source bytes to two paths.
+            import hashlib as _hashlib
+            def _sha256(p: Path) -> str:
+                h = _hashlib.sha256()
+                with open(p, "rb") as _fh:
+                    for _chunk in iter(lambda: _fh.read(65536), b""):
+                        h.update(_chunk)
+                return h.hexdigest()
+
+            _vocals_hash = _sha256(vocals_wav)
+            _instr_hash  = _sha256(instrumental_wav)
+            if _vocals_hash == _instr_hash:
+                raise RuntimeError(
+                    f"vocals and instrumental are byte-identical "
+                    f"(sha256={_vocals_hash}).\n"
+                    f"vocals path:       {vocals_wav}\n"
+                    f"instrumental path: {instrumental_wav}\n"
+                    f"This indicates a stem assignment error."
+                )
 
             # ── 4. other_subtract: instrumental − drums − bass ────────────────
             #
