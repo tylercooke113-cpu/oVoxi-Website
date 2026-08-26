@@ -177,7 +177,7 @@ def download_new_stems(r2, bucket: str, sid: str, artist_slug: str, track_slug: 
 # Modal worker
 # ---------------------------------------------------------------------------
 
-def run_modal_worker(sid: str, mastered_r2_key: str, artist_slug: str, track_slug: str) -> None:
+def run_modal_worker(sid: str, mastered_r2_key: str, artist_slug: str, track_slug: str) -> dict:
     key_prefix  = f"_benchmark/{sid}"
     stem_prefix = f"{key_prefix}/{artist_slug}/{track_slug}/stems"
 
@@ -192,10 +192,11 @@ def run_modal_worker(sid: str, mastered_r2_key: str, artist_slug: str, track_slu
     import modal
     fn = modal.Function.from_name(MODAL_APP, MODAL_FN)
     t0 = time.monotonic()
-    fn.remote(sid, mastered_r2_key, artist_slug, track_slug, key_prefix)
+    payload = fn.remote(sid, mastered_r2_key, artist_slug, track_slug, key_prefix)
     elapsed = time.monotonic() - t0
     cost = elapsed * L4_RATE
     print(f"    Modal: {elapsed:.1f}s  ${cost:.4f}  ({cost / L4_RATE / 60:.1f} min)")
+    return payload or {}
 
 # ---------------------------------------------------------------------------
 # Metrics — all via ffprobe / ffmpeg, no Python audio libs required locally
@@ -637,9 +638,28 @@ def main() -> None:
                     print("  --force: bypassing cache — running Modal worker...")
                 else:
                     print("  New stems: running Modal worker...")
-                run_modal_worker(sid, mastered_r2, artist_slug, track_slug)
+                modal_payload   = run_modal_worker(sid, mastered_r2, artist_slug, track_slug)
+                src_sr_modal    = modal_payload.get("source_sample_rate")
+                stem_paths_r2   = modal_payload.get("stem_paths", {})
+                sr_flag = " ⚠ 48 kHz — htdemucs resamples internally" if src_sr_modal == 48000 else ""
+                print(f"    source_sample_rate: {src_sr_modal} Hz{sr_flag}")
+                for sname, skey in stem_paths_r2.items():
+                    print(f"    stem_paths[{sname}]: {skey}")
                 print("  Downloading from R2...")
             download_new_stems(r2, bucket, sid, artist_slug, track_slug)
+            # Report sha256 of downloaded vocals and instrumental for item 9
+            import hashlib as _hl
+            def _local_sha256(p: Path) -> str:
+                h = _hl.sha256()
+                with open(p, "rb") as _f:
+                    for _chunk in iter(lambda: _f.read(65536), b""):
+                        h.update(_chunk)
+                return h.hexdigest()
+            v_path = local_dest / "vocals.mp3"
+            i_path = local_dest / "instrumental.mp3"
+            if v_path.exists() and i_path.exists():
+                print(f"    sha256 vocals.mp3:       {_local_sha256(v_path)}")
+                print(f"    sha256 instrumental.mp3: {_local_sha256(i_path)}")
 
         # Source sample rate — probe the local mastered MP3
         mastered_local = REPO_ROOT / entry["files"]["mastered"]["local_path"]

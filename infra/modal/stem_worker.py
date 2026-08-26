@@ -227,14 +227,16 @@ def separate_stems(
             log.info("RoFormer outputs: %s", roformer_outputs)
 
             # separate() returns bare filenames, not absolute paths.
-            # Scan the output directory directly for absolute Path objects.
+            # Join each to roformer_dir to get absolute Paths; do not rescan the
+            # directory, which could pick up stale files from a previous pass.
             def _pick(paths: list[str], keywords: list[str]) -> Path:
-                for f in sorted(roformer_dir.iterdir()):
+                candidates = sorted(roformer_dir / p for p in paths)
+                for f in candidates:
                     if any(kw in f.name.lower() for kw in keywords):
                         return f
                 raise FileNotFoundError(
-                    f"No file matching {keywords} in roformer_dir. "
-                    f"Files: {[f.name for f in sorted(roformer_dir.iterdir())]}"
+                    f"No file matching {keywords} in {[p for p in paths]}. "
+                    f"Searched: {[f.name for f in candidates]}"
                 )
 
             # audio-separator names outputs as: input_(STEM_LABEL)_MODEL_NAME.wav
@@ -324,6 +326,11 @@ def separate_stems(
                     f"instrumental path: {instrumental_wav}\n"
                     f"This indicates a stem assignment error."
                 )
+
+            log.info(
+                "sha256 check passed  vocals=%s  instrumental=%s",
+                _vocals_hash, _instr_hash,
+            )
 
             # ── 4. other_subtract: instrumental − drums − bass ────────────────
             #
