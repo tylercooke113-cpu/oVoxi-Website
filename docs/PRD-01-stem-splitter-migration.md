@@ -248,3 +248,49 @@ not "fix" the plural by mistake.
 The A/B must compare like with like: legacy `other` (instrumental) against the new
 `instrumental`, **not** against the new `other`. The new `other` has no legacy counterpart
 and should be assessed on its own for bleed and artefacts.
+
+---
+
+## 11. Phase 1 gate — MEASURED results (2026-08-26)
+
+Modal L4, `retries=0`, warm container. Five stems + FLAC + both `other` variants.
+
+| Track | Wall-clock | Cost |
+|---|---|---|
+| Tyler J — All Along | 151 s | $0.0336 |
+| teewhy — all along | 104 s | $0.0231 |
+| teewhy — ceo | 139 s | $0.0308 |
+
+**Gate: PASSED** (threshold ≤ 5 min, ≤ $0.10 per track.)
+
+Mean ≈ **131 s / $0.029 per track**. This supersedes the ~$0.01–0.03 estimate in §2,
+which was optimistic on time by roughly 2×. Note these runs produce more outputs than
+production will (both `other` variants plus FLAC); the steady-state number after the §10.1
+decision will be lower.
+
+### Revised own-hardware crossover
+
+At $0.029/track, a dedicated GPU box at ~$300/month breaks even around **10,000
+tracks/month** — not the ~20,000 quoted earlier in conversation, which used the optimistic
+estimate. Below that, serverless is cheaper. Recalculate before buying hardware.
+
+Catalog-scale reference: 10k tracks ≈ $290. 100k tracks ≈ $2,900.
+
+### Dependency fixes required to reach this (do not lose these)
+
+The published `audio-separator` dependency set does not install cleanly on a fresh
+Python 3.12 CUDA image. Five fixes were needed:
+
+1. `audioread` + `librosa` must be declared explicitly — `audio-separator` imports
+   `audioread` in `spec_utils.py` without declaring it, and newer `librosa` no longer
+   provides it transitively.
+2. `librosa==0.10.1`, not 1.0.0 — `get_duration(filename=...)` was removed in 1.0.
+3. `torchaudio.info` / `.load` / `.save` are gone in torchaudio 2.11 (torchcodec backend
+   not installed). Use `ffprobe` for probing and `soundfile` + `librosa` for I/O.
+4. RoFormer output filenames embed the model name, which collides with naive keyword
+   matching on `other`. Match on the `_(other` prefix instead.
+5. Scan output directories directly rather than constructing paths from the bare filenames
+   `separate()` returns.
+
+**These pins are load-bearing.** Anyone rebuilding this image from scratch in six months
+will hit all five again unless the versions stay pinned.
