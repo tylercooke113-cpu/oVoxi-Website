@@ -64,6 +64,10 @@ chainlit.md
 # Data and databases
 agenthub/agents/youtube/db
 
+# Benchmark baselines and staged-for-deletion artifacts
+benchmark/
+_to_delete/
+
 # Archive files and large assets
 **/*.zip
 **/*.tar.gz
@@ -94,3 +98,4 @@ frontend/node_modules/.cache/default-development/4.pack
 credentials.json
 *.key
 .credentials
+.env*
