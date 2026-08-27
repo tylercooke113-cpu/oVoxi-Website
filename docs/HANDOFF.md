@@ -33,14 +33,27 @@ Two problems were found and fixed on the way, both configuration, neither code:
    credential (Modal secrets begin `as-`). Backend failed at dispatch with
    "Token validation failed" and no Modal run appeared. Fixed by issuing a dedicated
    production token (`modal token new --profile railway --no-activate`).
-   ⚠️ Whatever that `fe…` value actually was got transmitted to Modal as a rejected
-   login. If it is a live credential elsewhere, rotate it.
+   The `fe…` value was transmitted to Modal as a rejected login before being replaced.
+   **Reviewed and closed by Tyler 2026-08-27 as harmless — not a live credential.**
+   No rotation needed; do not re-raise.
 2. `STEM_ENGINE` had never been set at all, so production was still routing to the
    cancelled LALAL vendor. See the 26 Aug failure analysis below.
 
-**Still outstanding before this is fully done:** Vercel's production branch is still
-`feat/marketing-revamp`, so `AdminPage.jsx`'s `instrumental` label has not shipped.
-Admin will render the raw key `instrumental` rather than "Instrumental" until repointed.
+**Vercel repointed to `main` — 2026-08-27.** Verified safe first: `feat/marketing-revamp`
+had **zero** commits not already in `main`, and the entire `frontend/` diff production
+received was one line (the `instrumental` label in `AdminPage.jsx`). `App.js` was
+byte-identical between the branches, so the `/` route was unaffected. Production is now
+`6427258` from `main`; Admin renders "Instrumental" correctly.
+
+`feat/marketing-revamp` is now an ordinary preview branch pointing at `75a1d94`, an
+ancestor of `main`. Deleting that branch ref loses no code — distinct from "deleting the
+revamp", which remains a bad idea.
+
+**How to confirm the marketing flag is off without reading its value:** `postbuild` gates
+`react-snap` on `REACT_APP_NEW_MARKETING = "true"`. If the raw HTML at www.ovoxi.net is
+the bare CRA shell ("You need to enable JavaScript to run this app"), react-snap did not
+run, so the flag was not `"true"` at build time, so `/` renders `HomePage`. `App.js:20`
+uses strict `=== 'true'`, so every other value fails safe.
 
 ### Stem storage format reversed to 24-bit WAV — 2026-08-27
 
