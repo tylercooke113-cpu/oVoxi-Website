@@ -972,6 +972,11 @@ async def stems_callback(request: Request):
         }
         if "source_sample_rate" in payload:
             update["source_sample_rate"] = payload["source_sample_rate"]
+        # Stem storage format, recorded explicitly so the catalog is
+        # self-describing for licensees. "wav24" from schema v3 onward;
+        # absent on v1 (LALAL pcm_s24le) and v2 (MP3 320) documents.
+        if "stem_format" in payload:
+            update["stem_format"] = payload["stem_format"]
         result = await db.track_submissions.update_one(
             {"id": sid, "status": {"$nin": ["failed", "completed"]}},
             {"$set": update},

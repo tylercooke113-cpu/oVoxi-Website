@@ -159,6 +159,9 @@ def _benchmark_prefix(sid: str, artist_slug: str, track_slug: str) -> str:
 
 def _r2_has_all_benchmark_stems(r2, bucket: str, sid: str, artist_slug: str, track_slug: str) -> bool:
     prefix = _benchmark_prefix(sid, artist_slug, track_slug)
+    # NOTE 2026-08-27: stems are 24-bit WAV from stem_schema_version 3 onward.
+    # These ".mp3" literals are stale and must be updated before this benchmark is
+    # re-run against the current worker, or every existence check will miss.
     return all(_r2_key_exists(r2, bucket, f"{prefix}/{name}.mp3") for name in NEW_ALL_KEYS)
 
 

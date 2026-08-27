@@ -79,13 +79,20 @@ Triggered by `POST /api/upload/complete` via FastAPI `BackgroundTasks` — i.e. 
 ```
 catalog/{slug_artist}/{slug_track}/original/{submission_id}{ext}
 catalog/{slug_artist}/{slug_track}/mastered/{submission_id}.wav
-catalog/{slug_artist}/{slug_track}/stems/{vocals|instrumental|drums|bass|other}.mp3
+catalog/{slug_artist}/{slug_track}/stems/{vocals|instrumental|drums|bass|other}.wav
 ```
 
 **The mastered key is always `.wav`** (fixed 2026-08-27). Matchering writes 24-bit
 PCM WAV, so deriving the suffix from the source container produced `mastered/{id}.mp3`
 files holding WAV bytes. Legacy documents keep their old keys — see OQ-7. Never rebuild
 this key by string manipulation; read `mastered_r2_key` off the document.
+
+**Stems are 24-bit PCM WAV since 2026-08-27, under `stem_schema_version: 3`.**
+The `/03` A/B accepted MP3 320, but LALAL's legacy stems were already `pcm_s24le` WAV,
+so MP3 left the catalog half lossless and half lossy — the wrong direction for a
+training-data product. Schema versions are now: **v1** = four LALAL stems (WAV),
+**v2** = five stems (MP3 320), **v3** = five stems (24-bit WAV). Documents from v3
+onward also carry `stem_format`. Legacy documents are **not** rewritten.
 
 **Five stems since `/04`, under `stem_schema_version: 2`.** `instrumental` is the full
 mix minus vocals (what LALAL called `other`); `other` is now a true htdemucs residual.

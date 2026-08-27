@@ -42,6 +42,31 @@ Two problems were found and fixed on the way, both configuration, neither code:
 `feat/marketing-revamp`, so `AdminPage.jsx`'s `instrumental` label has not shipped.
 Admin will render the raw key `instrumental` rather than "Instrumental" until repointed.
 
+### Stem storage format reversed to 24-bit WAV — 2026-08-27
+
+`/03` accepted MP3 320. Overturned after the first production run, because LALAL's
+legacy stems were already `pcm_s24le` WAV and lossy stems are the wrong product for a
+training-data business. Full reasoning in `docs/benchmark-stem-quality.md`.
+
+Schema versions are now:
+
+| Version | Stems | Format |
+|---|---|---|
+| v1 | four (LALAL) | WAV `pcm_s24le` |
+| v2 | five | MP3 320 |
+| v3 | five | 24-bit WAV, `stem_format: "wav24"` on the document |
+
+Legacy documents are **not** rewritten. `VaultPage` and `AdminPage` are format-agnostic
+(they iterate `stem_urls` and presign whatever key is stored), so no frontend change is
+required.
+
+⚠️ **The Modal worker does not auto-deploy.** `modal deploy infra/modal/stem_worker.py`
+is required or stems keep landing as MP3. `WORKER_VERSION` was bumped to `wav24-v1`
+specifically so the deploy is verifiable — the first log line of any run prints it.
+
+⚠️ `scripts/run_stem_benchmark.py` still hardcodes `.mp3` and will find nothing if
+re-run against the current worker. Commented in place, not fixed.
+
 ### Callback contract VERIFIED end to end — 2026-08-27
 
 `modal run infra/modal/preflight_callback.py` sends one HMAC-signed request with

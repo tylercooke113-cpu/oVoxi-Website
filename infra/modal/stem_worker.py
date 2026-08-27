@@ -32,7 +32,7 @@ L4_RATE_PER_SEC = 0.000222  # $/sec as of Modal pricing page (PRD §2)
 
 # Bump this string on every meaningful deploy so Modal logs confirm which
 # code version executed. A warm container on old code logs the old string.
-WORKER_VERSION = "wire-v1"
+WORKER_VERSION = "wav24-v1"
 
 # ---------------------------------------------------------------------------
 # Image: CUDA-capable Python 3.12 with models baked in at build time
@@ -370,9 +370,20 @@ def separate_stems(
 
             sub_np = np.clip(instr_np - drums_np - bass_np, -1.0, 1.0)  # noqa: F841
 
-            # ── 5. Encode five stems → MP3 320kbps, upload to R2 ─────────────
+            # ── 5. Normalise five stems → 24-bit PCM WAV, upload to R2 ───────
             #
-            # FLAC dropped after /03 A/B (format decision: MP3 320 accepted).
+            # Format reversed 2026-08-27. /03 accepted MP3 320, but LALAL's legacy
+            # stems were pcm_s24le WAV, so MP3 made the catalog half lossless and
+            # half lossy — the wrong direction for a training-data product, where
+            # lossy artifacts are learned by the models trained on them.
+            #
+            # pcm_s24le, not FLAC: ffmpeg's FLAC encoder takes s16/s32 and will
+            # silently downgrade a float input to 16-bit unless given explicit
+            # -sample_fmt/-bits_per_raw_sample flags. WAV has no such ambiguity and
+            # matches both the mastered file (mg.pcm24) and the legacy LALAL stems.
+            #
+            # The separator's own output bit depth is not guaranteed, so every stem
+            # is normalised through ffmpeg rather than uploaded as-is.
             # -ar preserves the actual output sample rate; never allows ffmpeg
             # to choose a default.
             stems: dict[str, Path] = {
@@ -386,39 +397,40 @@ def separate_stems(
             enc_dir = workdir / "encoded"
             enc_dir.mkdir()
             stem_paths: dict[str, str] = {}
-            total_mp3_bytes = 0
+            total_out_bytes = 0
 
             for stem_name, wav_path in stems.items():
                 wav_sr   = _ffprobe_sr(wav_path)
-                mp3_path = enc_dir / f"{stem_name}.mp3"
+                out_path = enc_dir / f"{stem_name}.wav"
 
                 subprocess.run(
                     ["ffmpeg", "-y", "-i", str(wav_path),
-                     "-codec:a", "libmp3lame", "-b:a", "320k",
+                     "-codec:a", "pcm_s24le",
                      "-ar", str(wav_sr),
-                     str(mp3_path)],
+                     str(out_path)],
                     check=True, capture_output=True,
                 )
-                total_mp3_bytes += mp3_path.stat().st_size
+                total_out_bytes += out_path.stat().st_size
 
-                mp3_key = f"{stem_prefix}/{stem_name}.mp3"
+                out_key = f"{stem_prefix}/{stem_name}.wav"
                 r2.put_object(
-                    Bucket=bucket, Key=mp3_key,
-                    Body=mp3_path.read_bytes(),
-                    ContentType="audio/mpeg",
+                    Bucket=bucket, Key=out_key,
+                    Body=out_path.read_bytes(),
+                    ContentType="audio/wav",
                 )
-                stem_paths[stem_name] = mp3_key
+                stem_paths[stem_name] = out_key
 
             log.info(
-                "Encoded and uploaded %d stems  MP3=%.1f MB",
-                len(stems), total_mp3_bytes / 1_048_576,
+                "Encoded and uploaded %d stems  WAV24=%.1f MB",
+                len(stems), total_out_bytes / 1_048_576,
             )
 
             # ── 6. Success callback ───────────────────────────────────────────
             payload = {
                 "submission_id":       submission_id,
                 "status":              "completed",
-                "stem_schema_version": 2,
+                "stem_schema_version": 3,
+                "stem_format":         "wav24",
                 "stem_paths":          stem_paths,
                 "source_sample_rate":  src_sr,
             }

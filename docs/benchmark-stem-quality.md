@@ -21,6 +21,33 @@ rule 4 (additive first, delete second); removal is a separate later commit.
 
 **Storage format:** MP3 320 kbps accepted; FLAC rejected.
 
+> ### ⚠️ REVERSED 2026-08-27 — stems are now 24-bit PCM WAV
+>
+> This decision was overturned after the first production run. The reasoning that
+> overrode the A/B is commercial, not audible:
+>
+> 1. **LALAL's legacy stems were already `pcm_s24le` WAV** (see the File format note
+>    below, and the size column in every table). Shipping MP3 made the catalog half
+>    lossless and half lossy, with no way to tell them apart except upload date.
+> 2. **oVoxi sells training corpora.** Lossy compression artifacts are learned by the
+>    models trained on them. A buyer's technical diligence asks what format the stems
+>    are in, and "MP3 320" is the wrong answer for a company whose product is
+>    provenance and quality.
+> 3. **The cost objection does not survive arithmetic.** ~210 MB/track against
+>    R2 at $0.015/GB/month with free egress: ~$32/month at 10,000 tracks.
+>
+> The A/B itself was not wrong — MP3 320 is perceptually fine, which is what the ear
+> test measured. It was answering the wrong question. Archival format for a licensed
+> dataset is not a listening decision.
+>
+> WAV rather than FLAC: ffmpeg's FLAC encoder silently downgrades float input to
+> 16-bit without explicit `-sample_fmt`/`-bits_per_raw_sample` flags. WAV has no such
+> ambiguity and matches the mastered file (`mg.pcm24`) and the legacy stems.
+>
+> **Unchanged by this reversal:** the checkpoints, the `_pick` fix, and the dependency
+> pins. The quality bar recorded below still stands — this only stops it being
+> degraded on the way into storage.
+
 **Quality bar — 2026-08-27.** Tyler's assessment of the post-fix production-path output:
 *"very crispy and perfect."* Treat this as the accepted bar. Do not change the
 checkpoints (`vocals_mel_band_roformer.ckpt`, `htdemucs_ft.yaml`), the storage format,
