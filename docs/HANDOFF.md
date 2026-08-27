@@ -6,7 +6,74 @@ Last updated: 2026-08-26. Read this first, then `CLAUDE.md`, then the PRD you're
 
 ## Where we are
 
-**PRD-01 (stem splitter migration): /04 code written. Not deployed. One pre-deployment blocker open.**
+**PRD-01: /04 is LIVE on Railway (`1e716bb` or later, verified 2026-08-27).
+`STEM_ENGINE` is unset or `"lalal"` — production still routes to the cancelled vendor.
+The only remaining step to activate the new engine is the flag.**
+
+### How Railway's deployed commit was verified (no CLI, no dashboard, no login)
+
+`POST /api/internal/stems/callback` was introduced *only* in `1e716bb`
+(`git log -S "internal/stems/callback"` returns that commit alone; absent in `508f141`).
+A plain GET to that path on production returns **405 Method Not Allowed** — the path is
+registered — while a control GET to a nonexistent sibling path returns **404**.
+Route present ⇒ `1e716bb` or later is running.
+
+Reusable: to test whether any deployment contains a given commit, GET a route that
+commit introduced. 405 = present, 404 = absent.
+
+### ✅ NEW ENGINE LIVE IN PRODUCTION — 2026-08-27
+
+First real production upload ("100 Racks") completed end to end under
+`STEM_ENGINE=modal`. Mastered file and stems present in R2, track `completed` in Admin,
+stems visible in the artist Vault. **The `/05` precondition is met.**
+
+Two problems were found and fixed on the way, both configuration, neither code:
+
+1. `MODAL_TOKEN_SECRET` in Railway held a value beginning `fe…` — not a Modal
+   credential (Modal secrets begin `as-`). Backend failed at dispatch with
+   "Token validation failed" and no Modal run appeared. Fixed by issuing a dedicated
+   production token (`modal token new --profile railway --no-activate`).
+   ⚠️ Whatever that `fe…` value actually was got transmitted to Modal as a rejected
+   login. If it is a live credential elsewhere, rotate it.
+2. `STEM_ENGINE` had never been set at all, so production was still routing to the
+   cancelled LALAL vendor. See the 26 Aug failure analysis below.
+
+**Still outstanding before this is fully done:** Vercel's production branch is still
+`feat/marketing-revamp`, so `AdminPage.jsx`'s `instrumental` label has not shipped.
+Admin will render the raw key `instrumental` rather than "Instrumental" until repointed.
+
+### Callback contract VERIFIED end to end — 2026-08-27
+
+`modal run infra/modal/preflight_callback.py` sends one HMAC-signed request with
+`status: "ping"` from inside Modal, using the real `ovoxi-stem-secrets` values.
+Result:
+
+```
+STEM_CALLBACK_URL : https://ovoxi-website-production.up.railway.app/api/internal/stems/callback
+secret fingerprint: 0cbe929defb8   (length 64)
+HTTP 400  {"detail":"Unknown status: 'ping'"}
+```
+
+A 400 is the pass condition: the signature was accepted, the body parsed, and the
+status rejected before any write path. This simultaneously proves:
+
+- `STEM_CALLBACK_URL` is the real Railway route, not the old webhook.site endpoint
+- `STEM_WEBHOOK_SECRET` matches byte-for-byte between Modal and Railway (64 chars,
+  consistent with `openssl rand -hex 32`)
+- both sides agree on the HMAC serialization (`sort_keys=True`, `separators=(",",":")`,
+  posted as `data=`, verified against raw bytes)
+- Railway's running code has the callback route AND has the secret configured
+  (a missing secret would have returned 500)
+
+**The rotated secret is no longer unverified.** Re-run this script after any secret
+rotation or callback-URL change — it is the cheapest possible regression test and
+touches no data.
+
+⚠️ Railway auto-deploys on push. The belief that `/04` was "committed but not deployed"
+was wrong — the third time in this migration an auto-deploy assumption has been wrong.
+Assume both platforms deploy on push unless proven otherwise.
+
+Last updated 2026-08-27.
 
 | Command | Status |
 |---|---|
@@ -14,7 +81,7 @@ Last updated: 2026-08-26. Read this first, then `CLAUDE.md`, then the PRD you're
 | `/01-stem-baseline` | ✅ Done. LALAL stems captured to `benchmark/lalal-baseline/`. |
 | `/02-stem-worker` | ✅ Done. Modal worker deployed, gate passed. |
 | `/03-stem-benchmark` | ✅ Done. New engine accepted. `other` (htdemucs residual) selected. MP3 320. |
-| `/04-stem-wire` | 🔶 Code committed to `feat/stem-engine-migration`. **Not deployed.** See blocker below. |
+| `/04-stem-wire` | 🔶 Merged to `main` as `1e716bb`; `main` == `origin/main`. Never exercised in production. |
 | `/05-stem-delete-lalal` | ⬜ Blocked until a real production upload reaches `completed` under `STEM_ENGINE=modal`, with five stems visible in the artist Vault and `instrumental` labelled correctly in Admin. Deleting LALAL is irreversible and `benchmark/lalal-baseline/` cannot be regenerated. |
 | `/06-stem-backfill` | ⬜ |
 | `/07`–`/10` (splits + CWR) | ⬜ Not started. |
@@ -47,6 +114,76 @@ All three A/B calls made. Full notes and caveats in `docs/benchmark-stem-quality
 - **Splits stored as integer basis points**, never floats (PRD-02 §3).
 - **Explicit `legal_name` on every rights party** — `artist_name` is a stage name and must never be used silently for registration (PRD-02 §10.1).
 - **`owns_everything` is a server-side expansion, never a validation bypass** (PRD-02 §4 rule 6).
+
+---
+
+## Resolved — the 2026-08-26 failed submission
+
+A previously-cleared demo track was submitted on the evening of 26 Aug and came back
+`failed` with `'NoneType' object has no attribute 'get'`. Mastering completed first.
+
+**Root cause: the LALAL path ran, and LALAL is dead.** In `_lalal_split`
+(`server.py:169–175`):
+
+```python
+data   = check.json()
+result = data.get("result", {}).get(file_id, {})
+state  = result.get("task", {}).get("state")
+```
+
+`data.get("result", {})` returns the default `{}` only when the key is *absent*. LALAL
+returns the key present with a **null** value, so the expression evaluates to `None` and
+the chained `.get(file_id)` raises exactly that `AttributeError`. Same shape if
+`result[file_id]["task"]` is null.
+
+**What this proves:** `STEM_ENGINE` is unset or `"lalal"` in Railway, so production is
+still routing to a cancelled vendor. Every upload will fail this way until the flag is
+switched.
+
+**What this does NOT prove:** whether Railway is running `/04`. The LALAL branch is
+byte-identical in the old and new code, so this failure is indistinguishable between
+them. **Resolve the deployed commit before setting `STEM_ENGINE=modal`** — on a
+pre-`/04` deployment the variable is simply ignored, the upload fails identically, and
+the failure looks like a Modal problem when it is a deployment problem.
+
+Ruled out: ACRCloud (a non-`CLEARED` scan writes the ACR status and returns, never
+`failed`); the webhook secret (a mismatch 401s the callback and hangs the track in
+`processing`, it cannot write `failed`); the Modal worker (never invoked).
+
+**Lesson for future diagnosis:** `server.py:346` stores `error: str(exc)` on the
+document and `AdminPage.jsx:228` renders it. Read that string first. It cost four
+rounds of hypothesis-building to arrive at a fact the Admin page was already showing.
+
+---
+
+## Stem quality — do not regress
+
+Tyler's assessment of the new-engine output on the 2026-08-26 run: **"very crispy and
+perfect."** This is the quality bar. It is the product, not an implementation detail —
+the catalog's value to an AI licensee is the stems.
+
+What that quality is a function of, and must not be changed without a fresh A/B:
+
+- `vocals_mel_band_roformer.ckpt` for vocals/instrumental; `htdemucs_ft.yaml` for
+  drums/bass/other. **Specific checkpoints, not model families.**
+- The `_pick` fix at `aa956d9`. The pre-fix build produced stems that sounded wrong
+  because the wrong file was selected, not because the model was worse.
+- MP3 320 as the stored format (FLAC rejected at `/03`).
+- htdemucs resamples everything to 44.1 kHz. 48 kHz sources are downsampled.
+
+**Threats to this quality bar, in order of likelihood:**
+
+1. **OQ-3 (model weight licensing).** If MUSDB18-derived checkpoints cannot be used
+   commercially, the replacement checkpoint changes the sound. This is the single
+   largest risk to the quality Tyler just approved, and it is a legal question, not an
+   engineering one.
+2. **`/06-stem-backfill`** reprocessing existing catalog entries under different
+   settings.
+3. Any loosening of the dependency pins in PRD-01 §11 — a different `audio-separator`
+   or `torch` version can change inference output.
+
+Re-run the `/03` A/B against `benchmark/lalal-baseline/` before accepting any change to
+the four bullets above.
 
 ---
 
@@ -133,10 +270,13 @@ registrations to ASCAP. Status unknown.
 
 ## Next action
 
+0. ~~Establish what commit Railway is running.~~ ✅ Done 2026-08-27 — `/04` is live.
 1. Correct `STEM_CALLBACK_URL` in `ovoxi-stem-secrets` (see blocker above).
 2. Deploy Modal worker: `modal deploy infra/modal/stem_worker.py` (picks up `wire-v1`).
 3. Deploy backend to Railway (picks up callback route + `STEM_ENGINE` dispatch).
-4. Deploy frontend to Vercel (picks up `instrumental` label in AdminPage).
-5. Set `STEM_ENGINE=modal` in Railway env vars.
+4. Repoint Vercel's production branch to `main`, then deploy frontend (picks up the
+   `instrumental` label in AdminPage). Until repointed, nothing built on `main` ships.
+5. Set `STEM_ENGINE=modal` in Railway env vars. Step 0 confirmed `/04` is live, so the
+   variable **will** take effect. This is the switch that activates the new engine.
 6. Upload a real track. Verify: track reaches `completed`; five stems visible in artist Vault; `instrumental` shows as "Instrumental" in Admin.
 7. `/05-stem-delete-lalal` stays blocked until a real production upload reaches `completed` under `STEM_ENGINE=modal`, with five stems visible in the artist Vault and `instrumental` labelled correctly in Admin. Deleting LALAL is irreversible and `benchmark/lalal-baseline/` cannot be regenerated.

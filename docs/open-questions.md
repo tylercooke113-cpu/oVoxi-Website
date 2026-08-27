@@ -205,3 +205,53 @@ live overwrite path with no runtime defence.
 `_process_stems` before the dispatch. Both are deferred.
 
 **Owner:** unassigned.
+
+---
+
+## OQ-7 — Legacy mastered R2 keys carry the wrong extension
+
+**Found:** 2026-08-27, during the first production run under `STEM_ENGINE=modal`.
+Tyler noticed the mastered file was much larger than the original yet listed as `.mp3`.
+
+**What happened:** `_master_track` derived the mastered key with
+`r2_key.replace("/original/", "/mastered/")`, which preserves the *source* extension.
+Matchering always writes 24-bit PCM WAV (`mg.pcm24`), so every mastered object uploaded
+from a non-WAV source is a WAV file stored under a lying suffix — `mastered/{id}.mp3`
+containing WAV bytes. The `Content-Type` header was always correct (`audio/wav`), which
+is why downloads and playback never visibly broke.
+
+**It propagated into the worker.** `infra/modal/stem_worker.py` reads
+`src_ext = Path(mastered_r2_key).suffix` and writes the downloaded bytes to
+`mastered{src_ext}`. So the separator was handed WAV bytes in a file named
+`mastered.mp3`. It worked only because `audio-separator`/librosa sniff content rather
+than trusting the extension — a stricter decode path or a future version breaks it.
+
+**Fixed forward** (2026-08-27, `backend/server.py` `_master_track`): the key is now
+derived with `PurePosixPath(...).with_suffix(".wav")`. Verified against `.mp3`, `.wav`,
+`.flac`, `.m4a`, no-extension, and paths containing dots in earlier segments.
+
+**Still open — the backfill.** Documents created before this fix keep `.mp3`/`.flac`
+mastered keys pointing at WAV content. Every consumer reads `mastered_r2_key` off the
+document rather than reconstructing it, so nothing is broken today and old and new
+coexist safely. The catalog is simply mixed.
+
+**To resolve:** decide whether to rewrite legacy keys (copy object to the `.wav` key,
+update the document, delete the old object) or leave them. Not to be attempted during
+PRD-01 — it is a data migration touching production objects, and it is not urgent.
+
+**Owner:** unassigned. Deferred.
+
+---
+
+## Note — duplicate objects under original/ and mastered/ are NOT a bug
+
+Investigated 2026-08-27 and closed. Both key shapes embed `{submission_id}`, so two
+objects can only coexist in one folder if they came from two different submissions.
+Re-uploading the same artist + title creates a second submission and therefore a second
+pair of objects. A failed submission still leaves a pair behind if it got past the
+mastering step before failing.
+
+**Do not "fix" this by removing the submission id from the key.** That is exactly the
+OQ-2 defect, which has already destroyed stem data twice. Orphaned objects from failed
+submissions are a cleanup/retention concern, not a keying concern.
+

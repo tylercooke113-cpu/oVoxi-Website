@@ -21,6 +21,14 @@ rule 4 (additive first, delete second); removal is a separate later commit.
 
 **Storage format:** MP3 320 kbps accepted; FLAC rejected.
 
+**Quality bar — 2026-08-27.** Tyler's assessment of the post-fix production-path output:
+*"very crispy and perfect."* Treat this as the accepted bar. Do not change the
+checkpoints (`vocals_mel_band_roformer.ckpt`, `htdemucs_ft.yaml`), the storage format,
+or the PRD-01 §11 dependency pins without re-running this benchmark against
+`benchmark/lalal-baseline/`. The largest threat to it is OQ-3 (model weight licensing) —
+a forced checkpoint change alters the sound. See `docs/HANDOFF.md` § "Stem quality — do
+not regress".
+
 **Coverage note:** Judgement was made on four unique tracks, not five. Submissions
 `1800f622` (Tyler J — All Along) and `dc9cbb73` (teewhy — all along) are
 byte-identical source recordings (mastered sha256 `5ec671126fb8ec8e...`); their

@@ -15,7 +15,7 @@ session — additive only.**
    (`async separate(submission_id, mastered_r2_key, artist_name, track_name) -> None`) and
    a `ModalStemSeparator` implementation that invokes the deployed Modal function
    asynchronously and returns immediately.
-2. In `backend/server.py`, add a `STEM_ENGINE` env var defaulting to `"modal"`. In
+2. In `backend/server.py`, add a `STEM_ENGINE` env var defaulting to `"lalal"`. In
    `_process_stems`, branch: `"lalal"` runs the existing block untouched, `"modal"` calls
    `stem_service` and returns, leaving status at `processing` for the callback to finish.
 3. Add `POST /api/internal/stems/callback`:

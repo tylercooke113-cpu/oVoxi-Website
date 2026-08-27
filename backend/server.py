@@ -9,7 +9,7 @@ import tempfile
 import uuid
 from datetime import datetime, timezone
 from io import BytesIO
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import List, Optional
 
 import boto3
@@ -208,7 +208,14 @@ async def _master_track(submission_id: str, r2_key: str) -> str:
     """
     import matchering as mg
 
-    mastered_r2_key = r2_key.replace("/original/", "/mastered/")
+    # Matchering always writes 24-bit PCM WAV (mg.pcm24 below), so the mastered
+    # key must carry a .wav suffix regardless of the source container. Deriving it
+    # from the source extension produced e.g. mastered/{id}.mp3 holding WAV bytes —
+    # which also propagated into the Modal worker, where src_ext is read straight
+    # off this key to name the local temp file. Legacy documents keep their old
+    # keys; every consumer reads the stored value rather than rebuilding it.
+    _mastered_key   = r2_key.replace("/original/", "/mastered/")
+    mastered_r2_key = str(PurePosixPath(_mastered_key).with_suffix(".wav"))
 
     # Reference track bundled in the repo
     reference_path = os.path.join(os.path.dirname(__file__), "reference", "default.wav")

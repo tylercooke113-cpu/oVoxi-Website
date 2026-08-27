@@ -18,8 +18,27 @@ the results in Cloudflare R2 for the training-rights catalog.
 | Frontend | `frontend/` | React (CRA) + Tailwind + Radix/shadcn + Clerk + react-three-fiber, prerendered with react-snap | Vercel |
 | Backend | `backend/` | FastAPI (Python 3.12) + Motor/MongoDB + boto3→R2 | Railway (`ovoxi-website-production.up.railway.app`) |
 
-There is **no root `package.json`** and **no git remote workflow assumptions** — build
-each half from its own directory.
+There is **no root `package.json`** — build each half from its own directory.
+
+### Deployment topology — verified 2026-08-27
+
+Both halves auto-deploy on push. Neither is manual, and a belief that "auto-deploy is
+broken" has been wrong twice.
+
+| Platform | Deploys from | Notes |
+|---|---|---|
+| Vercel (frontend) | ⚠️ **`feat/marketing-revamp`**, not `main` | Fires on every push; four unnoticed production deploys landed in one day. **Nothing built on `main` reaches the live site until this is repointed.** |
+| Railway (backend) | assumed `main` — **verify against the deployed commit before trusting it** | |
+
+`REACT_APP_NEW_MARKETING` (`frontend/src/App.js:20`) switches the `/` route between
+`HomePage` and `MarketingPage` and hides the header. Nothing else reads it. Currently
+`false` (Config type). The marketing revamp is **not** an unmerged side branch — it is
+the base of the entire commit history at `75a1d94`, with every stem commit on top of it.
+Do not attempt to remove it; the flag achieves the outcome without history surgery.
+
+**Never dump the full Railway environment** (`railway variables` with no filter) into a
+terminal or an agent transcript. `STEM_WEBHOOK_SECRET` was already burned once that way
+and had to be rotated. Read single variables, or read them in the dashboard.
 
 ---
 
@@ -59,12 +78,26 @@ Triggered by `POST /api/upload/complete` via FastAPI `BackgroundTasks` — i.e. 
 
 ```
 catalog/{slug_artist}/{slug_track}/original/{submission_id}{ext}
-catalog/{slug_artist}/{slug_track}/mastered/{submission_id}{ext}
-catalog/{slug_artist}/{slug_track}/stems/{vocals|drums|bass|other}.mp3
+catalog/{slug_artist}/{slug_track}/mastered/{submission_id}.wav
+catalog/{slug_artist}/{slug_track}/stems/{vocals|instrumental|drums|bass|other}.mp3
 ```
 
+**The mastered key is always `.wav`** (fixed 2026-08-27). Matchering writes 24-bit
+PCM WAV, so deriving the suffix from the source container produced `mastered/{id}.mp3`
+files holding WAV bytes. Legacy documents keep their old keys — see OQ-7. Never rebuild
+this key by string manipulation; read `mastered_r2_key` off the document.
+
+**Five stems since `/04`, under `stem_schema_version: 2`.** `instrumental` is the full
+mix minus vocals (what LALAL called `other`); `other` is now a true htdemucs residual.
+Same key name, different content — see PRD-01 §10.1. Legacy documents stay at
+version 1 and are **not** rewritten.
+
+⚠️ Stem keys omit the submission id, so two uploads of the same artist + track title
+overwrite each other. This is OQ-2, known, deliberately unfixed during PRD-01.
+
 `_master_track` derives the mastered key by string-replacing `/original/` → `/mastered/`.
-The Vault and Admin pages read `stem_paths` by those exact four keys.
+`AdminPage.jsx` maps the five keys via `STEM_LABELS`; `VaultPage.jsx` iterates
+`stem_urls` dynamically and needs no change when the set grows.
 
 ### Status values — DO NOT CHANGE without updating all three pages
 
@@ -74,6 +107,20 @@ which are written straight through to the document: `CLEARED`, `NEEDS_DOCS`,
 `CONFLICT`, `SCAN_ERROR` (emitted by `acrcloud_check.py`).
 
 `processing` is written twice and does **not** exclusively mean "separating".
+
+**Since `/04` there are two writers of `completed`.** Under `STEM_ENGINE=lalal` the
+pipeline reaches `completed` in-process. Under `STEM_ENGINE=modal`, `_process_stems`
+dispatches to Modal and returns with status left at `processing`; `completed` is written
+later by `POST /api/internal/stems/callback` (`server.py` ~L966), guarded against
+overwriting a terminal state. This is the first async completion in the pipeline — a
+track can now be `processing` with no process working on it. There is no callback
+timeout or reconciliation (OQ-5).
+
+**`failed` is written in exactly one place**: the `except` wrapping all of
+`_process_stems` (L343–346), which stores `error: str(exc)` on the document.
+`AdminPage.jsx:228` renders that string. **Read it before diagnosing anything.** A
+non-`CLEARED` ACRCloud scan does *not* produce `failed` — it writes the ACR status and
+returns.
 
 Coverage differs per page and this matters:
 - `AdminPage.jsx` — all 11 statuses. The most complete handler.
@@ -111,8 +158,12 @@ same pattern rather than inventing an env var, unless you refactor all of them a
 - `vercel.json` sets a **strict CSP**. `connect-src` allowlists only the Railway API and Clerk. **Any new external origin the browser must reach requires a `vercel.json` edit or it will be blocked in production and work fine locally.**
 - Secrets live in Railway/Vercel env vars, not in the repo. `backend/.env` locally holds
   `MONGO_URL`, `DB_NAME`, the five `R2_*` values, ACRCloud credentials, and admin values.
-- `STEM_ENGINE` does not exist in code yet; it is introduced in `/04` as the flag that
-  selects between engines. It is a `/04` deliverable, not a current prerequisite.
+- `STEM_ENGINE` **exists in code** as of `/04` (`server.py:291`), defaulting to
+  `"lalal"`. The default is deliberately *not* `"modal"`: an unset or misspelled
+  variable must not be able to activate the new engine. `.claude/commands/04-stem-wire.md`
+  originally specified a `"modal"` default; the implementation overrode it on purpose.
+  Setting `STEM_ENGINE=modal` only has effect if Railway is actually running `/04` —
+  older deployments ignore the variable entirely and run LALAL regardless.
 - `.gitignore` ignores all `.env*`. Keep it that way.
 
 ---
