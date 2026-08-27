@@ -122,9 +122,6 @@ def _print_stats(elapsed: float, result: dict) -> None:
     print(f"Status          : {result.get('status')}")
     print(f"Schema version  : {result.get('stem_schema_version')}")
     print(f"Source SR       : {result.get('source_sample_rate')} Hz")
-    flac_delta = result.get("storage_delta_flac_bytes", 0)
-    print(f"FLAC delta      : +{flac_delta / 1_048_576:.1f} MB per track "
-          f"({flac_delta / 1_048_576 * 1000 / 1_048_576:.2f} GB / 1000 tracks)")
     print()
     print("Stem paths (MP3):")
     for k, v in sorted(result.get("stem_paths", {}).items()):
@@ -134,7 +131,7 @@ def _print_stats(elapsed: float, result: dict) -> None:
     gate_ok = cost <= 0.10 and elapsed <= 300
     print(f"  cost ≤ $0.10  : {'PASS' if cost <= 0.10 else 'FAIL'} (${cost:.4f})")
     print(f"  time ≤ 5 min  : {'PASS' if elapsed <= 300 else 'FAIL'} ({elapsed:.0f}s)")
-    print(f"  Overall       : {'PASS — proceed to /03 A/B' if gate_ok else 'FAIL — stop and re-plan'}")
+    print(f"  Overall       : {'PASS' if gate_ok else 'FAIL — stop and re-plan'}")
 
 
 if __name__ == "__main__":

@@ -139,3 +139,69 @@ the Vault as "Instrumental". **Zero VaultPage.jsx code changes are required.**
 
 Everything else under `frontend/` stays untouched, `frontend/src/marketing/` in
 particular. This authorisation does not extend to `UploadPage.jsx` or any other file.
+
+---
+
+## OQ-5 — Callback timeout and reconciliation under STEM_ENGINE=modal
+
+**Found:** 2026-08-26, during /04 planning.
+
+Under `STEM_ENGINE=modal`, `_process_stems` submits the separation job to Modal and
+returns. The track sits in `status: "processing"` until Modal POSTs the callback to
+`POST /api/internal/stems/callback`, which writes `status: "completed"` and
+`stem_paths`. If the callback never arrives — Modal failure, network drop, bad
+signature, Railway restart between submit and callback — the track hangs in
+`processing` indefinitely. No timeout, no retry trigger, no alerting.
+
+**Why it matters:** a hung track gives the artist no feedback and no recourse. The
+admin page shows `Processing` forever. The only current recovery path is a manual
+MongoDB write or a backfill run.
+
+**Not built in /04** — the change from synchronous to async completion is the
+regression risk in /04; adding reconciliation on top increases scope and surface area.
+Addressed in a later phase.
+
+**Candidate approaches (do not implement without planning):**
+- A scheduled reconciliation job that finds documents in `processing` older than N
+  minutes and either re-triggers Modal or marks them `failed` with a timeout error.
+- A Modal-side deadline that fires the failure callback if separation exceeds a wall
+  clock threshold.
+- An admin-triggered re-queue route.
+
+**Owner:** unassigned.
+
+---
+
+## OQ-6 — No catalog/ write guard in the production dispatch path
+
+**Found:** 2026-08-26, during /04 planning.
+
+`separate_stems` defaults `key_prefix` to `"catalog"` and the production dispatch in
+`_process_stems` omits that argument:
+
+```python
+fn.spawn(submission_id, mastered_r2_key, _slugify(artist_name), _slugify(track_name))
+# key_prefix uses default → "catalog"
+# stem_prefix → "catalog/{artist_slug}/{track_slug}/stems"
+```
+
+There is no server-side guard that validates the resulting prefix before R2 writes. If
+`artist_slug` or `track_slug` is empty, blank, or collides with another submission,
+the worker writes to a wrong or shared path under `catalog/` without any rejection.
+
+The guard that prevents erroneous writes exists only in `run_stem_benchmark.py` and
+blocks the benchmark script from writing *into* `catalog/` — not the reverse.
+
+Combined with OQ-2 (stem keys omit the submission id; two uploads of the same artist +
+track title silently overwrite each other's stems — already happened twice), this is a
+live overwrite path with no runtime defence.
+
+**This preserves existing behaviour, not introduces new risk.** The LALAL path in
+`_process_stems` has the same exposure: it writes to
+`catalog/{safe_artist}/{safe_track}/stems/{label}.mp3` with no guard either.
+
+**Not fixed in /04.** Fixing it correctly requires addressing OQ-2 first (include
+`submission_id` in the stem key prefix) and then adding input validation in
+`_process_stems` before the dispatch. Both are deferred.
+
+**Owner:** unassigned.

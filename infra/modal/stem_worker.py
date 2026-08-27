@@ -1,7 +1,7 @@
 """
 oVoxi stem separation worker — Modal GPU app.
 
-Phase 1: standalone. Backend integration (Phase 2) adds the callback route.
+Phase 2: backend-integrated. Callback route wired in server.py.
 
 Model names confirmed via infra/modal/list_models.py against audio-separator 0.31.3:
   ROFORMER_MODEL = "vocals_mel_band_roformer.ckpt"   # Kimberley Jensen, 2-stem
@@ -32,7 +32,7 @@ L4_RATE_PER_SEC = 0.000222  # $/sec as of Modal pricing page (PRD §2)
 
 # Bump this string on every meaningful deploy so Modal logs confirm which
 # code version executed. A warm container on old code logs the old string.
-WORKER_VERSION = "guards-v1-vocal-keyword-fix"
+WORKER_VERSION = "wire-v1"
 
 # ---------------------------------------------------------------------------
 # Image: CUDA-capable Python 3.12 with models baked in at build time
@@ -106,22 +106,20 @@ def separate_stems(
     key_prefix: str = "catalog",
 ) -> dict:
     """
-    Download mastered audio from R2, separate into six stems, upload back to R2,
+    Download mastered audio from R2, separate into five stems, upload back to R2,
     and POST a signed callback. Never returns silently — always fires the callback.
 
     Returns the callback payload dict (used by test_modal_stems.py).
 
-    Six stems (stem_schema_version: 2):
-      vocals          — RoFormer isolated vocal            (vocals_mel_band_roformer.ckpt)
-      instrumental    — RoFormer full mix minus vocals     (vocals_mel_band_roformer.ckpt)
-      drums           — htdemucs_ft isolated drums         (htdemucs_ft.yaml)
-      bass            — htdemucs_ft isolated bass          (htdemucs_ft.yaml)
-      other_htdemucs  — htdemucs_ft residual               (htdemucs_ft.yaml)
-      other_subtract  — instrumental − drums − bass,       (sample-aligned subtraction)
-                        sample-aligned; for Phase 3 A/B
+    Five stems (stem_schema_version: 2):
+      vocals        — RoFormer isolated vocal            (vocals_mel_band_roformer.ckpt)
+      instrumental  — RoFormer full mix minus vocals     (vocals_mel_band_roformer.ckpt)
+      drums         — htdemucs_ft isolated drums         (htdemucs_ft.yaml)
+      bass          — htdemucs_ft isolated bass          (htdemucs_ft.yaml)
+      other         — htdemucs_ft true residual          (htdemucs_ft.yaml)
 
-    Per PRD-01 §10.1: other_htdemucs and other_subtract are both kept in Phase 1
-    so the A/B (/03) can decide which to promote to the canonical `other` key.
+    other_subtract (instrumental − drums − bass) is still computed but not uploaded;
+    kept per CLAUDE.md rule 4 (additive first, delete second).
     """
     import numpy as np
     import boto3
@@ -153,10 +151,10 @@ def separate_stems(
         config=Config(signature_version="s3v4"),
         region_name="auto",
     )
-    bucket       = os.environ["R2_BUCKET_NAME"]
-    callback_url = os.environ["STEM_CALLBACK_URL"]
+    bucket         = os.environ["R2_BUCKET_NAME"]
+    callback_url   = os.environ["STEM_CALLBACK_URL"]
     webhook_secret = os.environ["STEM_WEBHOOK_SECRET"]
-    stem_prefix  = f"{key_prefix}/{artist_slug}/{track_slug}/stems"
+    stem_prefix    = f"{key_prefix}/{artist_slug}/{track_slug}/stems"
 
     def _ffprobe_sr(path: Path) -> int:
         out = subprocess.check_output(
@@ -169,6 +167,10 @@ def separate_stems(
         )
         return int(json.loads(out)["streams"][0]["sample_rate"])
 
+    # The HMAC is computed over the exact bytes in `body`. The POST must use
+    # data=body, never json=payload — requests' json= re-serializes with
+    # different separators and the server's hmac.compare_digest would always
+    # fail, hanging every track in processing with no visible error.
     def _post_callback(payload: dict) -> None:
         body = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
         sig = hmac.new(
@@ -249,7 +251,7 @@ def separate_stems(
                 ["_(other", "instrumental", "instrum", "no_vocal", "no vocal", "no-vocal"],
             )
 
-            # ── 3. htdemucs_ft: drums + bass + other (htdemucs residual) ──────
+            # ── 3. htdemucs_ft: drums + bass + other ──────────────────────────
             log.info("Running htdemucs_ft")
             demucs_dir = workdir / "demucs"
             demucs_dir.mkdir()
@@ -273,10 +275,12 @@ def separate_stems(
                     f"Files: {[f.name for f in sorted(demucs_dir.rglob('*.wav'))]}"
                 )
 
-            drums_wav          = _pick_d(["drum"])
-            bass_wav           = _pick_d(["bass"])
-            other_htdemucs_wav = _pick_d(["other", "residual"])
-            # htdemucs vocals output — loaded only for the subtraction; not uploaded
+            drums_wav = _pick_d(["drum"])
+            bass_wav  = _pick_d(["bass"])
+            other_wav = _pick_d(["other", "residual"])
+            # htdemucs vocals output — not uploaded, not used in other_subtract
+            # (which is computed from RoFormer instrumental minus htdemucs drums/bass).
+            # Included in the collision guard below to catch demucs output misassignments.
             htdemucs_vocals_wav = _pick_d(["vocal"])
 
             # Sanity: every resolved stem path must be unique.
@@ -289,8 +293,8 @@ def separate_stems(
                 "instrumental":    instrumental_wav,
                 "drums":           drums_wav,
                 "bass":            bass_wav,
-                "other_htdemucs":  other_htdemucs_wav,
-                "htdemucs_vocals": htdemucs_vocals_wav,
+                "other":           other_wav,
+                "htdemucs_vocals": htdemucs_vocals_wav,  # internal; not uploaded
             }
             _seen_paths: set[Path] = set()
             for _stem_name, _stem_path in _resolved.items():
@@ -334,14 +338,13 @@ def separate_stems(
 
             # ── 4. other_subtract: instrumental − drums − bass ────────────────
             #
-            # All four sources derive from the same mastered audio, so they are
-            # aligned in time. htdemucs outputs at 44100 Hz regardless of input;
-            # RoFormer respects its config SR (also 44100 for this model).
-            # We resample to a common rate only if they diverge, then clamp.
+            # Computed but not written to disk or uploaded. Kept per CLAUDE.md
+            # rule 4 (additive first, delete second). The /03 A/B chose
+            # other_htdemucs (now `other`) as the canonical residual;
+            # other_subtract removal is a later commit.
             #
-            # Phase 3 A/B will decide between other_htdemucs (residual after
-            # all four separate cleanly) and other_subtract (algebraic; picks up
-            # inter-model spectral drift but no bleed artefacts from a 3rd pass).
+            # Uses RoFormer instrumental minus htdemucs drums and bass.
+            # htdemucs_vocals_wav is not involved in this computation.
 
             def _load_wav(path: Path) -> tuple[np.ndarray, int]:
                 # Returns (channels, frames) float32, matching separator convention
@@ -365,35 +368,29 @@ def separate_stems(
             drums_np = drums_np[..., :L]
             bass_np  = bass_np[...,  :L]
 
-            sub_np = np.clip(instr_np - drums_np - bass_np, -1.0, 1.0)
-            other_subtract_wav = workdir / "other_subtract.wav"
-            sf.write(str(other_subtract_wav), sub_np.T, target_sr, subtype="PCM_24")
+            sub_np = np.clip(instr_np - drums_np - bass_np, -1.0, 1.0)  # noqa: F841
 
-            # ── 5. Encode WAVs → MP3 320kbps + FLAC ─────────────────────────
+            # ── 5. Encode five stems → MP3 320kbps, upload to R2 ─────────────
             #
-            # Both formats written in Phase 1 so we can hear whether the
-            # 320kbps lossy floor matters before committing to MP3-only.
+            # FLAC dropped after /03 A/B (format decision: MP3 320 accepted).
             # -ar preserves the actual output sample rate; never allows ffmpeg
             # to choose a default.
             stems: dict[str, Path] = {
-                "vocals":         vocals_wav,
-                "instrumental":   instrumental_wav,
-                "drums":          drums_wav,
-                "bass":           bass_wav,
-                "other_htdemucs": other_htdemucs_wav,
-                "other_subtract": other_subtract_wav,
+                "vocals":       vocals_wav,
+                "instrumental": instrumental_wav,
+                "drums":        drums_wav,
+                "bass":         bass_wav,
+                "other":        other_wav,
             }
 
             enc_dir = workdir / "encoded"
             enc_dir.mkdir()
-            encoded: dict[str, dict[str, Path]] = {}
-            total_mp3_bytes  = 0
-            total_flac_bytes = 0
+            stem_paths: dict[str, str] = {}
+            total_mp3_bytes = 0
 
             for stem_name, wav_path in stems.items():
-                wav_sr    = _ffprobe_sr(wav_path)
-                mp3_path  = enc_dir / f"{stem_name}.mp3"
-                flac_path = enc_dir / f"{stem_name}.flac"
+                wav_sr   = _ffprobe_sr(wav_path)
+                mp3_path = enc_dir / f"{stem_name}.mp3"
 
                 subprocess.run(
                     ["ffmpeg", "-y", "-i", str(wav_path),
@@ -402,68 +399,28 @@ def separate_stems(
                      str(mp3_path)],
                     check=True, capture_output=True,
                 )
-                subprocess.run(
-                    ["ffmpeg", "-y", "-i", str(wav_path),
-                     "-codec:a", "flac",
-                     "-ar", str(wav_sr),
-                     str(flac_path)],
-                    check=True, capture_output=True,
-                )
-                encoded[stem_name] = {"mp3": mp3_path, "flac": flac_path}
-                total_mp3_bytes  += mp3_path.stat().st_size
-                total_flac_bytes += flac_path.stat().st_size
+                total_mp3_bytes += mp3_path.stat().st_size
 
-            flac_delta_mb = (total_flac_bytes - total_mp3_bytes) / 1_048_576
-            log.info(
-                "Encoded %d stems  MP3=%.1f MB  FLAC=%.1f MB  FLAC_delta=+%.1f MB",
-                len(stems),
-                total_mp3_bytes  / 1_048_576,
-                total_flac_bytes / 1_048_576,
-                flac_delta_mb,
-            )
-
-            # ── 6. Upload 12 files (6 MP3 + 6 FLAC) to R2 ───────────────────
-            stem_paths: dict[str, str] = {}
-            flac_paths: dict[str, str] = {}
-
-            for stem_name, paths in encoded.items():
-                mp3_key  = f"{stem_prefix}/{stem_name}.mp3"
-                flac_key = f"{stem_prefix}/{stem_name}.flac"
-
+                mp3_key = f"{stem_prefix}/{stem_name}.mp3"
                 r2.put_object(
                     Bucket=bucket, Key=mp3_key,
-                    Body=paths["mp3"].read_bytes(),
+                    Body=mp3_path.read_bytes(),
                     ContentType="audio/mpeg",
                 )
-                r2.put_object(
-                    Bucket=bucket, Key=flac_key,
-                    Body=paths["flac"].read_bytes(),
-                    ContentType="audio/flac",
-                )
                 stem_paths[stem_name] = mp3_key
-                flac_paths[stem_name] = flac_key
 
-            # ── 7. Success callback ───────────────────────────────────────────
+            log.info(
+                "Encoded and uploaded %d stems  MP3=%.1f MB",
+                len(stems), total_mp3_bytes / 1_048_576,
+            )
+
+            # ── 6. Success callback ───────────────────────────────────────────
             payload = {
-                "submission_id": submission_id,
-                "status": "completed",
+                "submission_id":       submission_id,
+                "status":              "completed",
                 "stem_schema_version": 2,
-                "stem_paths": stem_paths,
-                "flac_paths": flac_paths,
-                "other_variants": {
-                    "other_htdemucs": {
-                        "description": "htdemucs_ft residual (guitars, keys, pads — non-overlapping)",
-                        "mp3_key": stem_paths["other_htdemucs"],
-                        "flac_key": flac_paths["other_htdemucs"],
-                    },
-                    "other_subtract": {
-                        "description": "instrumental minus drums minus bass, sample-aligned subtraction",
-                        "mp3_key": stem_paths["other_subtract"],
-                        "flac_key": flac_paths["other_subtract"],
-                    },
-                },
-                "source_sample_rate": src_sr,
-                "storage_delta_flac_bytes": total_flac_bytes - total_mp3_bytes,
+                "stem_paths":          stem_paths,
+                "source_sample_rate":  src_sr,
             }
             _post_callback(payload)
             return payload

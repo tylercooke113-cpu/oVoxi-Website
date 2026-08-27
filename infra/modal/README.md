@@ -1,6 +1,6 @@
 # oVoxi Modal Stem Worker
 
-Phase 1 of PRD-01: GPU stem separation on Modal L4.
+Phase 2 of PRD-01: GPU stem separation on Modal L4, wired to the backend callback route.
 
 ---
 
@@ -18,17 +18,39 @@ modal secret create ovoxi-stem-secrets \
   STEM_CALLBACK_URL="https://ovoxi-website-production.up.railway.app/api/internal/stems/callback"
 ```
 
-`STEM_WEBHOOK_SECRET` is the same value that must be set in Railway as `STEM_WEBHOOK_SECRET` for
-the Phase 2 callback route. Generate it once with `openssl rand -hex 32` and keep it in both places.
+`STEM_WEBHOOK_SECRET` is the same value that must be set in Railway as `STEM_WEBHOOK_SECRET`
+for the callback route. Generate it once with `openssl rand -hex 32` and keep it in both places.
 
-For Phase 1 testing (before the callback route exists), set `STEM_CALLBACK_URL` to a temporary
-endpoint such as `https://httpbin.org/post` to capture and inspect the signed payload.
+**Verify `STEM_CALLBACK_URL` before setting `STEM_ENGINE=modal` in Railway.** During Phase 1
+testing it was set to a temporary webhook.site URL. A stale URL silently hangs every track in
+`processing` with no error. To verify the value inside the container run:
 
-To update an existing secret (e.g. to swap in the real callback URL for Phase 2):
+```bash
+python3 - <<'EOF'
+import modal, os
+app = modal.App("ovoxi-check-secret")
+
+@app.function(secrets=[modal.Secret.from_name("ovoxi-stem-secrets")])
+def check():
+    url = os.environ.get("STEM_CALLBACK_URL", "__MISSING__")
+    print(f"STEM_CALLBACK_URL: {url}")
+
+@app.local_entrypoint()
+def main():
+    check.remote()
+EOF
+modal run -
+```
+
+To update an existing secret (e.g. to correct `STEM_CALLBACK_URL`):
 ```bash
 modal secret create ovoxi-stem-secrets --force \
   R2_ENDPOINT="..." \
-  ...
+  R2_ACCESS_KEY_ID="..." \
+  R2_SECRET_ACCESS_KEY="..." \
+  R2_BUCKET_NAME="..." \
+  STEM_WEBHOOK_SECRET="..." \
+  STEM_CALLBACK_URL="https://ovoxi-website-production.up.railway.app/api/internal/stems/callback"
 ```
 
 ---
@@ -58,7 +80,7 @@ Confirmed via `modal run infra/modal/list_models.py` — see that file for the f
 
 ---
 
-## Six stems produced (stem_schema_version: 2)
+## Five stems produced (stem_schema_version: 2)
 
 | Key | Source | Description |
 |---|---|---|
@@ -66,14 +88,27 @@ Confirmed via `modal run infra/modal/list_models.py` — see that file for the f
 | `instrumental` | RoFormer | Full mix minus vocals |
 | `drums` | htdemucs_ft | Isolated drums |
 | `bass` | htdemucs_ft | Isolated bass |
-| `other_htdemucs` | htdemucs_ft | Residual (guitars, keys, pads) — non-overlapping |
-| `other_subtract` | arithmetic | `instrumental − drums − bass`, sample-aligned |
+| `other` | htdemucs_ft | True residual (guitars, keys, pads) — non-overlapping |
 
-Both `other_*` variants are written in Phase 1 for the `/03` A/B benchmark.
-One will become the canonical `other` key in Phase 2; the other is dropped.
+`other_subtract` (instrumental − drums − bass) is computed inside the worker but not
+uploaded. Kept per CLAUDE.md rule 4; removal is a later commit.
 
-Each stem is written as both MP3 (320kbps) and FLAC to `catalog/{artist}/{track}/stems/`.
-The FLAC storage delta is reported in the callback payload (`storage_delta_flac_bytes`).
+Each stem is written as MP3 320 kbps to `catalog/{artist}/{track}/stems/`.
+FLAC was evaluated in Phase 1 and rejected after the /03 A/B benchmark.
+
+### `key_prefix` parameter
+
+`separate_stems` accepts a `key_prefix` argument that controls the R2 write destination:
+
+- **Production** (`_process_stems` in `server.py`): omits the argument, so the default
+  `"catalog"` is used. Stems land at `catalog/{artist_slug}/{track_slug}/stems/`.
+- **Benchmark** (`run_stem_benchmark.py`): passes `key_prefix=f"_benchmark/{sid}"` to
+  stay out of `catalog/`. The benchmark script has a hard refuse if the resolved prefix
+  starts with `catalog/`.
+
+There is no server-side guard in the worker or in `_process_stems` that validates the
+resolved prefix before writing. A bad slug writes to a wrong path under `catalog/`
+unchallenged. See **OQ-6** in `docs/open-questions.md`.
 
 ---
 
@@ -83,31 +118,40 @@ The callback POST body is compact JSON (`sort_keys=True, separators=(',',':')`).
 The `X-Ovoxi-Signature` header is `sha256=<hex>` where `<hex>` is
 `HMAC-SHA256(STEM_WEBHOOK_SECRET, raw_body).hexdigest()`.
 
-The Phase 2 callback route (`/api/internal/stems/callback`) must:
+The callback route (`/api/internal/stems/callback`) must:
 1. Read the raw body before JSON-parsing it.
 2. Compute the same HMAC.
 3. Compare with `hmac.compare_digest`.
 
+The HMAC is computed over the exact bytes sent. The worker uses `data=body`, never
+`json=payload` — requests' `json=` re-serializes with different separators and the
+server's `hmac.compare_digest` would always fail.
+
 ---
 
-## Phase 1 gate test
+## Phase 1 gate — PASSED (2026-08-26)
 
-```bash
-# After deploying, run the gate test on one baseline track:
-python3 scripts/test_modal_stems.py --from-manifest --index 0
+Gate criteria (PRD-01 §6 Phase 1): cost per track ≤ $0.10, wall-clock ≤ 5 min on L4.
 
-# Or against a specific R2 key:
-python3 scripts/test_modal_stems.py \
-  --r2-key catalog/teewhy/ceo/mastered/8ccb8ab3-8a79-43f2-b8cc-326615030273.mp3 \
-  --artist teewhy \
-  --track ceo
-```
+**Gate of record (/02, three tracks, warm L4):** mean ~131 s / ~$0.029 per track.
+Both thresholds passed. Recorded in PRD-01 §11.
 
-Gate criteria (from PRD-01 §6 Phase 1):
-- Cost per track ≤ $0.10
-- Wall-clock ≤ 5 minutes on L4
+**Post-fix rerun (2026-08-26, five rows / four unique tracks):** run after the
+`_pick` keyword bug fix to verify correct stem assignment. `1800f622` and `dc9cbb73`
+are the same source recording (OQ-2), so the five rows cover four unique tracks.
+These are not the gate measurements — the /02 figures above are.
 
-If either fails, stop and re-plan before proceeding to `/04-stem-wire`.
+| Track | Submission | Wall-clock | Cost |
+|---|---|---|---|
+| Tyler J — All Along | 1800f622 | 169.7 s | $0.0377 |
+| teewhy — all along | dc9cbb73 † | 92.2 s | $0.0205 |
+| teewhy — ceo | 8ccb8ab3 | 60.4 s | $0.0134 |
+| teewhy — Dirty Secret | 86677473 | 122.9 s | $0.0273 |
+| damnsonic — cutthroat | b114fc07 | 106.4 s | $0.0236 |
+| **Mean (4 unique)** | | **~116 s / ~1.9 min** | **~$0.026** |
+
+† Same source recording as 1800f622 (OQ-2 collision). Full details in
+`docs/benchmark-stem-quality.md`.
 
 ---
 

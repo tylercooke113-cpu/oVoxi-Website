@@ -6,16 +6,16 @@ Last updated: 2026-08-26. Read this first, then `CLAUDE.md`, then the PRD you're
 
 ## Where we are
 
-**PRD-01 (stem splitter migration): Phase 1 complete, awaiting a human listening decision.**
+**PRD-01 (stem splitter migration): /04 code written. Not deployed. One pre-deployment blocker open.**
 
 | Command | Status |
 |---|---|
 | `/00-audit` | ✅ Done. Findings folded into the PRDs as §10 amendments. |
 | `/01-stem-baseline` | ✅ Done. LALAL stems captured to `benchmark/lalal-baseline/`. |
 | `/02-stem-worker` | ✅ Done. Modal worker deployed, gate passed. |
-| `/03-stem-benchmark` | ✅ Done. New engine accepted. other_htdemucs selected. MP3 320. |
-| `/04-stem-wire` | ⬜ Blocked on `/03`. |
-| `/05-stem-delete-lalal` | ⬜ Blocked on `/03`. Destructive. |
+| `/03-stem-benchmark` | ✅ Done. New engine accepted. `other` (htdemucs residual) selected. MP3 320. |
+| `/04-stem-wire` | 🔶 Code committed to `feat/stem-engine-migration`. **Not deployed.** See blocker below. |
+| `/05-stem-delete-lalal` | ⬜ Blocked until a real production upload reaches `completed` under `STEM_ENGINE=modal`, with five stems visible in the artist Vault and `instrumental` labelled correctly in Admin. Deleting LALAL is irreversible and `benchmark/lalal-baseline/` cannot be regenerated. |
 | `/06-stem-backfill` | ⬜ |
 | `/07`–`/10` (splits + CWR) | ⬜ Not started. |
 
@@ -64,16 +64,36 @@ All three A/B calls made. Full notes and caveats in `docs/benchmark-stem-quality
 
 ---
 
-## Action required before `/04`
+## Deployment blockers — must resolve before setting STEM_ENGINE=modal
+
+**🔴 STEM_CALLBACK_URL is stale (live blocker).**
+`ovoxi-stem-secrets` currently has `STEM_CALLBACK_URL` set to a `webhook.site` test URL
+from Phase 1. Every production track dispatched to Modal will POST its callback there
+instead of Railway. The track will hang in `processing` indefinitely with no error.
+
+Fix before deploying:
+```bash
+modal secret create ovoxi-stem-secrets --force \
+  R2_ENDPOINT="..." \
+  R2_ACCESS_KEY_ID="..." \
+  R2_SECRET_ACCESS_KEY="..." \
+  R2_BUCKET_NAME="..." \
+  STEM_WEBHOOK_SECRET="..." \
+  STEM_CALLBACK_URL="https://ovoxi-website-production.up.railway.app/api/internal/stems/callback"
+```
+
+Verify the key is correct before flipping the switch — see `infra/modal/README.md` for
+the inline verification command.
 
 **Secrets status (as of 2026-08-26):**
 
-- `STEM_WEBHOOK_SECRET` — rotated and set in both the Modal secret `ovoxi-stem-secrets`
-  and the Railway env var. Not yet verified by a live callback; the first `/04` run is
-  the verification. A mismatch fails silently and hangs tracks in `processing` forever.
+- `STEM_CALLBACK_URL` — **WRONG VALUE in `ovoxi-stem-secrets`** (points at webhook.site). Must be corrected before `STEM_ENGINE=modal` is set. See above.
+- `STEM_WEBHOOK_SECRET` — set in both `ovoxi-stem-secrets` and Railway. Value not
+  verified by a live callback yet; the first production run is the verification. A mismatch
+  fails silently and hangs tracks in `processing` forever.
 - `MODAL_TOKEN_ID` and `MODAL_TOKEN_SECRET` — set in Railway.
-- `STEM_ENGINE` — does not exist in code yet. Introduced in `/04` as the flag selecting
-  between `lalal` and `modal`. Do not set it before `/04` ships it.
+- `STEM_ENGINE` — introduced in `/04`. Set to `"modal"` in Railway only after the Modal
+  worker is redeployed with `wire-v1` and `STEM_CALLBACK_URL` is corrected.
 
 ---
 
@@ -99,6 +119,8 @@ constructed paths. **Do not loosen these pins.**
 
 - **OQ-1** — a Tupac recording sits in the catalog with status `completed`, meaning it either passed the ACRCloud gate or predates it. Deferred by Tyler, acknowledged, not resolved. Excluded from the benchmark.
 - **OQ-2** — stem R2 keys omit the submission id, so two uploads of the same artist + track title silently overwrite each other's stems. Already happened twice. **Do not fix during PRD-01.**
+- **OQ-5** — under `STEM_ENGINE=modal`, if the callback never arrives the track hangs in `processing` indefinitely. No timeout, no retry trigger, no alerting. Not fixed in /04.
+- **OQ-6** — no server-side guard on the catalog/ write path. A bad slug writes to a wrong path unchallenged. Preserves existing LALAL behaviour; deferred to after OQ-2 is fixed.
 
 Also unresolved and blocking commercial catalog ingestion, not the build: **model weight
 licensing** (PRD-01 §3). Several UVR/RoFormer checkpoints trace to MUSDB18, which carries
@@ -111,10 +133,10 @@ registrations to ASCAP. Status unknown.
 
 ## Next action
 
-1. OQ-4 resolved — instrumental stem surfaces in the artist Vault. VaultPage.jsx
-   requires zero code changes (dynamic iteration). Sanction recorded in
-   `docs/open-questions.md`.
-2. `/04-stem-wire`.
-3. `/05-stem-delete-lalal` stays blocked until `/04` is verified in production: a real
-   upload must reach `completed` with five stems visible in the artist Vault before
-   the LALAL code path is removed.
+1. Correct `STEM_CALLBACK_URL` in `ovoxi-stem-secrets` (see blocker above).
+2. Deploy Modal worker: `modal deploy infra/modal/stem_worker.py` (picks up `wire-v1`).
+3. Deploy backend to Railway (picks up callback route + `STEM_ENGINE` dispatch).
+4. Deploy frontend to Vercel (picks up `instrumental` label in AdminPage).
+5. Set `STEM_ENGINE=modal` in Railway env vars.
+6. Upload a real track. Verify: track reaches `completed`; five stems visible in artist Vault; `instrumental` shows as "Instrumental" in Admin.
+7. `/05-stem-delete-lalal` stays blocked until a real production upload reaches `completed` under `STEM_ENGINE=modal`, with five stems visible in the artist Vault and `instrumental` labelled correctly in Admin. Deleting LALAL is irreversible and `benchmark/lalal-baseline/` cannot be regenerated.

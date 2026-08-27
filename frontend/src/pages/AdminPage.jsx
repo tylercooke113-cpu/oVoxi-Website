@@ -8,7 +8,7 @@ import { Label } from '../components/ui/label';
 
 const API = `https://ovoxi-website-production.up.railway.app/api`;
 
-const STEM_LABELS = { vocals: 'Vocals', drums: 'Drums', bass: 'Bass', other: 'Other' };
+const STEM_LABELS = { vocals: 'Vocals', instrumental: 'Instrumental', drums: 'Drums', bass: 'Bass', other: 'Other' };
 
 const StatusBadge = ({ status }) => {
   const map = {

@@ -1,4 +1,6 @@
 import asyncio
+import hashlib
+import hmac
 import json
 import os
 import logging
@@ -12,6 +14,7 @@ from typing import List, Optional
 
 import boto3
 import httpx
+import modal
 from botocore.config import Config
 from dotenv import load_dotenv
 from jose import jwt, JWTError
@@ -61,6 +64,9 @@ R2_BUCKET = os.environ.get("R2_BUCKET_NAME", "")
 # Lalal.ai
 LALAL_API_KEY = os.environ.get("LALAL_API_KEY", "")
 LALAL_BASE = "https://www.lalal.ai/api"
+
+MODAL_APP = "ovoxi-stem-worker"
+MODAL_FN  = "separate_stems"
 
 AUDIO_CONTENT_TYPES = {".mp3": "audio/mpeg", ".wav": "audio/wav"}
 
@@ -282,6 +288,22 @@ async def _process_stems(submission_id: str, r2_key: str, artist_name: str, trac
             {"$set": {"status": "processing", "mastered_r2_key": mastered_r2_key}},
         )
 
+        stem_engine = os.environ.get("STEM_ENGINE", "lalal")
+        if stem_engine == "modal":
+            fn = modal.Function.from_name(MODAL_APP, MODAL_FN)
+            # fn.spawn is a synchronous HTTP call; wrap in to_thread to avoid
+            # blocking the event loop. Matches how acrcloud_check is handled.
+            await asyncio.to_thread(
+                fn.spawn,
+                submission_id,
+                mastered_r2_key,
+                _slugify(artist_name),
+                _slugify(track_name),
+            )
+            logger.info("Dispatched to Modal submission=%s", submission_id)
+            return
+
+        # ── existing LALAL path — unchanged below ─────────────────────────────
         audio_data = await _r2_get(mastered_r2_key)
         filename = Path(r2_key).name
         lalal_file_id = await _lalal_upload(audio_data, filename)
@@ -911,6 +933,63 @@ async def get_appeals(x_admin_password: Optional[str] = Header(default=None)):
                 logger.warning("Could not generate proof presigned URL: %s", exc)
                 a["proof_url"] = None
     return appeals
+
+
+@api_router.post("/internal/stems/callback")
+async def stems_callback(request: Request):
+    # Read the raw body before JSON-parsing. The HMAC is computed over the
+    # exact bytes received; parsing and re-serializing would produce different
+    # bytes and every hmac.compare_digest call would fail silently.
+    body = await request.body()
+    sig_header = request.headers.get("X-Ovoxi-Signature", "")
+    secret = os.environ.get("STEM_WEBHOOK_SECRET", "")
+    if not secret:
+        raise HTTPException(status_code=500, detail="STEM_WEBHOOK_SECRET not configured")
+    expected = "sha256=" + hmac.new(
+        secret.encode(), body, hashlib.sha256
+    ).hexdigest()
+    if not hmac.compare_digest(expected, sig_header):
+        raise HTTPException(status_code=401, detail="Invalid signature")
+
+    payload = json.loads(body)
+    sid    = payload.get("submission_id")
+    status = payload.get("status")
+    if not sid:
+        raise HTTPException(status_code=400, detail="Missing submission_id")
+
+    if status == "completed":
+        update = {
+            "status":              "completed",
+            "stem_paths":          payload["stem_paths"],
+            "stem_schema_version": payload.get("stem_schema_version", 2),
+        }
+        if "source_sample_rate" in payload:
+            update["source_sample_rate"] = payload["source_sample_rate"]
+        result = await db.track_submissions.update_one(
+            {"id": sid, "status": {"$nin": ["failed", "completed"]}},
+            {"$set": update},
+        )
+        if result.matched_count == 0:
+            logger.warning(
+                "Stem callback completed for %s but document already in terminal state — ignored",
+                sid,
+            )
+        else:
+            logger.info("Stem callback completed submission=%s", sid)
+    elif status == "failed":
+        await db.track_submissions.update_one(
+            {"id": sid},
+            {"$set": {
+                "status": "failed",
+                "error":  payload.get("error", "Unknown failure"),
+            }},
+        )
+        logger.error("Stem callback failed submission=%s error=%s",
+                     sid, payload.get("error"))
+    else:
+        raise HTTPException(status_code=400,
+                            detail=f"Unknown status: {status!r}")
+    return {"ok": True}
 
 
 # ---------------------------------------------------------------------------
