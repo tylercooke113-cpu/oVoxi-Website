@@ -31,3 +31,111 @@ Present and still `CLEARED` → investigate the confidence thresholds in
 **Interim action taken:** excluded from the PRD-01 quality baseline. Third-party
 commercial masters do not go in `benchmark/`, which is played back through
 `benchmark/compare.html`.
+
+---
+
+## OQ-2 — Stem R2 keys collide across submissions of the same artist + track name
+
+**Found:** 2026-08-26, during PRD-01 Phase 1 benchmark planning.
+
+The stem key convention omits the submission id:
+
+```
+catalog/{artist_slug}/{track_slug}/original/{submission_id}{ext}   ← unique
+catalog/{artist_slug}/{track_slug}/mastered/{submission_id}{ext}   ← unique
+catalog/{artist_slug}/{track_slug}/stems/{label}.mp3               ← NOT unique
+```
+
+If an artist uploads the same track title twice, the second submission's stems
+**silently overwrite** the first's. Both MongoDB documents then carry `stem_paths`
+pointing at the same objects, and nothing errors.
+
+**Already happened, at least twice** in the current catalog:
+- `teewhy / ceo` — submissions `5cdb3197…` and `8ccb8ab3…`
+- `teewhy / Dirty Secret` — submissions `86677473…` and `4d3c5ca4…`
+
+**Why it matters:** for a rights catalog, two distinct submissions resolving to one set of
+audio files breaks the provenance chain. The record says these are separate ingestions
+with separate rights attestations; the storage says they are the same bytes.
+
+**Also note:** artist name and track name are free text from the upload form, so this is
+reachable by an honest re-upload, not just a deliberate collision.
+
+**Candidate fix:** include the submission id in the stems path, matching the other two
+prefixes. This changes the key convention, so it needs a migration plan for existing
+documents rather than a unilateral change — the current `stem_paths` values are the only
+pointer legacy documents have.
+
+**Do not fix during PRD-01 Phase 1–3.** Log it, finish the engine migration, then address
+it deliberately. Rewriting key conventions mid-migration is how baselines get lost.
+
+**Owner:** unassigned.
+
+---
+
+## OQ-3 — Model weight licensing
+
+**Found:** PRD-01 §3 (original, 2026-08-26). Elevated to open-questions 2026-08-26.
+
+Several UVR/RoFormer checkpoints distributed via `python-audio-separator` trace to
+MUSDB18 or MUSDB18-HQ as training data, which carries a non-commercial research
+licence. The specific checkpoint in use — `vocals_mel_band_roformer.ckpt` (Kimberley
+Jensen edition) — has not been individually cleared for commercial use.
+
+`htdemucs_ft.yaml` code is MIT; the licence attached to the released pretrained
+weights must be read directly from `facebookresearch/demucs` and confirmed. Not yet
+verified.
+
+**Why it matters:** oVoxi's product is rights cleanliness. Running a commercial
+catalog ingestion pipeline on a checkpoint with an unresolved non-commercial
+restriction directly contradicts the product's value proposition, regardless of audio
+quality.
+
+**Blocks:** commercial catalog ingestion. Does not block the engine migration build
+(Phases 1–4), but must be resolved before any artist audio is processed into the
+production catalog under the new engine.
+
+**To resolve:** IP counsel reviews the licences attached to both checkpoints and
+confirms clearance for commercial use, or identifies a cleared alternative and
+accepts the SDR delta.
+
+**Owner:** unassigned. Needs Tyler → counsel.
+
+---
+
+## OQ-4 — Instrumental stem visibility in the artist Vault
+
+**Found:** 2026-08-26, during /04 planning.  
+**Resolved:** 2026-08-26. Decision: Tyler.
+
+**Decision: surface instrumental in the artist Vault.**
+
+Reasoning: artists receive mastering and stems as the consideration for non-exclusive
+AI training rights. The instrumental is the most useful stem to a working musician
+(backing track, sync pitching, live performance) and belongs in the artist-facing view.
+
+**What VaultPage.jsx actually does (lines 162–167):**
+
+```jsx
+{t.stem_urls && Object.entries(t.stem_urls).map(([stem, url]) => (
+  <a key={stem} href={url} target="_blank" rel="noopener noreferrer"
+    className="...">
+    {stem.charAt(0).toUpperCase() + stem.slice(1)} <ExternalLink size={10} />
+  </a>
+))}
+```
+
+VaultPage iterates `Object.entries(t.stem_urls)` dynamically. The display label is
+`stem.charAt(0).toUpperCase() + stem.slice(1)`. There is no hardcoded key list.
+Adding `instrumental` to `stem_paths` in the backend automatically surfaces it in
+the Vault as "Instrumental". **Zero VaultPage.jsx code changes are required.**
+
+**Authorised frontend scope for `/04` (expanded from PRD-01 §10.1):**
+
+1. `frontend/src/pages/AdminPage.jsx` — add `instrumental` to `STEM_LABELS` at line 11.
+2. `frontend/src/pages/VaultPage.jsx` — no code change needed; instrumental appears
+   automatically. The authorisation is recorded here so this is a known, sanctioned
+   behaviour rather than an accidental side-effect.
+
+Everything else under `frontend/` stays untouched, `frontend/src/marketing/` in
+particular. This authorisation does not extend to `UploadPage.jsx` or any other file.

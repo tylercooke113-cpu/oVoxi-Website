@@ -109,7 +109,10 @@ same pattern rather than inventing an env var, unless you refactor all of them a
 - Admin routes use a shared `ADMIN_PASSWORD` header. This is weak; do not extend it to new privileged routes without flagging it.
 - Rate limiting is `slowapi`, keyed on `get_real_client_ip` (X-Forwarded-For aware).
 - `vercel.json` sets a **strict CSP**. `connect-src` allowlists only the Railway API and Clerk. **Any new external origin the browser must reach requires a `vercel.json` edit or it will be blocked in production and work fine locally.**
-- Secrets live in Railway/Vercel env vars, not in the repo. `backend/.env` locally holds only ACRCloud + admin values.
+- Secrets live in Railway/Vercel env vars, not in the repo. `backend/.env` locally holds
+  `MONGO_URL`, `DB_NAME`, the five `R2_*` values, ACRCloud credentials, and admin values.
+- `STEM_ENGINE` does not exist in code yet; it is introduced in `/04` as the flag that
+  selects between engines. It is a `/04` deliverable, not a current prerequisite.
 - `.gitignore` ignores all `.env*`. Keep it that way.
 
 ---
@@ -130,3 +133,4 @@ same pattern rather than inventing an env var, unless you refactor all of them a
 - `docs/PRD-01-stem-splitter-migration.md` — replace LALAL.AI with an open-source separator on serverless GPU.
 - `docs/PRD-02-royalty-splits.md` — writer/publisher/master share capture with ASCAP-compatible CWR export.
 - `docs/claude-code-prompts.md` — the ordered execution prompts for both.
+- `docs/open-questions.md` — parked findings that must not be lost.
