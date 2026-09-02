@@ -50,7 +50,7 @@ ancestor of `main`. Deleting that branch ref loses no code — distinct from "de
 revamp", which remains a bad idea.
 
 **How to confirm the marketing flag is off without reading its value:** `postbuild` gates
-`react-snap` on `REACT_APP_NEW_MARKETING = "true"`. If the raw HTML at www.ovoxi.net is
+`react-snap` on `REACT_APP_NEW_MARKETING = "true"`. If the raw HTML at ovoxi.net is
 the bare CRA shell ("You need to enable JavaScript to run this app"), react-snap did not
 run, so the flag was not `"true"` at build time, so `/` renders `HomePage`. `App.js:20`
 uses strict `=== 'true'`, so every other value fails safe.

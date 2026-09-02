@@ -255,3 +255,56 @@ mastering step before failing.
 OQ-2 defect, which has already destroyed stem data twice. Orphaned objects from failed
 submissions are a cleanup/retention concern, not a keying concern.
 
+---
+
+## OQ-8 — Production Clerk auth runs on a development instance
+
+**Found:** 2026-08-27, while verifying Vercel env vars before repointing the production
+branch.
+
+`frontend/src/index.js:7` hardcodes the Clerk publishable key:
+
+```js
+const PUBLISHABLE_KEY = 'pk_test_Y3J1Y2lhbC1maWxseS00Ny5jbGVyay5hY2NvdW50cy5kZXYk';
+```
+
+It is a **`pk_test_`** key pointing at `crucial-filly-47.clerk.accounts.dev` — a Clerk
+*development* instance, serving the live site at `ovoxi.net`.
+
+Publishable keys are public by design, so this is not a credential leak. The problem is
+that development instances are not production infrastructure: they carry user-count
+ceilings, differ in session and email behaviour, and can be reset. Artist signups are
+the top of oVoxi's funnel — hitting a dev-instance user cap would look like the product
+being broken, with no error pointing at the cause.
+
+**Also found:** `VITE_CLERK_PUBLISHABLE_KEY` is set in Vercel (Production + Preview) and
+does nothing. This is a CRA/craco build (`react-scripts` 5.0.1 via `@craco/craco`), which
+only exposes `REACT_APP_*` to the bundle. Nothing under `frontend/src/` reads `VITE_` or
+`import.meta.env`. The variable is inert — presumably left from an earlier Vite scaffold.
+
+**To resolve:** create a Clerk production instance, move the key to
+`REACT_APP_CLERK_PUBLISHABLE_KEY` in Vercel rather than hardcoding it, and delete the
+unused `VITE_` variable. Note that a production Clerk instance needs DNS records on
+`ovoxi.net` — this is not a five-minute change.
+
+**Blocks:** real artist signup at any volume. Does not block the stem pipeline.
+
+**Owner:** unassigned.
+
+---
+
+## Note — `REACT_APP_NEW_MARKETING` fails safe
+
+`frontend/src/App.js:20` reads:
+
+```js
+const NEW_MARKETING = process.env.REACT_APP_NEW_MARKETING === 'true';
+```
+
+Strict comparison against the string `'true'`. Any other value — `false`, `False`,
+empty, unset, `1` — renders `HomePage`. The `postbuild` script gates `react-snap` on the
+same condition, so with the flag off the prerender step is skipped entirely.
+
+CRA bakes `REACT_APP_*` in at **build** time, so the value present when Vercel builds is
+what ships. Changing it in the dashboard has no effect until the next deployment.
+

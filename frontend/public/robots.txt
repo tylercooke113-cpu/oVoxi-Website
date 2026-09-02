@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://ovoxi.net/sitemap.xml

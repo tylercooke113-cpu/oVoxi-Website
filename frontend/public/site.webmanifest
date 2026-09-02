@@ -1,0 +1,12 @@
+{
+  "name": "oVoxi",
+  "short_name": "oVoxi",
+  "icons": [
+    { "src": "/icon-192.png", "type": "image/png", "sizes": "192x192" },
+    { "src": "/icon-512.png", "type": "image/png", "sizes": "512x512" }
+  ],
+  "theme_color": "#0B0B0F",
+  "background_color": "#FFFFFF",
+  "display": "standalone",
+  "start_url": "/"
+}
