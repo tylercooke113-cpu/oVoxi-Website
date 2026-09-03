@@ -4,7 +4,10 @@ import '@/index.css';
 import App from '@/App';
 import { ClerkProvider } from '@clerk/clerk-react';
 
-const PUBLISHABLE_KEY = 'pk_test_Y3J1Y2lhbC1maWxseS00Ny5jbGVyay5hY2NvdW50cy5kZXYk';
+const PUBLISHABLE_KEY = process.env.REACT_APP_CLERK_PUBLISHABLE_KEY;
+if (!PUBLISHABLE_KEY) {
+  throw new Error('REACT_APP_CLERK_PUBLISHABLE_KEY is not set. Set it in Vercel and redeploy.');
+}
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(

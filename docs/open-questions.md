@@ -293,6 +293,34 @@ unused `VITE_` variable. Note that a production Clerk instance needs DNS records
 
 ---
 
+## OQ-9 — verify_clerk_token fetches JWKS on every request and does not check HTTP status
+
+**Found:** 2026-09-03, during the OQ-8 Clerk production-instance migration.
+
+Two issues in `backend/server.py` `verify_clerk_token`:
+
+1. `resp.json()` is called without first checking `resp.status_code`. A non-200 from
+   the JWKS endpoint (network blip, DNS failure, rate limit) raises an unstructured
+   exception that surfaces to the caller as `"Invalid token"` — the same message as a
+   genuinely bad token. This misdirects debugging: a developer assumes the bearer token
+   is malformed when the real problem is a failed JWKS fetch.
+
+2. JWKS are fetched on every authenticated request with no in-process cache. In normal
+   operation this is a live HTTP call to `https://clerk.ovoxi.net/.well-known/jwks.json`
+   per request. Under any meaningful request rate this is unnecessary latency and an
+   availability dependency on the Clerk endpoint. A single `asyncio`-safe LRU cache or
+   background-refreshed singleton would eliminate both.
+
+**Why it matters:** misread failures slow incident response. The JWKS URL is public,
+unauthenticated, and changes rarely — caching it is safe and cheap.
+
+**Do not fix during the OQ-8 cutover.** Changing `verify_clerk_token` while rotating
+instance keys adds scope to an already-risky operation.
+
+**Owner:** unassigned.
+
+---
+
 ## Note — `REACT_APP_NEW_MARKETING` fails safe
 
 `frontend/src/App.js:20` reads:
