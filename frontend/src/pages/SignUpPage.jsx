@@ -11,7 +11,8 @@ const SignUpPage = () => (
       <SignUp
         routing="path"
         path="/signup"
-        afterSignUpUrl="/vault"
+        forceRedirectUrl="/vault"
+        signInUrl="/login"
         appearance={{
           variables: {
             colorPrimary: '#9B59D4',

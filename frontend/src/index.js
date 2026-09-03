@@ -9,7 +9,14 @@ const PUBLISHABLE_KEY = 'pk_test_Y3J1Y2lhbC1maWxseS00Ny5jbGVyay5hY2NvdW50cy5kZXY
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   <React.StrictMode>
-    <ClerkProvider publishableKey={PUBLISHABLE_KEY}>
+    <ClerkProvider
+      publishableKey={PUBLISHABLE_KEY}
+      signInUrl="/login"
+      signUpUrl="/signup"
+      signInForceRedirectUrl="/vault"
+      signUpForceRedirectUrl="/vault"
+      afterSignOutUrl="/"
+    >
       <App />
     </ClerkProvider>
   </React.StrictMode>,
