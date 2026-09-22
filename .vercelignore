@@ -1,0 +1,22 @@
+# Nothing here is needed to build the frontend on Vercel.
+# Vercel installs dependencies itself from package.json and the lockfile.
+node_modules
+**/node_modules
+benchmark
+backend
+infra
+scripts
+tests
+docs
+.git
+_to_delete
+**/__pycache__
+**/build
+**/.cache
+coverage
+*.log
+*.zip
+*.tar.gz
+.DS_Store
+.env
+.env.*
