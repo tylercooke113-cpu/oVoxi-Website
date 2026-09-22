@@ -369,25 +369,6 @@ class StatusCheckCreate(BaseModel):
     client_name: str
 
 
-class LeadCreate(BaseModel):
-    name: str = Field(..., min_length=1, max_length=120)
-    email: EmailStr
-    company: Optional[str] = Field(default=None, max_length=160)
-    interest: str = Field(..., max_length=60)
-    message: str = Field(..., min_length=1, max_length=4000)
-
-
-class Lead(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    name: str
-    email: str
-    company: Optional[str] = None
-    interest: str
-    message: str
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-
-
 class ContactSubmissionCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=120)
     email: EmailStr
@@ -530,25 +511,6 @@ async def get_status_checks():
         if isinstance(check['timestamp'], str):
             check['timestamp'] = datetime.fromisoformat(check['timestamp'])
     return status_checks
-
-
-@api_router.post("/leads", response_model=Lead, status_code=201)
-async def create_lead(payload: LeadCreate):
-    lead = Lead(**payload.model_dump())
-    doc = lead.model_dump()
-    doc['created_at'] = doc['created_at'].isoformat()
-    await db.leads.insert_one(doc)
-    logger.info("New lead captured: %s (%s)", lead.email, lead.interest)
-    return lead
-
-
-@api_router.get("/leads", response_model=List[Lead])
-async def get_leads():
-    leads = await db.leads.find({}, {"_id": 0}).sort("created_at", -1).to_list(1000)
-    for lead in leads:
-        if isinstance(lead.get('created_at'), str):
-            lead['created_at'] = datetime.fromisoformat(lead['created_at'])
-    return leads
 
 
 # ---------------------------------------------------------------------------
