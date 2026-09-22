@@ -17,7 +17,8 @@ import httpx
 import modal
 from botocore.config import Config
 from dotenv import load_dotenv
-from jose import jwt, JWTError
+import jwt
+from jwt import PyJWKClient
 from fastapi import BackgroundTasks, Depends, FastAPI, APIRouter, UploadFile, File, Form, HTTPException, Header, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -101,25 +102,59 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-CLERK_JWKS_URL = os.environ.get('CLERK_JWKS_URL', '')
-CLERK_SECRET_KEY = os.environ.get('CLERK_SECRET_KEY', '')
+CLERK_JWKS_URL = os.environ["CLERK_JWKS_URL"]
+CLERK_ISSUER = os.environ["CLERK_ISSUER"]
+CLERK_AUTHORIZED_PARTIES = {
+    o.strip() for o in os.environ.get(
+        "CLERK_AUTHORIZED_PARTIES", "https://ovoxi.net,https://www.ovoxi.net"
+    ).split(",") if o.strip()
+}
+CLERK_SECRET_KEY = os.environ.get("CLERK_SECRET_KEY", "")
+# Keys are cached in-process for an hour; Clerk is only called on cache miss or key rotation.
+_jwks_client = PyJWKClient(CLERK_JWKS_URL, cache_keys=True, lifespan=3600)
 
 
 async def verify_clerk_token(authorization: str = Header(default=None)) -> dict:
-    if not authorization or not authorization.startswith('Bearer '):
-        raise HTTPException(status_code=401, detail='Missing or invalid Authorization header')
-    token = authorization.split(' ', 1)[1]
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    token = authorization.split(" ", 1)[1]
     try:
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(
-                CLERK_JWKS_URL,
-                headers={'Authorization': f'Bearer {CLERK_SECRET_KEY}'}
-            )
-            jwks = resp.json()
-        payload = jwt.decode(token, jwks, algorithms=['RS256'])
+        signing_key = await asyncio.to_thread(_jwks_client.get_signing_key_from_jwt, token)
+        payload = jwt.decode(
+            token,
+            signing_key.key,
+            algorithms=["RS256"],
+            issuer=CLERK_ISSUER,
+            options={"require": ["exp", "iat", "iss", "sub"]},
+            leeway=5,
+        )
+    except jwt.PyJWKClientConnectionError:
+        logger.info("Clerk JWKS fetch failed (possible outage)")
+        raise HTTPException(status_code=503, detail="Authentication temporarily unavailable")
+    except jwt.PyJWTError as exc:
+        logger.info("Rejected Clerk token: %s", exc)
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    azp = payload.get("azp")
+    if azp and azp not in CLERK_AUTHORIZED_PARTIES:
+        logger.info("Rejected Clerk token: azp=%s", azp)
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    return payload
+
+
+def _role(payload: dict) -> Optional[str]:
+    return (payload.get("metadata") or {}).get("role")
+
+
+def require_role(*roles: str):
+    async def _dep(payload: dict = Depends(verify_clerk_token)) -> dict:
+        if _role(payload) not in roles:
+            raise HTTPException(status_code=403, detail="Forbidden")
         return payload
-    except JWTError as exc:
-        raise HTTPException(status_code=401, detail=f'Invalid token: {exc}')
+    return _dep
+
+
+require_artist = require_role("artist", "admin")
+require_admin = require_role("admin")
 
 
 # ---------------------------------------------------------------------------
