@@ -563,10 +563,9 @@ async def create_contact_submission(payload: ContactSubmissionCreate):
 
 
 @api_router.get("/contact", response_model=List[ContactSubmission])
-async def get_contact_submissions(x_admin_password: Optional[str] = Header(default=None)):
-    admin_password = os.environ.get('ADMIN_PASSWORD', '')
-    if not admin_password or x_admin_password != admin_password:
-        raise HTTPException(status_code=401, detail="Unauthorized")
+@limiter.limit("30/minute")
+async def get_contact_submissions(request: Request, admin: dict = Depends(require_admin)):
+    logger.info("admin_access user=%s path=%s", admin.get("sub"), request.url.path)
     submissions = await db.contact_submissions.find({}, {"_id": 0}).sort("created_at", -1).to_list(1000)
     for s in submissions:
         if isinstance(s.get('created_at'), str):
@@ -645,13 +644,12 @@ async def upload_artist_tracks(
 
 
 @api_router.get("/artists")
+@limiter.limit("30/minute")
 async def get_artists(
     request: Request,
-    x_admin_password: Optional[str] = Header(default=None),
+    admin: dict = Depends(require_admin),
 ):
-    admin_password = os.environ.get('ADMIN_PASSWORD', '')
-    if not admin_password or x_admin_password != admin_password:
-        raise HTTPException(status_code=401, detail="Unauthorized")
+    logger.info("admin_access user=%s path=%s", admin.get("sub"), request.url.path)
     artists = await db.artists.find({}, {"_id": 0}).sort("created_at", -1).to_list(1000)
     base_url = str(request.base_url).rstrip('/')
     for artist in artists:
@@ -780,10 +778,9 @@ async def get_vault_tracks(clerk_payload: dict = Depends(verify_clerk_token)):
 
 
 @api_router.get("/submissions")
-async def get_submissions(x_admin_password: Optional[str] = Header(default=None)):
-    admin_password = os.environ.get('ADMIN_PASSWORD', '')
-    if not admin_password or x_admin_password != admin_password:
-        raise HTTPException(status_code=401, detail="Unauthorized")
+@limiter.limit("30/minute")
+async def get_submissions(request: Request, admin: dict = Depends(require_admin)):
+    logger.info("admin_access user=%s path=%s", admin.get("sub"), request.url.path)
     subs = await db.track_submissions.find({}, {"_id": 0}).sort("upload_date", -1).to_list(1000)
 
     def _presign_get(key: str) -> str:
@@ -911,10 +908,9 @@ async def complete_appeal(
 
 
 @api_router.get("/appeals")
-async def get_appeals(x_admin_password: Optional[str] = Header(default=None)):
-    admin_password = os.environ.get("ADMIN_PASSWORD", "")
-    if not admin_password or x_admin_password != admin_password:
-        raise HTTPException(status_code=401, detail="Unauthorized")
+@limiter.limit("30/minute")
+async def get_appeals(request: Request, admin: dict = Depends(require_admin)):
+    logger.info("admin_access user=%s path=%s", admin.get("sub"), request.url.path)
 
     appeals = await db.appeals.find(
         {"status": {"$ne": "pending_upload"}}, {"_id": 0}

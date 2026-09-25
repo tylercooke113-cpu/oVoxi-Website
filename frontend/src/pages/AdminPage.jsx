@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
+import { useAuth } from '@clerk/clerk-react';
+import { Navigate, Link } from 'react-router-dom';
 import { Loader2, ExternalLink, RefreshCw, CheckCircle2, Clock, AlertCircle, Zap, ChevronDown } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { Input } from '../components/ui/input';
-import { Label } from '../components/ui/label';
 
 const API = `https://ovoxi-website-production.up.railway.app/api`;
 
@@ -34,21 +34,23 @@ const StatusBadge = ({ status }) => {
 };
 
 const AdminPage = () => {
-  const [password, setPassword] = useState('');
-  const [tab, setTab] = useState('submissions'); // 'submissions' | 'applications' | 'messages'
+  const { isLoaded, isSignedIn, getToken } = useAuth();
+  const [tab, setTab] = useState('submissions');
   const [artists, setArtists] = useState(null);
   const [submissions, setSubmissions] = useState(null);
   const [messages, setMessages] = useState(null);
   const [appeals, setAppeals] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [authed, setAuthed] = useState(false);
+  const [forbidden, setForbidden] = useState(false);
+  const [loadError, setLoadError] = useState(null);
   const [expandedId, setExpandedId] = useState(null);
 
-  const fetchAll = async (pw = password) => {
-    if (!pw) return;
+  const fetchAll = useCallback(async () => {
+    setLoadError(null);
     setLoading(true);
     try {
-      const headers = { 'x-admin-password': pw };
+      const token = await getToken();
+      const headers = { Authorization: `Bearer ${token}` };
       const [artRes, subRes, msgRes, apRes] = await Promise.all([
         axios.get(`${API}/artists`, { headers }),
         axios.get(`${API}/submissions`, { headers }),
@@ -59,25 +61,34 @@ const AdminPage = () => {
       setSubmissions(subRes.data);
       setMessages(msgRes.data);
       setAppeals(apRes.data);
-      setAuthed(true);
     } catch (err) {
-      if (err.response?.status === 401) {
-        toast.error('Incorrect password.');
-        setAuthed(false);
+      if (err.response?.status === 403) {
+        setForbidden(true);
+      } else if (err.response?.status === 401) {
+        setLoadError('session_expired');
+        toast.error('Your session has expired.');
       } else {
+        setLoadError('generic');
         toast.error('Failed to load data.');
       }
     } finally {
       setLoading(false);
     }
-  };
+  }, [getToken]);
 
-  const handleLogin = (e) => {
-    e.preventDefault();
-    fetchAll();
-  };
+  const refresh = fetchAll;
 
-  const refresh = () => fetchAll(password);
+  useEffect(() => {
+    if (isLoaded && isSignedIn) fetchAll();
+  }, [isLoaded, isSignedIn, fetchAll]);
+
+  if (!isLoaded) return null;
+  if (!isSignedIn) return <Navigate to="/login" replace />;
+  if (forbidden) return (
+    <div className="min-h-screen bg-ink px-6 pt-28 pb-20 lg:pt-36 flex items-center justify-center">
+      <p className="text-slate-400 text-sm">This account does not have admin access.</p>
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-ink px-6 pt-28 pb-20 lg:pt-36">
@@ -92,7 +103,7 @@ const AdminPage = () => {
               My Vault
             </h1>
           </div>
-          {authed && (
+          {!forbidden && (
             <button
               onClick={refresh}
               disabled={loading}
@@ -104,41 +115,28 @@ const AdminPage = () => {
           )}
         </div>
 
-        {/* Password gate */}
-        {!authed ? (
-          <motion.div
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4 }}
-          >
-            <form
-              onSubmit={handleLogin}
-              className="max-w-sm rounded-2xl border border-white/10 bg-white/[0.02] p-8 space-y-5"
+        {loadError === 'session_expired' ? (
+          <div className="flex flex-col items-center justify-center py-20 gap-3">
+            <p className="text-slate-400 text-sm">
+              Your session expired.{' '}
+              <Link to="/login" className="text-electric hover:underline">Sign in again.</Link>
+            </p>
+          </div>
+        ) : loadError ? (
+          <div className="flex flex-col items-center justify-center py-20 gap-4">
+            <p className="text-slate-400 text-sm">Failed to load data.</p>
+            <button
+              onClick={fetchAll}
+              className="inline-flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-sm text-slate-400 transition-colors hover:border-electric/40 hover:text-white"
             >
-              <div className="space-y-2">
-                <Label htmlFor="admin-pw" className="text-slate-300">
-                  Admin Password
-                </Label>
-                <Input
-                  id="admin-pw"
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Enter password"
-                  className="border-white/10 bg-ink text-white placeholder:text-slate-600 focus-visible:ring-electric"
-                  autoComplete="current-password"
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={loading || !password}
-                className="inline-flex items-center gap-2 rounded-full bg-gradient-brand px-6 py-2.5 text-sm font-semibold text-white transition-all hover:shadow-[0_0_20px_rgba(194,24,91,0.5)] disabled:opacity-60"
-              >
-                {loading && <Loader2 size={14} className="animate-spin" />}
-                {loading ? 'Loading…' : 'View Panel'}
-              </button>
-            </form>
-          </motion.div>
+              <RefreshCw size={14} />
+              Retry
+            </button>
+          </div>
+        ) : submissions === null ? (
+          <div className="flex items-center justify-center py-20">
+            <Loader2 size={20} className="animate-spin text-slate-400" />
+          </div>
         ) : (
           <motion.div
             initial={{ opacity: 0 }}
