@@ -21,7 +21,7 @@ from botocore.exceptions import ClientError
 from dotenv import load_dotenv
 import jwt
 from jwt import PyJWKClient
-from fastapi import BackgroundTasks, Depends, FastAPI, APIRouter, HTTPException, Header, Request
+from fastapi import Depends, FastAPI, APIRouter, HTTPException, Header, Request
 from fastapi.responses import JSONResponse
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field, ConfigDict, EmailStr, field_validator
@@ -180,6 +180,16 @@ require_admin = require_role("admin")
 def _slugify(text: str) -> str:
     text = re.sub(r'[^\w\s-]', '', text.lower().strip())
     return re.sub(r'[\s_-]+', '_', text)[:80].strip('_')
+
+
+async def _set_status(submission_id: str, status: str, extra: Optional[dict] = None) -> None:
+    fields: dict = {"status": status, "status_updated_at": datetime.now(timezone.utc).isoformat()}
+    if extra:
+        fields.update(extra)
+    await db.track_submissions.update_one(
+        {"id": submission_id},
+        {"$set": fields},
+    )
 
 
 async def _lalal_upload(audio_data: bytes, filename: str) -> str:
@@ -578,6 +588,7 @@ class TrackSubmission(BaseModel):
     acrid: Optional[str] = None
     raw_code: Optional[int] = None
     expected_size: Optional[int] = None
+    status_updated_at: Optional[datetime] = None
 
 
 # ---------------------------------------------------------------------------
@@ -764,7 +775,7 @@ async def presign_upload(request: Request, payload: PresignRequest, clerk_payloa
 
 @api_router.post("/upload/complete")
 @limiter.limit("5/minute")
-async def complete_upload(request: Request, payload: CompleteUploadRequest, background_tasks: BackgroundTasks, clerk_payload: dict = Depends(require_artist)):
+async def complete_upload(request: Request, payload: CompleteUploadRequest, clerk_payload: dict = Depends(require_artist)):
     if os.environ.get("UPLOADS_ENABLED", "true") != "true":
         raise HTTPException(status_code=503, detail="Uploads are temporarily paused")
     sub = await db.track_submissions.find_one({"id": payload.submission_id}, {"_id": 0})
@@ -794,26 +805,12 @@ async def complete_upload(request: Request, payload: CompleteUploadRequest, back
             )
         except Exception as del_exc:
             logger.warning("Failed to delete rejected R2 object: %s", del_exc)
-        await db.track_submissions.update_one(
-            {"id": payload.submission_id},
-            {"$set": {"status": "failed", "error": "file_rejected_size"}},
-        )
+        await _set_status(payload.submission_id, "failed", {"error": "file_rejected_size"})
         raise HTTPException(status_code=400, detail="File exceeds size limit")
 
-    await db.track_submissions.update_one(
-        {"id": payload.submission_id},
-        {"$set": {"status": "uploaded"}},
-    )
-
-    background_tasks.add_task(
-        _process_stems,
-        payload.submission_id,
-        sub["original_r2_path"],
-        sub["artist_name"],
-        sub["track_name"],
-    )
-    logger.info("Queued stem processing for submission=%s", payload.submission_id)
-    return {"status": "processing", "submission_id": payload.submission_id}
+    await _set_status(payload.submission_id, "uploaded")
+    logger.info("Queued for processing submission=%s", payload.submission_id)
+    return {"status": "uploaded", "submission_id": payload.submission_id}
 
 
 @api_router.get('/vault/tracks')
