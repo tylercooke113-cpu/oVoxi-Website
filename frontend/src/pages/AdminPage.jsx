@@ -424,15 +424,19 @@ const AdminPage = () => {
                               {a.tracks?.length > 0 ? (
                                 <div className="flex flex-col gap-1">
                                   {a.tracks.map((t) => (
-                                    <a
-                                      key={t.id}
-                                      href={t.url}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="inline-flex items-center gap-1 text-cyan hover:underline whitespace-nowrap"
-                                    >
-                                      {t.title} <ExternalLink size={11} />
-                                    </a>
+                                    t.url ? (
+                                      <a
+                                        key={t.id}
+                                        href={t.url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="inline-flex items-center gap-1 text-cyan hover:underline whitespace-nowrap"
+                                      >
+                                        {t.title} <ExternalLink size={11} />
+                                      </a>
+                                    ) : (
+                                      <span key={t.id} className="text-slate-300 whitespace-nowrap">{t.title}</span>
+                                    )
                                   ))}
                                 </div>
                               ) : (
