@@ -24,6 +24,7 @@ from jwt import PyJWKClient
 from fastapi import Depends, FastAPI, APIRouter, HTTPException, Header, Request
 from fastapi.responses import JSONResponse
 from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo import ReturnDocument
 from pydantic import BaseModel, Field, ConfigDict, EmailStr, field_validator
 from starlette.middleware.cors import CORSMiddleware
 from slowapi import Limiter
@@ -81,12 +82,10 @@ MODAL_FN  = "separate_stems"
 
 AUDIO_CONTENT_TYPES = {".mp3": "audio/mpeg", ".wav": "audio/wav"}
 
-# Serialises ACR scan + Matchering so one pipeline at a time runs on this process.
-# "scanning" is written BEFORE acquiring this semaphore, so a document can sit at
-# "scanning" while queued behind another job — it does not mean the scan is active.
-# When E1 replaces this with a Mongo-backed worker loop, the status claim must move
-# to AFTER the worker picks up the job, or "scanning" regains its original meaning.
-HEAVY_JOBS = asyncio.Semaphore(int(os.environ.get("HEAVY_JOB_CONCURRENCY", "1")))
+INSTANCE_ID = str(uuid.uuid4())
+RUN_WORKER = os.environ.get("RUN_WORKER", "true") == "true"
+WORKER_POLL_INTERVAL = int(os.environ.get("WORKER_POLL_INTERVAL", "5"))
+WORKER_CONCURRENCY = int(os.environ.get("WORKER_CONCURRENCY", "1"))
 
 PROOF_CONTENT_TYPES = {
     ".pdf":  "application/pdf",
@@ -190,6 +189,43 @@ async def _set_status(submission_id: str, status: str, extra: Optional[dict] = N
         {"id": submission_id},
         {"$set": fields},
     )
+
+
+async def _claim_next() -> Optional[dict]:
+    now = datetime.now(timezone.utc).isoformat()
+    return await db.track_submissions.find_one_and_update(
+        {"status": "uploaded"},
+        {
+            "$set": {
+                "status": "scanning",
+                "status_updated_at": now,
+                "claimed_by": INSTANCE_ID,
+                "claimed_at": now,
+            },
+            "$inc": {"attempts": 1},
+        },
+        sort=[("upload_date", 1)],
+        return_document=ReturnDocument.AFTER,
+    )
+
+
+async def _worker_loop() -> None:
+    logger.info("Worker started instance=%s", INSTANCE_ID)
+    while True:
+        try:
+            doc = await _claim_next()
+            if doc is None:
+                await asyncio.sleep(WORKER_POLL_INTERVAL)
+                continue
+            await _process_stems(
+                doc["id"],
+                doc["original_r2_path"],
+                doc["artist_name"],
+                doc["track_name"],
+            )
+        except Exception as exc:
+            logger.error("worker_loop unhandled error: %s", exc)
+            await asyncio.sleep(WORKER_POLL_INTERVAL)
 
 
 async def _lalal_upload(audio_data: bytes, filename: str) -> str:
@@ -328,70 +364,45 @@ async def _master_track(submission_id: str, r2_key: str) -> str:
 
 async def _process_stems(submission_id: str, r2_key: str, artist_name: str, track_name: str) -> None:
     try:
-        # ── ACRCloud gate ─────────────────────────────────────────────────────
-        await db.track_submissions.update_one(
-            {"id": submission_id},
-            {"$set": {"status": "scanning"}},
-        )
+        # Status is already "scanning" — set atomically by _claim_next before this runs.
+        ext = Path(r2_key).suffix
+        with tempfile.TemporaryDirectory() as scan_dir:
+            scan_path = os.path.join(scan_dir, f"scan{ext}")
+            await _r2_download_to(r2_key, scan_path)
 
-        async with HEAVY_JOBS:
-            ext = Path(r2_key).suffix
-            with tempfile.TemporaryDirectory() as scan_dir:
-                scan_path = os.path.join(scan_dir, f"scan{ext}")
-                await _r2_download_to(r2_key, scan_path)
+            # ffprobe before ACR — invalid or overlong files never reach ACRCloud.
+            # Raises RuntimeError("file_rejected_format"), caught by the outer except.
+            MAX_TRACK_SECONDS = int(os.environ.get("MAX_TRACK_SECONDS", "900"))
 
-                # ffprobe before ACR — invalid or overlong files never reach ACRCloud.
-                # Raises RuntimeError("file_rejected_format"), caught by the outer except.
-                MAX_TRACK_SECONDS = int(os.environ.get("MAX_TRACK_SECONDS", "900"))
-
-                def _ffprobe():
-                    result = subprocess.run(
-                        ["ffprobe", "-v", "error", "-show_entries", "format=duration",
-                         "-of", "json", scan_path],
-                        capture_output=True, text=True, timeout=30,
-                    )
-                    if result.returncode != 0:
-                        raise RuntimeError("file_rejected_format")
-                    dur = json.loads(result.stdout).get("format", {}).get("duration")
-                    if dur is None or float(dur) > MAX_TRACK_SECONDS:
-                        raise RuntimeError("file_rejected_format")
-
-                await asyncio.to_thread(_ffprobe)
-                acr_result = await asyncio.to_thread(acrcloud_check.scan_file, scan_path)
-
-            acr_status = acr_result["status"]
-            logger.info("ACRCloud result submission=%s status=%s", submission_id, acr_status)
-
-            if acr_status != "CLEARED":
-                update: dict = {"status": acr_status}
-                for field in ("matched_title", "matched_artist", "matched_label",
-                              "matched_isrc", "confidence", "acrid", "raw_code"):
-                    if acr_result.get(field) is not None:
-                        update[field] = acr_result[field]
-                await db.track_submissions.update_one(
-                    {"id": submission_id},
-                    {"$set": update},
+            def _ffprobe():
+                result = subprocess.run(
+                    ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                     "-of", "json", scan_path],
+                    capture_output=True, text=True, timeout=30,
                 )
-                return
-            # ─────────────────────────────────────────────────────────────────────
+                if result.returncode != 0:
+                    raise RuntimeError("file_rejected_format")
+                dur = json.loads(result.stdout).get("format", {}).get("duration")
+                if dur is None or float(dur) > MAX_TRACK_SECONDS:
+                    raise RuntimeError("file_rejected_format")
 
-            await db.track_submissions.update_one(
-                {"id": submission_id},
-                {"$set": {"status": "processing"}},
-            )
+            await asyncio.to_thread(_ffprobe)
+            acr_result = await asyncio.to_thread(acrcloud_check.scan_file, scan_path)
 
-            # Master the track first
-            await db.track_submissions.update_one(
-                {"id": submission_id},
-                {"$set": {"status": "mastering"}},
-            )
-            mastered_r2_key = await _master_track(submission_id, r2_key)
-            await db.track_submissions.update_one(
-                {"id": submission_id},
-                {"$set": {"status": "processing", "mastered_r2_key": mastered_r2_key}},
-            )
+        acr_status = acr_result["status"]
+        logger.info("ACRCloud result submission=%s status=%s", submission_id, acr_status)
 
-        # Semaphore released; dispatch is network-only.
+        if acr_status != "CLEARED":
+            extra = {f: acr_result[f] for f in ("matched_title", "matched_artist",
+                     "matched_label", "matched_isrc", "confidence", "acrid", "raw_code")
+                     if acr_result.get(f) is not None}
+            await _set_status(submission_id, acr_status, extra)
+            return
+
+        await _set_status(submission_id, "mastering")
+        mastered_r2_key = await _master_track(submission_id, r2_key)
+        await _set_status(submission_id, "mastering", {"mastered_r2_key": mastered_r2_key})
+
         safe_artist = _slugify(artist_name)
         safe_track = _slugify(track_name)
         if not safe_artist or not safe_track:
@@ -403,8 +414,7 @@ async def _process_stems(submission_id: str, r2_key: str, artist_name: str, trac
         stem_engine = os.environ.get("STEM_ENGINE", "lalal")
         if stem_engine == "modal":
             fn = modal.Function.from_name(MODAL_APP, MODAL_FN)
-            # fn.spawn is a synchronous HTTP call; wrap in to_thread to avoid
-            # blocking the event loop. Matches how acrcloud_check is handled.
+            # fn.spawn is a synchronous HTTP call; wrap in to_thread to avoid blocking the event loop.
             await asyncio.to_thread(
                 fn.spawn,
                 submission_id,
@@ -412,10 +422,13 @@ async def _process_stems(submission_id: str, r2_key: str, artist_name: str, trac
                 safe_artist,
                 safe_track,
             )
+            await _set_status(submission_id, "processing",
+                               {"modal_dispatched_at": datetime.now(timezone.utc).isoformat()})
             logger.info("Dispatched to Modal submission=%s", submission_id)
             return
 
-        # ── existing LALAL path — unchanged below ─────────────────────────────
+        # LALAL path — status stays "mastering" through stem separation.
+        # "processing" is not written here; it means Modal dispatch only.
         audio_data = await _r2_get(mastered_r2_key)
         filename = Path(r2_key).name
         lalal_file_id = await _lalal_upload(audio_data, filename)
@@ -443,18 +456,12 @@ async def _process_stems(submission_id: str, r2_key: str, artist_name: str, trac
                 await _r2_put(key, data, "audio/mpeg")
                 stem_paths["other"] = key
 
-        await db.track_submissions.update_one(
-            {"id": submission_id},
-            {"$set": {"status": "completed", "stem_paths": stem_paths}},
-        )
+        await _set_status(submission_id, "completed", {"stem_paths": stem_paths})
         logger.info("Stem processing completed for submission=%s", submission_id)
 
     except Exception as exc:
         logger.error("Stem processing failed for submission=%s: %s", submission_id, exc)
-        await db.track_submissions.update_one(
-            {"id": submission_id},
-            {"$set": {"status": "failed", "error": str(exc)}},
-        )
+        await _set_status(submission_id, "failed", {"error": str(exc)})
 
 
 # ---------------------------------------------------------------------------
@@ -589,6 +596,10 @@ class TrackSubmission(BaseModel):
     raw_code: Optional[int] = None
     expected_size: Optional[int] = None
     status_updated_at: Optional[datetime] = None
+    claimed_by: Optional[str] = None
+    claimed_at: Optional[datetime] = None
+    attempts: int = 0
+    modal_dispatched_at: Optional[datetime] = None
 
 
 # ---------------------------------------------------------------------------
@@ -1096,6 +1107,10 @@ async def create_indexes():
         await db.appeals.create_index([("id", 1)])
     except Exception as exc:
         logger.warning("Index creation failed (non-fatal): %s", exc)
+    if RUN_WORKER:
+        for _ in range(WORKER_CONCURRENCY):
+            asyncio.ensure_future(_worker_loop())
+        logger.info("Started %d worker(s) instance=%s", WORKER_CONCURRENCY, INSTANCE_ID)
 
 
 @app.on_event("shutdown")
