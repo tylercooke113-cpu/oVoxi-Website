@@ -115,7 +115,12 @@ const UploadPage = () => {
     } catch (err) {
       console.error(err);
       let detail;
-      if (err.response?.data?.detail) {
+      if (err.response?.status === 403) {
+        const serverDetail = err.response?.data?.detail;
+        detail = (!serverDetail || serverDetail === 'Forbidden')
+          ? 'Your account is pending approval. We will email you once you are cleared to upload.'
+          : serverDetail;
+      } else if (err.response?.data?.detail) {
         detail = err.response.data.detail;
       } else if (err.code === 'ERR_NETWORK' || err.message === 'Network Error') {
         detail = 'Could not reach the server. Check your connection or try again shortly.';

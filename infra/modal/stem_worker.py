@@ -95,6 +95,7 @@ app = modal.App("ovoxi-stem-worker")
     gpu="L4",
     timeout=1800,
     retries=0,          # explicit: a retry = duplicate GPU charge + duplicate callback
+    max_containers=2,
     image=_gpu_image,
     secrets=[modal.Secret.from_name("ovoxi-stem-secrets")],
 )

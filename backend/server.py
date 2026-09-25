@@ -7,7 +7,7 @@ import logging
 import re
 import tempfile
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from io import BytesIO
 from pathlib import Path, PurePosixPath
 from typing import List, Optional
@@ -666,13 +666,34 @@ async def get_artists(
 
 @api_router.post("/upload/presign")
 @limiter.limit("5/minute")
-async def presign_upload(request: Request, payload: PresignRequest, clerk_payload: dict = Depends(verify_clerk_token)):
+async def presign_upload(request: Request, payload: PresignRequest, clerk_payload: dict = Depends(require_artist)):
+    if os.environ.get("UPLOADS_ENABLED", "true") != "true":
+        raise HTTPException(status_code=503, detail="Uploads are temporarily paused")
     if payload.genre not in VALID_GENRES:
         raise HTTPException(status_code=400, detail=f"Invalid genre")
 
     ext = Path(payload.filename).suffix.lower()
     if ext not in AUDIO_CONTENT_TYPES:
         raise HTTPException(status_code=400, detail="Only MP3 or WAV files are accepted")
+
+    if _role(clerk_payload) != "admin":
+        MAX_UPLOADS_PER_DAY = int(os.environ.get("MAX_UPLOADS_PER_DAY", "20"))
+        MAX_OPEN_SUBMISSIONS = int(os.environ.get("MAX_OPEN_SUBMISSIONS", "5"))
+        uid = clerk_payload["sub"]
+        since = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+        one_hour_ago = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+        if await db.track_submissions.count_documents(
+            {"clerk_user_id": uid, "upload_date": {"$gte": since}}
+        ) >= MAX_UPLOADS_PER_DAY:
+            raise HTTPException(status_code=429, detail="Daily upload limit reached")
+        if await db.track_submissions.count_documents({
+            "clerk_user_id": uid,
+            "$or": [
+                {"status": {"$in": ["uploaded", "scanning", "mastering", "processing"]}},
+                {"status": "pending", "upload_date": {"$gte": one_hour_ago}},
+            ],
+        }) >= MAX_OPEN_SUBMISSIONS:
+            raise HTTPException(status_code=429, detail="Too many uploads in progress")
 
     submission_id = str(uuid.uuid4())
     safe_artist = _slugify(payload.artist_name)
@@ -720,10 +741,14 @@ async def presign_upload(request: Request, payload: PresignRequest, clerk_payloa
 
 @api_router.post("/upload/complete")
 @limiter.limit("5/minute")
-async def complete_upload(request: Request, payload: CompleteUploadRequest, background_tasks: BackgroundTasks):
+async def complete_upload(request: Request, payload: CompleteUploadRequest, background_tasks: BackgroundTasks, clerk_payload: dict = Depends(require_artist)):
+    if os.environ.get("UPLOADS_ENABLED", "true") != "true":
+        raise HTTPException(status_code=503, detail="Uploads are temporarily paused")
     sub = await db.track_submissions.find_one({"id": payload.submission_id}, {"_id": 0})
     if not sub:
         raise HTTPException(status_code=404, detail="Submission not found")
+    if sub.get("clerk_user_id") != clerk_payload.get("sub"):
+        raise HTTPException(status_code=403, detail="Not your submission")
     if sub["status"] != "pending":
         raise HTTPException(status_code=400, detail=f"Submission status is already '{sub['status']}'")
 
@@ -1015,6 +1040,17 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.on_event("startup")
+async def create_indexes():
+    try:
+        await db.track_submissions.create_index([("clerk_user_id", 1), ("upload_date", -1)])
+        await db.track_submissions.create_index([("status", 1), ("upload_date", 1)])
+        await db.track_submissions.create_index([("id", 1)])
+        await db.appeals.create_index([("id", 1)])
+    except Exception as exc:
+        logger.warning("Index creation failed (non-fatal): %s", exc)
 
 
 @app.on_event("shutdown")
