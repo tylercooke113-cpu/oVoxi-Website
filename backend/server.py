@@ -997,6 +997,17 @@ async def get_appeals(request: Request, admin: dict = Depends(require_admin)):
     return appeals
 
 
+@api_router.get("/internal/debug-ip")
+async def debug_ip(request: Request):
+    if os.environ.get("DEBUG_IP_ENDPOINT") != "true":
+        raise HTTPException(status_code=404)
+    return {
+        "x_forwarded_for": request.headers.get("x-forwarded-for"),
+        "x_real_ip": request.headers.get("x-real-ip"),
+        "client_host": request.client.host if request.client else None,
+    }
+
+
 @api_router.post("/internal/stems/callback")
 async def stems_callback(request: Request):
     # Read the raw body before JSON-parsing. The HMAC is computed over the
