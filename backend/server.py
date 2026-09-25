@@ -28,17 +28,28 @@ from pydantic import BaseModel, Field, ConfigDict, EmailStr, field_validator
 from starlette.middleware.cors import CORSMiddleware
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
 from slowapi.middleware import SlowAPIMiddleware
 
 import acrcloud_check
 
 
+# Railway's edge REPLACES both X-Real-IP and X-Forwarded-For with values it
+# controls rather than appending to client-supplied values. Verified 2026-09-25
+# by sending forged X-Real-IP and X-Forwarded-For headers to production and
+# confirming neither reached this handler. X-Real-IP is the real client alone;
+# X-Forwarded-For arrives as "<real client>, <railway edge>", so the leftmost
+# entry is equally trustworthy. If a second proxy (Cloudflare, etc.) is placed
+# in front of Railway this must be re-tested -- the trust assumption changes.
+# Current assumption: 1 Railway replica; slowapi's in-process counter is
+# per-replica, so a multi-replica deployment would require shared storage (Redis).
 def get_real_client_ip(request: Request) -> str:
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    return get_remote_address(request)
+    real_ip = request.headers.get("x-real-ip", "").strip()
+    if real_ip:
+        return real_ip
+    first = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+    if first:
+        return first
+    return request.client.host if request.client else "unknown"
 
 
 ROOT_DIR = Path(__file__).parent
@@ -995,17 +1006,6 @@ async def get_appeals(request: Request, admin: dict = Depends(require_admin)):
                 logger.warning("Could not generate proof presigned URL: %s", exc)
                 a["proof_url"] = None
     return appeals
-
-
-@api_router.get("/internal/debug-ip")
-async def debug_ip(request: Request):
-    if os.environ.get("DEBUG_IP_ENDPOINT") != "true":
-        raise HTTPException(status_code=404)
-    return {
-        "x_forwarded_for": request.headers.get("x-forwarded-for"),
-        "x_real_ip": request.headers.get("x-real-ip"),
-        "client_host": request.client.host if request.client else None,
-    }
 
 
 @api_router.post("/internal/stems/callback")
