@@ -102,10 +102,11 @@ const AppealPage = () => {
         },
       });
 
+      const completeToken = await getToken();
       await axios.post(
         `${API}/appeal/complete`,
         { appeal_id },
-        { headers: { Authorization: `Bearer ${token}` } }
+        { headers: { Authorization: `Bearer ${completeToken}` } }
       );
 
       setStage('done');

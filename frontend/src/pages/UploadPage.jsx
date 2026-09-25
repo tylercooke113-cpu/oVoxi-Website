@@ -107,8 +107,9 @@ const UploadPage = () => {
       });
 
       // Step 3: notify backend to start stem processing
+      const completeToken = await getToken();
       await axios.post(`${API}/upload/complete`, { submission_id }, {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${completeToken}` }
       });
 
       setStage('done');
