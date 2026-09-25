@@ -5,6 +5,7 @@ import json
 import os
 import logging
 import re
+import subprocess
 import tempfile
 import uuid
 from datetime import datetime, timezone, timedelta
@@ -16,6 +17,7 @@ import boto3
 import httpx
 import modal
 from botocore.config import Config
+from botocore.exceptions import ClientError
 from dotenv import load_dotenv
 import jwt
 from jwt import PyJWKClient
@@ -61,6 +63,7 @@ r2_client = boto3.client(
     region_name="auto",
 )
 R2_BUCKET = os.environ.get("R2_BUCKET_NAME", "")
+MAX_UPLOAD_BYTES = int(os.environ.get("MAX_UPLOAD_BYTES", str(150 * 1024 * 1024)))
 
 # Lalal.ai
 LALAL_API_KEY = os.environ.get("LALAL_API_KEY", "")
@@ -70,6 +73,13 @@ MODAL_APP = "ovoxi-stem-worker"
 MODAL_FN  = "separate_stems"
 
 AUDIO_CONTENT_TYPES = {".mp3": "audio/mpeg", ".wav": "audio/wav"}
+
+# Serialises ACR scan + Matchering so one pipeline at a time runs on this process.
+# "scanning" is written BEFORE acquiring this semaphore, so a document can sit at
+# "scanning" while queued behind another job — it does not mean the scan is active.
+# When E1 replaces this with a Mongo-backed worker loop, the status claim must move
+# to AFTER the worker picks up the job, or "scanning" regains its original meaning.
+HEAVY_JOBS = asyncio.Semaphore(int(os.environ.get("HEAVY_JOB_CONCURRENCY", "1")))
 
 PROOF_CONTENT_TYPES = {
     ".pdf":  "application/pdf",
@@ -236,6 +246,10 @@ async def _r2_put(key: str, data: bytes, content_type: str) -> None:
     await asyncio.to_thread(_blocking)
 
 
+async def _r2_download_to(key: str, local_path: str) -> None:
+    await asyncio.to_thread(r2_client.download_file, R2_BUCKET, key, local_path)
+
+
 async def _master_track(submission_id: str, r2_key: str) -> str:
     """
     Downloads raw track from R2, masters it with Matchering,
@@ -260,9 +274,7 @@ async def _master_track(submission_id: str, r2_key: str) -> str:
         mastered_path = os.path.join(tmpdir, "mastered.wav")
 
         # 1. Download raw file from R2
-        audio_data = await _r2_get(r2_key)
-        with open(raw_path, "wb") as f:
-            f.write(audio_data)
+        await _r2_download_to(r2_key, raw_path)
 
         # 2. Run Matchering in a thread (CPU-bound)
         def _run_matchering():
@@ -274,11 +286,14 @@ async def _master_track(submission_id: str, r2_key: str) -> str:
 
         await asyncio.to_thread(_run_matchering)
 
-        # 3. Read mastered file and upload to R2
-        with open(mastered_path, "rb") as f:
-            mastered_data = f.read()
-
-        await _r2_put(mastered_r2_key, mastered_data, "audio/wav")
+        # 3. Upload mastered file to R2
+        await asyncio.to_thread(
+            r2_client.upload_file,
+            mastered_path,
+            R2_BUCKET,
+            mastered_r2_key,
+            ExtraArgs={"ContentType": "audio/wav"},
+        )
 
     return mastered_r2_key
 
@@ -290,46 +305,65 @@ async def _process_stems(submission_id: str, r2_key: str, artist_name: str, trac
             {"id": submission_id},
             {"$set": {"status": "scanning"}},
         )
-        audio_data = await _r2_get(r2_key)
-        ext = Path(r2_key).suffix
-        with tempfile.TemporaryDirectory() as scan_dir:
-            scan_path = os.path.join(scan_dir, f"scan{ext}")
-            with open(scan_path, "wb") as f:
-                f.write(audio_data)
-            acr_result = await asyncio.to_thread(acrcloud_check.scan_file, scan_path)
 
-        acr_status = acr_result["status"]
-        logger.info("ACRCloud result submission=%s status=%s", submission_id, acr_status)
+        async with HEAVY_JOBS:
+            ext = Path(r2_key).suffix
+            with tempfile.TemporaryDirectory() as scan_dir:
+                scan_path = os.path.join(scan_dir, f"scan{ext}")
+                await _r2_download_to(r2_key, scan_path)
 
-        if acr_status != "CLEARED":
-            update: dict = {"status": acr_status}
-            for field in ("matched_title", "matched_artist", "matched_label",
-                          "matched_isrc", "confidence", "acrid", "raw_code"):
-                if acr_result.get(field) is not None:
-                    update[field] = acr_result[field]
+                # ffprobe before ACR — invalid or overlong files never reach ACRCloud.
+                # Raises RuntimeError("file_rejected_format"), caught by the outer except.
+                MAX_TRACK_SECONDS = int(os.environ.get("MAX_TRACK_SECONDS", "900"))
+
+                def _ffprobe():
+                    result = subprocess.run(
+                        ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                         "-of", "json", scan_path],
+                        capture_output=True, text=True, timeout=30,
+                    )
+                    if result.returncode != 0:
+                        raise RuntimeError("file_rejected_format")
+                    dur = json.loads(result.stdout).get("format", {}).get("duration")
+                    if dur is None or float(dur) > MAX_TRACK_SECONDS:
+                        raise RuntimeError("file_rejected_format")
+
+                await asyncio.to_thread(_ffprobe)
+                acr_result = await asyncio.to_thread(acrcloud_check.scan_file, scan_path)
+
+            acr_status = acr_result["status"]
+            logger.info("ACRCloud result submission=%s status=%s", submission_id, acr_status)
+
+            if acr_status != "CLEARED":
+                update: dict = {"status": acr_status}
+                for field in ("matched_title", "matched_artist", "matched_label",
+                              "matched_isrc", "confidence", "acrid", "raw_code"):
+                    if acr_result.get(field) is not None:
+                        update[field] = acr_result[field]
+                await db.track_submissions.update_one(
+                    {"id": submission_id},
+                    {"$set": update},
+                )
+                return
+            # ─────────────────────────────────────────────────────────────────────
+
             await db.track_submissions.update_one(
                 {"id": submission_id},
-                {"$set": update},
+                {"$set": {"status": "processing"}},
             )
-            return
-        # ─────────────────────────────────────────────────────────────────────
 
-        await db.track_submissions.update_one(
-            {"id": submission_id},
-            {"$set": {"status": "processing"}},
-        )
+            # Master the track first
+            await db.track_submissions.update_one(
+                {"id": submission_id},
+                {"$set": {"status": "mastering"}},
+            )
+            mastered_r2_key = await _master_track(submission_id, r2_key)
+            await db.track_submissions.update_one(
+                {"id": submission_id},
+                {"$set": {"status": "processing", "mastered_r2_key": mastered_r2_key}},
+            )
 
-        # Master the track first
-        await db.track_submissions.update_one(
-            {"id": submission_id},
-            {"$set": {"status": "mastering"}},
-        )
-        mastered_r2_key = await _master_track(submission_id, r2_key)
-        await db.track_submissions.update_one(
-            {"id": submission_id},
-            {"$set": {"status": "processing", "mastered_r2_key": mastered_r2_key}},
-        )
-
+        # Semaphore released; dispatch is network-only.
         stem_engine = os.environ.get("STEM_ENGINE", "lalal")
         if stem_engine == "modal":
             fn = modal.Function.from_name(MODAL_APP, MODAL_FN)
@@ -461,6 +495,7 @@ class PresignRequest(BaseModel):
     track_name: str = Field(..., min_length=1, max_length=120)
     genre: str
     filename: str = Field(..., min_length=1, max_length=200)
+    file_size: int = Field(..., gt=0)
     pro_registered: bool = False
     pro_org: str = ''
     pro_register_us: bool = False
@@ -518,6 +553,7 @@ class TrackSubmission(BaseModel):
     confidence: Optional[int] = None
     acrid: Optional[str] = None
     raw_code: Optional[int] = None
+    expected_size: Optional[int] = None
 
 
 # ---------------------------------------------------------------------------
@@ -675,6 +711,11 @@ async def presign_upload(request: Request, payload: PresignRequest, clerk_payloa
     ext = Path(payload.filename).suffix.lower()
     if ext not in AUDIO_CONTENT_TYPES:
         raise HTTPException(status_code=400, detail="Only MP3 or WAV files are accepted")
+    if payload.file_size > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File exceeds the {MAX_UPLOAD_BYTES // (1024 * 1024)} MB limit",
+        )
 
     if _role(clerk_payload) != "admin":
         MAX_UPLOADS_PER_DAY = int(os.environ.get("MAX_UPLOADS_PER_DAY", "20"))
@@ -704,8 +745,14 @@ async def presign_upload(request: Request, payload: PresignRequest, clerk_payloa
     def _presign():
         return r2_client.generate_presigned_url(
             "put_object",
-            Params={"Bucket": R2_BUCKET, "Key": r2_key, "ContentType": content_type},
-            ExpiresIn=3600,
+            Params={
+                "Bucket": R2_BUCKET,
+                "Key": r2_key,
+                "ContentType": content_type,
+                "ContentLength": payload.file_size,
+            },
+            # 1800s: bounded by upload time for MAX_UPLOAD_BYTES on a slow connection, not security preference.
+            ExpiresIn=1800,
         )
 
     try:
@@ -729,6 +776,7 @@ async def presign_upload(request: Request, payload: PresignRequest, clerk_payloa
     )
     doc = submission.model_dump()
     doc['upload_date'] = doc['upload_date'].isoformat()
+    doc['expected_size'] = payload.file_size
     await db.track_submissions.insert_one(doc)
 
     return {
@@ -751,6 +799,31 @@ async def complete_upload(request: Request, payload: CompleteUploadRequest, back
         raise HTTPException(status_code=403, detail="Not your submission")
     if sub["status"] != "pending":
         raise HTTPException(status_code=400, detail=f"Submission status is already '{sub['status']}'")
+
+    def _head():
+        return r2_client.head_object(Bucket=R2_BUCKET, Key=sub["original_r2_path"])
+
+    try:
+        head = await asyncio.to_thread(_head)
+    except ClientError as exc:
+        if exc.response["Error"]["Code"] in ("404", "NoSuchKey", "NotFound"):
+            raise HTTPException(status_code=400, detail="Upload not found")
+        raise
+
+    content_length = head.get("ContentLength", 0)
+    expected = sub.get("expected_size")
+    if content_length > MAX_UPLOAD_BYTES or (expected is not None and content_length != expected):
+        try:
+            await asyncio.to_thread(
+                r2_client.delete_object, Bucket=R2_BUCKET, Key=sub["original_r2_path"]
+            )
+        except Exception as del_exc:
+            logger.warning("Failed to delete rejected R2 object: %s", del_exc)
+        await db.track_submissions.update_one(
+            {"id": payload.submission_id},
+            {"$set": {"status": "failed", "error": "file_rejected_size"}},
+        )
+        raise HTTPException(status_code=400, detail="File exceeds size limit")
 
     await db.track_submissions.update_one(
         {"id": payload.submission_id},

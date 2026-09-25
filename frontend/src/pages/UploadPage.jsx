@@ -24,7 +24,7 @@ const GENRES = [
   'Pop', 'Electronic', 'Latin', 'Reggaeton', 'Afropop', 'Other',
 ];
 
-const MAX_BYTES = 200 * 1024 * 1024; // 200 MB
+const MAX_BYTES = 150 * 1024 * 1024; // 150 MB — matches MAX_UPLOAD_BYTES on Railway
 
 const STATUS_LABELS = {
   pending: 'Queued',
@@ -51,7 +51,7 @@ const UploadPage = () => {
   const handleFile = (f) => {
     if (!f) return;
     if (f.size > MAX_BYTES) {
-      toast.error('File exceeds the 200 MB limit.');
+      toast.error('File exceeds the 150 MB limit.');
       return;
     }
     const ext = f.name.split('.').pop().toLowerCase();
@@ -89,6 +89,7 @@ const UploadPage = () => {
         track_name: form.track_name,
         genre: form.genre,
         filename: file.name,
+        file_size: file.size,
       }, {
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -121,6 +122,8 @@ const UploadPage = () => {
         detail = (!serverDetail || serverDetail === 'Forbidden')
           ? 'Your account is pending approval. We will email you once you are cleared to upload.'
           : serverDetail;
+      } else if (err.response?.status === 422) {
+        detail = 'Please refresh the page and try again.';
       } else if (err.response?.data?.detail) {
         detail = err.response.data.detail;
       } else if (err.code === 'ERR_NETWORK' || err.message === 'Network Error') {
@@ -260,7 +263,7 @@ const UploadPage = () => {
               <div className="space-y-2">
                 <Label className="text-slate-300">
                   Audio File *{' '}
-                  <span className="text-slate-500">(MP3 or WAV, max 200 MB)</span>
+                  <span className="text-slate-500">(MP3 or WAV, max 150 MB)</span>
                 </Label>
                 <div
                   data-testid="upload-dropzone"
@@ -292,7 +295,7 @@ const UploadPage = () => {
                         <span className="text-electric">browse</span>
                       </p>
                       <p className="text-xs text-slate-600 mt-1">
-                        MP3 or WAV up to 200 MB
+                        MP3 or WAV up to 150 MB
                       </p>
                     </div>
                   )}

@@ -321,6 +321,40 @@ instance keys adds scope to an already-risky operation.
 
 ---
 
+## OQ-10 — Orphaned R2 objects from abandoned uploads
+
+**Found:** 2026-09-25, during C1 planning.
+
+Every call to `POST /api/upload/presign` creates a MongoDB document with
+`status: "pending"` and allocates an R2 key. If the browser tab is closed,
+the PUT to R2 fails, or the artist abandons the upload before calling
+`/upload/complete`, the R2 object (if the PUT started) is never deleted and
+the document stays at `pending` indefinitely.
+
+The quota fix in B2 already gates the stale-pending count (only pendings
+within the last hour count toward the quota), so abandoned uploads cannot
+lock artists out. The problem here is different: **storage cost and catalog
+noise**. Partial or zero-byte R2 objects accumulate with no cleanup trigger.
+The `head_object` check added in C1 deletes the object if its size is
+wrong, but only when `/complete` is eventually called — an upload that never
+reaches `/complete` at all is never cleaned up.
+
+**Why it matters:** R2 charges for stored bytes. A catalog ingestion product
+with no object lifecycle policy accrues unbounded storage cost from every
+abandoned upload attempt.
+
+**Candidate fix:** an R2 lifecycle rule deleting objects under
+`catalog/*/original/*` that are not referenced by a `completed` document
+after N days, or a scheduled reconciliation job (aligned with OQ-5's
+callback sweeper) that deletes R2 objects for submissions still at `pending`
+or `uploaded` after 24 hours.
+
+**Belongs with E1 (storage sweeper) work.** Do not implement during C1.
+
+**Owner:** unassigned.
+
+---
+
 ## Note — `REACT_APP_NEW_MARKETING` fails safe
 
 `frontend/src/App.js:20` reads:
