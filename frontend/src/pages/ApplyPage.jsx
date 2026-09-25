@@ -46,7 +46,8 @@ const ApplyPage = () => {
     setSubmitting(true);
     try {
       await axios.post(`${API}/artists`, form);
-      navigate(`/apply/tracks?email=${encodeURIComponent(form.email)}`);
+      toast.success('Application received. Create your account to get started.');
+      navigate('/signup');
     } catch (err) {
       if (err.response?.status === 409) {
         toast.error('An application with this email already exists.');

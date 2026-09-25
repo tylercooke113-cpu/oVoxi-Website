@@ -8,7 +8,6 @@ import HomePage from './pages/HomePage';
 import ContactPage from './pages/ContactPage';
 import UploadPage from './pages/UploadPage';
 import ApplyPage from './pages/ApplyPage';
-import ApplyTracksPage from './pages/ApplyTracksPage';
 import AdminPage from './pages/AdminPage';
 import SignUpPage from './pages/SignUpPage';
 import LoginPage from './pages/LoginPage';
@@ -48,7 +47,7 @@ function AppContent() {
           <Route path='/artist-upload' element={<Navigate to='/signup' replace />} />
           <Route path='/upload' element={<UploadPage />} />
           <Route path='/apply' element={<ApplyPage />} />
-          <Route path='/apply/tracks' element={<ApplyTracksPage />} />
+          <Route path='/apply/tracks' element={<Navigate to='/signup' replace />} />
           <Route path='/admin' element={<AdminPage />} />
           <Route path='/signup/*' element={<SignUpPage />} />
           <Route path='/login/*' element={<LoginPage />} />
