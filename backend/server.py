@@ -287,6 +287,18 @@ async def _master_track(submission_id: str, r2_key: str) -> str:
         await asyncio.to_thread(_run_matchering)
 
         # 3. Upload mastered file to R2
+        def _check_mastered_overwrite():
+            try:
+                r2_client.head_object(Bucket=R2_BUCKET, Key=mastered_r2_key)
+                return True
+            except ClientError as exc:
+                if exc.response["Error"]["Code"] in ("404", "NoSuchKey", "NotFound"):
+                    return False
+                raise
+
+        if await asyncio.to_thread(_check_mastered_overwrite):
+            raise RuntimeError(f"Refusing to overwrite existing object {mastered_r2_key}")
+
         await asyncio.to_thread(
             r2_client.upload_file,
             mastered_path,
@@ -364,6 +376,14 @@ async def _process_stems(submission_id: str, r2_key: str, artist_name: str, trac
             )
 
         # Semaphore released; dispatch is network-only.
+        safe_artist = _slugify(artist_name)
+        safe_track = _slugify(track_name)
+        if not safe_artist or not safe_track:
+            raise RuntimeError(
+                f"Refusing dispatch: blank slug "
+                f"(artist_name={artist_name!r}, track_name={track_name!r})"
+            )
+
         stem_engine = os.environ.get("STEM_ENGINE", "lalal")
         if stem_engine == "modal":
             fn = modal.Function.from_name(MODAL_APP, MODAL_FN)
@@ -373,8 +393,8 @@ async def _process_stems(submission_id: str, r2_key: str, artist_name: str, trac
                 fn.spawn,
                 submission_id,
                 mastered_r2_key,
-                _slugify(artist_name),
-                _slugify(track_name),
+                safe_artist,
+                safe_track,
             )
             logger.info("Dispatched to Modal submission=%s", submission_id)
             return
@@ -385,8 +405,6 @@ async def _process_stems(submission_id: str, r2_key: str, artist_name: str, trac
         lalal_file_id = await _lalal_upload(audio_data, filename)
         logger.info("Lalal.ai upload complete, file_id=%s submission=%s", lalal_file_id, submission_id)
 
-        safe_artist = _slugify(artist_name)
-        safe_track = _slugify(track_name)
         stem_paths: dict = {}
 
         # Stem pairs: (local label, lalal stem name)
@@ -739,6 +757,8 @@ async def presign_upload(request: Request, payload: PresignRequest, clerk_payloa
     submission_id = str(uuid.uuid4())
     safe_artist = _slugify(payload.artist_name)
     safe_track = _slugify(payload.track_name)
+    if not safe_artist or not safe_track:
+        raise HTTPException(status_code=400, detail="Artist and track names must contain at least one letter or number")
     content_type = AUDIO_CONTENT_TYPES[ext]
     r2_key = f"catalog/{safe_artist}/{safe_track}/original/{submission_id}{ext}"
 

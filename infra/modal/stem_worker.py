@@ -129,6 +129,7 @@ def separate_stems(
     import soundfile as sf
     import torch
     from botocore.config import Config
+    from botocore.exceptions import ClientError
     from audio_separator.separator import Separator
 
     # Fail loudly rather than falling back to CPU and burning 20 minutes of
@@ -155,7 +156,12 @@ def separate_stems(
     bucket         = os.environ["R2_BUCKET_NAME"]
     callback_url   = os.environ["STEM_CALLBACK_URL"]
     webhook_secret = os.environ["STEM_WEBHOOK_SECRET"]
-    stem_prefix    = f"{key_prefix}/{artist_slug}/{track_slug}/stems"
+    if not artist_slug or not track_slug or not submission_id:
+        raise RuntimeError(
+            f"Refusing R2 write: blank slug or submission_id "
+            f"(artist_slug={artist_slug!r}, track_slug={track_slug!r}, submission_id={submission_id!r})"
+        )
+    stem_prefix    = f"{key_prefix}/{artist_slug}/{track_slug}/stems/{submission_id}"
 
     def _ffprobe_sr(path: Path) -> int:
         out = subprocess.check_output(
@@ -400,6 +406,15 @@ def separate_stems(
             stem_paths: dict[str, str] = {}
             total_out_bytes = 0
 
+            def _exists(key: str) -> bool:
+                try:
+                    r2.head_object(Bucket=bucket, Key=key)
+                    return True
+                except ClientError as e:
+                    if e.response["Error"]["Code"] in ("404", "NoSuchKey", "NotFound"):
+                        return False
+                    raise
+
             for stem_name, wav_path in stems.items():
                 wav_sr   = _ffprobe_sr(wav_path)
                 out_path = enc_dir / f"{stem_name}.wav"
@@ -414,6 +429,8 @@ def separate_stems(
                 total_out_bytes += out_path.stat().st_size
 
                 out_key = f"{stem_prefix}/{stem_name}.wav"
+                if _exists(out_key):
+                    raise RuntimeError(f"Refusing to overwrite existing object {out_key}")
                 r2.put_object(
                     Bucket=bucket, Key=out_key,
                     Body=out_path.read_bytes(),
