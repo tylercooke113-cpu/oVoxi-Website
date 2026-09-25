@@ -411,7 +411,7 @@ async def _process_stems(submission_id: str, r2_key: str, artist_name: str, trac
                 f"(artist_name={artist_name!r}, track_name={track_name!r})"
             )
 
-        stem_engine = os.environ.get("STEM_ENGINE", "lalal")
+        stem_engine = os.environ.get("STEM_ENGINE", "modal")
         if stem_engine == "modal":
             fn = modal.Function.from_name(MODAL_APP, MODAL_FN)
             # fn.spawn is a synchronous HTTP call; wrap in to_thread to avoid blocking the event loop.

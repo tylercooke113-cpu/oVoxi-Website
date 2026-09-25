@@ -165,12 +165,12 @@ same pattern rather than inventing an env var, unless you refactor all of them a
 - `vercel.json` sets a **strict CSP**. `connect-src` allowlists only the Railway API and Clerk. **Any new external origin the browser must reach requires a `vercel.json` edit or it will be blocked in production and work fine locally.**
 - Secrets live in Railway/Vercel env vars, not in the repo. `backend/.env` locally holds
   `MONGO_URL`, `DB_NAME`, the five `R2_*` values, ACRCloud credentials, and admin values.
-- `STEM_ENGINE` **exists in code** as of `/04` (`server.py:291`), defaulting to
-  `"lalal"`. The default is deliberately *not* `"modal"`: an unset or misspelled
-  variable must not be able to activate the new engine. `.claude/commands/04-stem-wire.md`
-  originally specified a `"modal"` default; the implementation overrode it on purpose.
-  Setting `STEM_ENGINE=modal` only has effect if Railway is actually running `/04` —
-  older deployments ignore the variable entirely and run LALAL regardless.
+- `STEM_ENGINE` **exists in code** as of `/04`, now defaulting to `"modal"`. The original
+  `"lalal"` default was a rollout latch — "don't accidentally activate an untested engine."
+  That premise is gone: the LALAL.AI account is cancelled and Modal is production-verified.
+  An unset or mistyped variable previously routed every upload to a dead vendor. The default
+  was flipped in the E1 batch (2026-09-25). Setting `STEM_ENGINE=lalal` re-enables the dead
+  path and should not be done without a live LALAL account.
 - `.gitignore` ignores all `.env*`. Keep it that way.
 
 ---
