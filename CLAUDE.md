@@ -159,19 +159,137 @@ same pattern rather than inventing an env var, unless you refactor all of them a
 
 ## 4. Security / config facts
 
-- Auth is **Clerk**, verified server-side in `verify_clerk_token` against `CLERK_JWKS_URL`.
-- Admin routes use a shared `ADMIN_PASSWORD` header. This is weak; do not extend it to new privileged routes without flagging it.
-- Rate limiting is `slowapi`, keyed on `get_real_client_ip` (X-Forwarded-For aware).
-- `vercel.json` sets a **strict CSP**. `connect-src` allowlists only the Railway API and Clerk. **Any new external origin the browser must reach requires a `vercel.json` edit or it will be blocked in production and work fine locally.**
-- Secrets live in Railway/Vercel env vars, not in the repo. `backend/.env` locally holds
-  `MONGO_URL`, `DB_NAME`, the five `R2_*` values, ACRCloud credentials, and admin values.
-- `STEM_ENGINE` **exists in code** as of `/04`, now defaulting to `"modal"`. The original
-  `"lalal"` default was a rollout latch — "don't accidentally activate an untested engine."
-  That premise is gone: the LALAL.AI account is cancelled and Modal is production-verified.
-  An unset or mistyped variable previously routed every upload to a dead vendor. The default
-  was flipped in the E1 batch (2026-09-25). Setting `STEM_ENGINE=lalal` re-enables the dead
-  path and should not be done without a live LALAL account.
-- `.gitignore` ignores all `.env*`. Keep it that way.
+### Authentication and roles
+
+Auth is **Clerk**, verified server-side via PyJWT + `PyJWKClient` with a 1-hour in-process key
+cache. `verify_clerk_token` validates `RS256`, checks `iss` == `CLERK_ISSUER`, and rejects
+`azp` values outside `CLERK_AUTHORIZED_PARTIES`. Keys are fetched from `CLERK_JWKS_URL` on cache
+miss only -- no live HTTP call on every request.
+
+Roles live in `metadata.role` inside the Clerk session token:
+
+| Role | Set by | Access |
+|---|---|---|
+| `"artist"` | Hand-set in Clerk dashboard (or `scripts/backfill_artist_roles.py`) | upload, vault |
+| `"admin"` | Hand-set in Clerk dashboard | admin endpoints |
+
+`require_artist = require_role("artist", "admin")`, `require_admin = require_role("admin")`.
+
+**`ADMIN_PASSWORD` no longer exists.** Removed in B1 (2026-09-25). Admin access is exclusively
+a Clerk JWT with `role="admin"`. Do not rebuild any shared-secret admin gate.
+
+### Job queue and sweeper
+
+`complete_upload` sets status `"uploaded"` and returns immediately. The audio pipeline runs in a
+Mongo-backed worker loop started at app startup when `RUN_WORKER=true`.
+
+- `_claim_next()` atomically transitions `"uploaded"` to `"scanning"`, records
+  `claimed_by=INSTANCE_ID`, increments `attempts`, and returns the document (FIFO by
+  `upload_date`, `ReturnDocument.AFTER`).
+- `INSTANCE_ID` is a per-startup UUID; multiple replicas claim safely because the update is atomic.
+- `WORKER_CONCURRENCY` loops (default 1) run per instance, polling every `WORKER_POLL_INTERVAL=5s`.
+- **`_set_status(sid, status, extra=None, match=None) -> int`** is the single writer for all
+  status transitions. Writes `status + status_updated_at`, truncates `error` at 500 chars,
+  accepts an optional conditional filter for terminal-state guards. Returns `matched_count`.
+
+`_run_sweeper()` fires every `SWEEPER_INTERVAL=120s`:
+
+1. **Stale local** (`scanning`/`mastering`, no `modal_dispatched_at`, `status_updated_at` older
+   than `STALE_LOCAL_MIN=30` min): `attempts >= 2` sets `failed`/`pipeline_timeout`; else resets
+   to `"uploaded"`. The 30-minute threshold assumes the Modal path where `"mastering"` ends at
+   dispatch; revisit before re-enabling LALAL.
+2. **Stale Modal** (`processing` + `modal_dispatched_at` older than `STALE_MODAL_MIN=45` min):
+   sets `failed`/`stem_callback_timeout`. Not re-dispatched. 45-minute threshold exceeds Modal's
+   function timeout (1800 s). `$exists:true` guard excludes pre-E1 documents with no
+   `modal_dispatched_at`.
+3. **Abandoned uploads** (`pending`, `upload_date` older than `ABANDON_PENDING_HOURS=2`): sets
+   `failed`/`abandoned_upload`. Does not delete the R2 object -- see OQ-10.
+   Run `scripts/cleanup_orphaned_r2.py` (dry-run by default, `--apply` to delete).
+
+All sweeper updates use conditional filters on `{id, status, status_updated_at}` so two replicas
+cannot double-handle the same document.
+
+### Stem callback signing
+
+`POST /api/internal/stems/callback` uses timestamped HMAC:
+
+1. Modal worker adds `"ts": int(time.time())` to the payload, serializes with
+   `json.dumps(sort_keys=True)`, and signs with `STEM_WEBHOOK_SECRET` (SHA-256 HMAC, header
+   `X-Ovoxi-Signature: sha256=<hex>`).
+2. Railway checks: `isinstance(ts, (int, float))` then `abs(time.time() - ts) <= 300` then
+   `hmac.compare_digest`.
+3. Both write paths filter on `{"status": "processing"}` -- stale or duplicate callbacks are
+   silently ignored.
+4. `stem_paths` validation: must be a dict, keys in `KNOWN_STEM_NAMES`, values must contain
+   `f"/{submission_id}/stems/"` under the submission's top-level prefix.
+
+Run `modal run infra/modal/preflight_callback.py` before every Modal deploy to verify both sides
+share the same secret. Expected result: HTTP 400 (signature valid; `"ping"` status is unknown).
+
+### Upload limits and rate limiting
+
+- `MAX_UPLOAD_BYTES` (env, default 150 MB / `157286400`): enforced at presign and re-checked via
+  `head_object` in `complete_upload`; over-size objects are deleted and marked `failed`.
+- `MAX_TRACK_SECONDS` (env, default `900`): enforced via `ffprobe` after download, before ACRCloud.
+- Per-user quotas: `MAX_UPLOADS_PER_DAY=20`, `MAX_OPEN_SUBMISSIONS=5` (admins exempt).
+- Rate limits: presign/complete 10/min, contact/artists 5/min, vault/tracks 30/min, admin 30/min.
+
+### Client IP (Railway-specific)
+
+Railway **overwrites** both `X-Real-IP` and `X-Forwarded-For` -- verified 2026-09-25 by forging
+both headers from outside the network and observing Railway replaced them. The leftmost value in
+`X-Forwarded-For` is the real client IP. `get_real_client_ip` prefers `X-Real-IP`, falls back to
+leftmost XFF, falls back to `request.client.host`. `slowapi` storage is in-process per-replica;
+valid only under the single-replica assumption -- flag it if the service ever scales beyond one.
+
+### Other
+
+- `STEM_ENGINE` defaults to `"modal"` (LALAL account cancelled). `STEM_ENGINE=lalal` re-enables
+  a dead path; do not set without a live account.
+- FastAPI docs disabled: `docs_url=None, redoc_url=None, openapi_url=None`.
+- The global exception handler runs outside `CORSMiddleware` -- unhandled 500s carry no CORS
+  headers; browsers see a CORS error, not a 500. Internal path names never reach the client.
+- `vercel.json` sets a **strict CSP**. `connect-src` allowlists only the Railway API and Clerk.
+  **Any new external origin the browser must reach requires a `vercel.json` edit or it will be
+  blocked in production and work fine locally.**
+- `backend/.env` locally holds `MONGO_URL`, `DB_NAME`, the five `R2_*` values, `CLERK_JWKS_URL`,
+  `CLERK_ISSUER`, `CLERK_AUTHORIZED_PARTIES`, `STEM_WEBHOOK_SECRET`, and ACRCloud credentials.
+  `.gitignore` ignores all `.env*`. Keep it that way.
+
+### Env vars added and removed during security hardening (2026-09-22 to 2026-09-25)
+
+**Railway (backend):**
+
+| Variable | Batch | Change | Value source |
+|---|---|---|---|
+| `ADMIN_PASSWORD` | A/B | **Removed** | Was a random value; deleted after B1 verified |
+| `CLERK_JWKS_URL` | B0 | Added | Clerk dashboard -> API Keys -> JWKS URL |
+| `CLERK_ISSUER` | B0 | Added | Clerk dashboard -> API Keys -> Frontend API URL |
+| `CLERK_AUTHORIZED_PARTIES` | B0 | Added | `https://ovoxi.net,https://www.ovoxi.net` |
+| `UPLOADS_ENABLED` | B2 | Added | `true` (set `false` to pause uploads instantly) |
+| `MAX_UPLOADS_PER_DAY` | B2 | Added | `20` |
+| `MAX_OPEN_SUBMISSIONS` | B2 | Added | `5` |
+| `MAX_UPLOAD_BYTES` | C1 | Added | `157286400` (150 MB) |
+| `MAX_TRACK_SECONDS` | C1 | Added | `900` (15 min) |
+| `DEBUG_IP_ENDPOINT` | D-2 | **Removed** | Temporary; deleted after IP behaviour verified |
+| `RUN_WORKER` | E1 | Added | `true` |
+| `WORKER_CONCURRENCY` | E1 | Added (optional) | `1` |
+| `STALE_LOCAL_MIN` | E1 | Added (optional) | `30` |
+| `STALE_MODAL_MIN` | E1 | Added (optional) | `45` |
+
+**Vercel (frontend) -- current variables (no changes during this hardening work):**
+
+| Variable | Notes |
+|---|---|
+| `REACT_APP_CLERK_PUBLISHABLE_KEY` | Added in OQ-8 (2026-09-03, commit `6c937f7`); Clerk dashboard -> API Keys -> Publishable key |
+| `REACT_APP_NEW_MARKETING` | Pre-existing; see `frontend/src/App.js:20` for its effect on the `/` route |
+
+**Modal (`ovoxi-stem-secrets`) -- no changes during this work:**
+
+| Variable | Notes |
+|---|---|
+| `STEM_WEBHOOK_SECRET` | Shared with Railway; `preflight_callback.py` verifies both sides match |
+| `STEM_CALLBACK_URL` | `https://ovoxi-website-production.up.railway.app/api/internal/stems/callback` |
 
 ---
 

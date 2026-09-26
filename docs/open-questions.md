@@ -71,6 +71,14 @@ it deliberately. Rewriting key conventions mid-migration is how baselines get lo
 
 **Owner:** unassigned.
 
+**Resolved (new uploads):** 2026-09-25. Per-submission stem keys implemented in `sec(#5)`
+(commit `d0a1c30`). New writes go to
+`catalog/{artist_slug}/{track_slug}/{submission_id}/stems/{label}.wav`. Write guards in
+`_master_track` and `stem_worker.py` refuse to overwrite an existing R2 object. Existing
+documents are NOT migrated; legacy `stem_paths` values remain valid pointers. Run
+`scripts/audit_stem_collisions.py` to identify historical collisions. **OQ-6** (write guard)
+resolved in the same commit.
+
 ---
 
 ## OQ-3 — Model weight licensing
@@ -170,6 +178,13 @@ Addressed in a later phase.
 
 **Owner:** unassigned.
 
+**Resolved:** 2026-09-25. The stale-job sweeper implemented in `feat(#9c)` (commit
+`0c5904e`) covers all three failure modes. Stale local jobs (`scanning`/`mastering`)
+reset to `"uploaded"` after `STALE_LOCAL_MIN=30` min (or `failed`/`pipeline_timeout` at
+`attempts >= 2`). Stale Modal jobs (`processing` with `modal_dispatched_at`) become
+`failed`/`stem_callback_timeout` after `STALE_MODAL_MIN=45` min and are not re-dispatched.
+Sweeper runs every 120 s. Full threshold rationale in CLAUDE.md section 4.
+
 ---
 
 ## OQ-6 — No catalog/ write guard in the production dispatch path
@@ -205,6 +220,12 @@ live overwrite path with no runtime defence.
 `_process_stems` before the dispatch. Both are deferred.
 
 **Owner:** unassigned.
+
+**Resolved (new uploads):** 2026-09-25. Write guards added in `sec(#5)` (commit `d0a1c30`).
+`_master_track` and `stem_worker.py` both call `head_object` before writing and raise
+`RuntimeError` on a pre-existing key. Per-submission stem keys (OQ-2, same commit) eliminate
+the slug-collision overwrite path for new uploads. Historical collisions identified via
+`scripts/audit_stem_collisions.py`.
 
 ---
 
@@ -291,6 +312,11 @@ unused `VITE_` variable. Note that a production Clerk instance needs DNS records
 
 **Owner:** unassigned.
 
+**Resolved:** 2026-09-25. Production Clerk instance created and live. Publishable key moved
+to `REACT_APP_CLERK_PUBLISHABLE_KEY` in Vercel (was hardcoded `pk_test_*`). Inert
+`VITE_CLERK_PUBLISHABLE_KEY` removed from Vercel. Commit
+`6c937f7 feat(auth): migrate Clerk from dev to production instance`.
+
 ---
 
 ## OQ-9 — verify_clerk_token fetches JWKS on every request and does not check HTTP status
@@ -318,6 +344,12 @@ unauthenticated, and changes rarely — caching it is safe and cheap.
 instance keys adds scope to an already-risky operation.
 
 **Owner:** unassigned.
+
+**Resolved:** 2026-09-25. `verify_clerk_token` rewritten in B0 using PyJWT +
+`PyJWKClient(cache_keys=True, lifespan=3600)`. Keys cached in-process for 1 hour. HTTP
+status checked before JSON parsing; JWKS failures surface as `PyJWTError` and return 401
+with a logged message, not an unstructured exception. Commit
+`534c4bc sec(#8a): cached JWKS verification with issuer and azp checks`.
 
 ---
 
@@ -350,6 +382,44 @@ callback sweeper) that deletes R2 objects for submissions still at `pending`
 or `uploaded` after 24 hours.
 
 **Belongs with E1 (storage sweeper) work.** Do not implement during C1.
+
+**Owner:** unassigned.
+
+**Resolved (partial):** 2026-09-25. The stale-upload sweeper (`feat(#9c)`, commit `0c5904e`)
+marks abandoned pending submissions as `failed`/`abandoned_upload` after
+`ABANDON_PENDING_HOURS=2`, stopping catalog noise from accumulating. Sweeper cleared 19
+abandoned submissions on its first pass; 3 had R2 objects still present.
+`scripts/cleanup_orphaned_r2.py` (dry-run by default, `--apply` to delete) handles the R2
+side. Remaining edge case tracked in OQ-11.
+
+---
+
+## OQ-11 — Sweeper writes off recoverable abandoned uploads
+
+**Found:** 2026-09-25, during E1 sweeper implementation.
+
+The sweeper's section 3 marks any `pending` submission older than `ABANDON_PENDING_HOURS=2`
+as `failed`/`abandoned_upload`, regardless of whether an R2 object exists. For a submission
+where the PUT to R2 completed but `/upload/complete` never landed (browser closed between PUT
+and complete), the original file is intact in R2 and the pipeline could finish the job.
+Writing it off as `failed` permanently discards a recoverable upload.
+
+**Why it matters:** the artist successfully uploaded the file; only the metadata call failed.
+A smarter sweeper would `head_object` first: if the object exists and `ContentLength ==
+expected_size`, set status `"uploaded"` so the worker finishes the job. Only mark
+`failed`/`abandoned_upload` when the object is missing or wrong-sized.
+
+**Currently shipped behaviour:** all abandoned pendings become `failed`. The R2 object (if
+present) is not deleted by the sweeper and is handled separately by
+`scripts/cleanup_orphaned_r2.py`.
+
+**Candidate fix:** in sweeper section 3, before the `failed` write, call `head_object` on
+`original_r2_path`. If the object exists and `ContentLength == expected_size`, set status
+`"uploaded"` instead. Only mark `failed`/`abandoned_upload` when the object is absent or
+wrong-sized.
+
+**Deliberately deferred** — not a bug in what shipped, and `head_object` overhead per sweep
+pass is non-trivial if the abandoned-upload count is large.
 
 **Owner:** unassigned.
 
