@@ -7,6 +7,7 @@ import logging
 import re
 import subprocess
 import tempfile
+import time
 import uuid
 from datetime import datetime, timezone, timedelta
 from io import BytesIO
@@ -95,6 +96,10 @@ STALE_MODAL_MIN = int(os.environ.get("STALE_MODAL_MIN", "45"))
 # Modal timeout increases.
 SWEEPER_INTERVAL = int(os.environ.get("SWEEPER_INTERVAL", "120"))
 ABANDON_PENDING_HOURS = int(os.environ.get("ABANDON_PENDING_HOURS", "2"))
+CALLBACK_TIMESTAMP_TOLERANCE = int(os.environ.get("CALLBACK_TIMESTAMP_TOLERANCE", "300"))
+# seconds; must accommodate clock skew between Modal and Railway
+
+KNOWN_STEM_NAMES = {"vocals", "instrumental", "drums", "bass", "other"}
 
 PROOF_CONTENT_TYPES = {
     ".pdf":  "application/pdf",
@@ -200,16 +205,18 @@ def _slugify(text: str) -> str:
     return re.sub(r'[\s_-]+', '_', text)[:80].strip('_')
 
 
-async def _set_status(submission_id: str, status: str, extra: Optional[dict] = None) -> None:
+async def _set_status(submission_id: str, status: str, extra: Optional[dict] = None,
+                      match: Optional[dict] = None) -> int:
     fields: dict = {"status": status, "status_updated_at": datetime.now(timezone.utc).isoformat()}
     if extra:
         fields.update(extra)
     if isinstance(fields.get("error"), str):
         fields["error"] = fields["error"][:500]
-    await db.track_submissions.update_one(
-        {"id": submission_id},
-        {"$set": fields},
-    )
+    filter_doc: dict = {"id": submission_id}
+    if match:
+        filter_doc.update(match)
+    result = await db.track_submissions.update_one(filter_doc, {"$set": fields})
+    return result.matched_count
 
 
 async def _claim_next() -> Optional[dict]:
@@ -1142,46 +1149,78 @@ async def stems_callback(request: Request):
     payload = json.loads(body)
     sid    = payload.get("submission_id")
     status = payload.get("status")
+    ts     = payload.get("ts")
+
     if not sid:
         raise HTTPException(status_code=400, detail="Missing submission_id")
+    if not isinstance(ts, (int, float)):
+        raise HTTPException(status_code=400, detail="Missing or invalid timestamp")
+    if abs(time.time() - ts) > CALLBACK_TIMESTAMP_TOLERANCE:
+        raise HTTPException(status_code=400, detail="Request timestamp too old")
+    if status not in ("completed", "failed"):
+        raise HTTPException(status_code=400, detail=f"Unknown status: {status!r}")
+
+    doc = await db.track_submissions.find_one(
+        {"id": sid}, {"_id": 0, "status": 1, "original_r2_path": 1}
+    )
+    if not doc:
+        raise HTTPException(status_code=404, detail="Submission not found")
+    if doc["status"] != "processing":
+        logger.warning(
+            "Callback for %s: doc status=%s (expected processing) — ignored",
+            sid, doc["status"],
+        )
+        return {"ok": True}
 
     if status == "completed":
-        update = {
-            "status":              "completed",
-            "stem_paths":          payload["stem_paths"],
+        stem_paths = payload.get("stem_paths")
+        if not isinstance(stem_paths, dict):
+            raise HTTPException(status_code=400, detail="stem_paths must be an object")
+        unknown_keys = set(stem_paths.keys()) - KNOWN_STEM_NAMES
+        if unknown_keys:
+            raise HTTPException(status_code=400,
+                                detail=f"Unknown stem name(s): {sorted(unknown_keys)}")
+
+        r2_path = doc.get("original_r2_path", "")
+        parts = r2_path.split("/")
+        if len(parts) < 4:
+            raise HTTPException(status_code=400,
+                                detail="Submission has malformed original_r2_path")
+        # original_r2_path: catalog/{artist}/{track}/original/{id}{ext}
+        expected_prefix = f"{parts[0]}/{parts[1]}/{parts[2]}/stems/{sid}/"
+        for key in stem_paths.values():
+            if not key.startswith(expected_prefix):
+                raise HTTPException(status_code=400,
+                                    detail="stem_paths key outside expected prefix")
+
+        extra: dict = {
+            "stem_paths":          stem_paths,
             "stem_schema_version": payload.get("stem_schema_version", 2),
         }
         if "source_sample_rate" in payload:
-            update["source_sample_rate"] = payload["source_sample_rate"]
+            extra["source_sample_rate"] = payload["source_sample_rate"]
         # Stem storage format, recorded explicitly so the catalog is
         # self-describing for licensees. "wav24" from schema v3 onward;
         # absent on v1 (LALAL pcm_s24le) and v2 (MP3 320) documents.
         if "stem_format" in payload:
-            update["stem_format"] = payload["stem_format"]
-        result = await db.track_submissions.update_one(
-            {"id": sid, "status": {"$nin": ["failed", "completed"]}},
-            {"$set": update},
-        )
-        if result.matched_count == 0:
-            logger.warning(
-                "Stem callback completed for %s but document already in terminal state — ignored",
-                sid,
-            )
+            extra["stem_format"] = payload["stem_format"]
+        matched = await _set_status(sid, "completed", extra, match={"status": "processing"})
+        if matched == 0:
+            logger.warning("Callback completed for %s but document no longer processing — ignored", sid)
         else:
             logger.info("Stem callback completed submission=%s", sid)
-    elif status == "failed":
-        await db.track_submissions.update_one(
-            {"id": sid},
-            {"$set": {
-                "status": "failed",
-                "error":  payload.get("error", "Unknown failure"),
-            }},
+
+    else:  # failed
+        matched = await _set_status(
+            sid, "failed",
+            {"error": payload.get("error", "Unknown failure")},
+            match={"status": "processing"},
         )
-        logger.error("Stem callback failed submission=%s error=%s",
-                     sid, payload.get("error"))
-    else:
-        raise HTTPException(status_code=400,
-                            detail=f"Unknown status: {status!r}")
+        if matched == 0:
+            logger.warning("Callback failed for %s but document no longer processing — ignored", sid)
+        else:
+            logger.error("Stem callback failed submission=%s error=%s", sid, payload.get("error"))
+
     return {"ok": True}
 
 

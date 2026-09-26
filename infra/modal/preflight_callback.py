@@ -72,7 +72,8 @@ def ping() -> None:
 
     # Serialized EXACTLY as stem_worker._post_callback does. Any deviation here
     # would make this test meaningless.
-    payload = {"submission_id": "preflight-ping", "status": "ping"}
+    import time
+    payload = {"submission_id": "preflight-ping", "status": "ping", "ts": int(time.time())}
     body = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
     sig = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
 

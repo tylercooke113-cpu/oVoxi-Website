@@ -15,6 +15,7 @@ import logging
 import os
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 
 import modal
@@ -179,6 +180,7 @@ def separate_stems(
     # different separators and the server's hmac.compare_digest would always
     # fail, hanging every track in processing with no visible error.
     def _post_callback(payload: dict) -> None:
+        payload = {**payload, "ts": int(time.time())}
         body = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
         sig = hmac.new(
             webhook_secret.encode(), body, hashlib.sha256
