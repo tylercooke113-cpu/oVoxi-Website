@@ -86,6 +86,15 @@ INSTANCE_ID = str(uuid.uuid4())
 RUN_WORKER = os.environ.get("RUN_WORKER", "true") == "true"
 WORKER_POLL_INTERVAL = int(os.environ.get("WORKER_POLL_INTERVAL", "5"))
 WORKER_CONCURRENCY = int(os.environ.get("WORKER_CONCURRENCY", "1"))
+STALE_LOCAL_MIN = int(os.environ.get("STALE_LOCAL_MIN", "30"))
+# Must exceed worst-case in-process runtime: Matchering (~10 min) + LALAL polling (~12 min)
+# = ~22 min worst case. Assumes Modal path where "mastering" ends at dispatch; if LALAL
+# is re-enabled this threshold must be revisited before deploying.
+STALE_MODAL_MIN = int(os.environ.get("STALE_MODAL_MIN", "45"))
+# Must exceed the Modal function timeout (currently 1800s = 30 min). Raise this if the
+# Modal timeout increases.
+SWEEPER_INTERVAL = int(os.environ.get("SWEEPER_INTERVAL", "120"))
+ABANDON_PENDING_HOURS = int(os.environ.get("ABANDON_PENDING_HOURS", "2"))
 
 PROOF_CONTENT_TYPES = {
     ".pdf":  "application/pdf",
@@ -226,6 +235,95 @@ async def _worker_loop() -> None:
         except Exception as exc:
             logger.error("worker_loop unhandled error: %s", exc)
             await asyncio.sleep(WORKER_POLL_INTERVAL)
+
+
+async def _run_sweeper() -> None:
+    logger.info("Sweeper started instance=%s", INSTANCE_ID)
+    while True:
+        await asyncio.sleep(SWEEPER_INTERVAL)
+        try:
+            now = datetime.now(timezone.utc)
+
+            # 1. Stale local jobs: "scanning" or "mastering" with no status update in STALE_LOCAL_MIN.
+            stale_local_cutoff = (now - timedelta(minutes=STALE_LOCAL_MIN)).isoformat()
+            stale_local = await db.track_submissions.find({
+                "status": {"$in": ["scanning", "mastering"]},
+                "status_updated_at": {"$lt": stale_local_cutoff},
+            }, {"_id": 0, "id": 1, "status": 1, "status_updated_at": 1, "attempts": 1}).to_list(100)
+
+            for doc in stale_local:
+                attempts = doc.get("attempts") or 0
+                matched_status = doc.get("status")
+                matched_ts = doc.get("status_updated_at")
+                if attempts >= 2:
+                    logger.error(
+                        "sweeper: pipeline_timeout id=%s status=%s attempts=%d"
+                        " — marking failed, no retry",
+                        doc["id"], matched_status, attempts,
+                    )
+                    await db.track_submissions.update_one(
+                        {"id": doc["id"], "status": matched_status, "status_updated_at": matched_ts},
+                        {"$set": {"status": "failed", "error": "pipeline_timeout",
+                                  "status_updated_at": now.isoformat()}},
+                    )
+                else:
+                    logger.warning(
+                        "sweeper: resetting stale local job id=%s status=%s attempts=%d",
+                        doc["id"], matched_status, attempts,
+                    )
+                    await db.track_submissions.update_one(
+                        {"id": doc["id"], "status": matched_status, "status_updated_at": matched_ts},
+                        {"$set": {"status": "uploaded", "status_updated_at": now.isoformat()}},
+                    )
+
+            # 2. Stale Modal jobs: "processing" (= awaiting Modal callback) older than STALE_MODAL_MIN.
+            #    NOT re-dispatched: re-dispatch charges another GPU run and, if callbacks are broken
+            #    systemically (wrong STEM_WEBHOOK_SECRET or STEM_CALLBACK_URL), every job would retry
+            #    forever. Fail loudly; re-trigger manually after diagnosing why the callback never arrived.
+            #    "$exists: true" excludes pre-1b legacy documents at "processing" with no modal_dispatched_at.
+            stale_modal_cutoff = (now - timedelta(minutes=STALE_MODAL_MIN)).isoformat()
+            stale_modal = await db.track_submissions.find({
+                "status": "processing",
+                "modal_dispatched_at": {"$exists": True, "$lt": stale_modal_cutoff},
+            }, {"_id": 0, "id": 1, "status": 1, "status_updated_at": 1, "modal_dispatched_at": 1}).to_list(100)
+
+            for doc in stale_modal:
+                logger.error(
+                    "sweeper: stem_callback_timeout id=%s dispatched_at=%s"
+                    " — marking failed, no retry;"
+                    " check STEM_WEBHOOK_SECRET and STEM_CALLBACK_URL before re-triggering manually",
+                    doc["id"], doc.get("modal_dispatched_at"),
+                )
+                await db.track_submissions.update_one(
+                    {"id": doc["id"], "status": doc.get("status"),
+                     "status_updated_at": doc.get("status_updated_at")},
+                    {"$set": {"status": "failed", "error": "stem_callback_timeout",
+                              "status_updated_at": now.isoformat()}},
+                )
+
+            # 3. OQ-10: abandoned pending uploads.
+            #    Presigned URL expires after 30 min; still "pending" after ABANDON_PENDING_HOURS means
+            #    the upload was never completed. Mark failed, log the orphaned R2 key for the manual
+            #    cleanup script. Does NOT delete from R2 -- see scripts/cleanup_orphaned_r2.py.
+            abandon_cutoff = (now - timedelta(hours=ABANDON_PENDING_HOURS)).isoformat()
+            abandoned = await db.track_submissions.find({
+                "status": "pending",
+                "upload_date": {"$lt": abandon_cutoff},
+            }, {"_id": 0, "id": 1, "upload_date": 1, "original_r2_path": 1}).to_list(100)
+
+            for doc in abandoned:
+                logger.info(
+                    "sweeper: abandoned_upload id=%s orphaned_r2_key=%s",
+                    doc["id"], doc.get("original_r2_path"),
+                )
+                await db.track_submissions.update_one(
+                    {"id": doc["id"], "status": "pending", "upload_date": doc.get("upload_date")},
+                    {"$set": {"status": "failed", "error": "abandoned_upload",
+                              "status_updated_at": now.isoformat()}},
+                )
+
+        except Exception as exc:
+            logger.error("sweeper error: %s", exc)
 
 
 async def _lalal_upload(audio_data: bytes, filename: str) -> str:
@@ -1110,7 +1208,8 @@ async def create_indexes():
     if RUN_WORKER:
         for _ in range(WORKER_CONCURRENCY):
             asyncio.ensure_future(_worker_loop())
-        logger.info("Started %d worker(s) instance=%s", WORKER_CONCURRENCY, INSTANCE_ID)
+        asyncio.ensure_future(_run_sweeper())
+        logger.info("Started %d worker(s) and sweeper instance=%s", WORKER_CONCURRENCY, INSTANCE_ID)
 
 
 @app.on_event("shutdown")
