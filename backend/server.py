@@ -105,7 +105,7 @@ PROOF_CONTENT_TYPES = {
     ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 }
 
-app = FastAPI()
+app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 
 limiter = Limiter(key_func=get_real_client_ip)
 app.state.limiter = limiter
@@ -116,6 +116,16 @@ app.add_exception_handler(
         content={"error": "Too many requests. Please try again in a minute."},
     ),
 )
+
+# NOTE: an exception_handler registered for bare Exception runs in Starlette's outermost
+# middleware layer, outside CORSMiddleware. These 500 responses carry no CORS headers, so
+# browsers surfacing them from the frontend see a CORS error rather than a 500. This is
+# acceptable — the error is still logged server-side — but do not waste time debugging a
+# "CORS issue" on a path that is actually throwing a Python exception.
+@app.exception_handler(Exception)
+async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    logger.error("Unhandled exception %s %s: %s", request.method, request.url.path, exc)
+    return JSONResponse(status_code=500, content={"error": "Internal server error"})
 app.add_middleware(SlowAPIMiddleware)
 
 api_router = APIRouter(prefix="/api")
@@ -194,6 +204,8 @@ async def _set_status(submission_id: str, status: str, extra: Optional[dict] = N
     fields: dict = {"status": status, "status_updated_at": datetime.now(timezone.utc).isoformat()}
     if extra:
         fields.update(extra)
+    if isinstance(fields.get("error"), str):
+        fields["error"] = fields["error"][:500]
     await db.track_submissions.update_one(
         {"id": submission_id},
         {"$set": fields},
@@ -909,7 +921,8 @@ async def get_vault_tracks(request: Request, clerk_payload: dict = Depends(verif
     clerk_user_id = clerk_payload.get('sub')
     subs = await db.track_submissions.find(
         {'clerk_user_id': clerk_user_id},
-        {'_id': 0}
+        {'_id': 0, 'id': 1, 'artist_name': 1, 'track_name': 1, 'genre': 1,
+         'upload_date': 1, 'status': 1, 'stem_paths': 1, 'mastered_r2_key': 1},
     ).sort('upload_date', -1).to_list(1000)
 
     def _presign_get(key: str) -> str:
@@ -919,23 +932,37 @@ async def get_vault_tracks(request: Request, clerk_payload: dict = Depends(verif
             ExpiresIn=3600,
         )
 
+    result = []
     for s in subs:
-        if isinstance(s.get('upload_date'), str):
-            s['upload_date'] = datetime.fromisoformat(s['upload_date'])
+        upload_date = s.get('upload_date')
+        if isinstance(upload_date, str):
+            upload_date = datetime.fromisoformat(upload_date)
+        stem_urls = {}
         if s.get('stem_paths'):
             try:
-                s['stem_urls'] = {
+                stem_urls = {
                     stem: await asyncio.to_thread(_presign_get, key)
                     for stem, key in s['stem_paths'].items()
                 }
             except Exception:
-                s['stem_urls'] = {}
+                pass
+        mastered_url = None
         if s.get('mastered_r2_key'):
             try:
-                s['mastered_url'] = await asyncio.to_thread(_presign_get, s['mastered_r2_key'])
+                mastered_url = await asyncio.to_thread(_presign_get, s['mastered_r2_key'])
             except Exception:
-                s['mastered_url'] = None
-    return subs
+                pass
+        result.append({
+            'id': s.get('id'),
+            'artist_name': s.get('artist_name'),
+            'track_name': s.get('track_name'),
+            'genre': s.get('genre'),
+            'upload_date': upload_date,
+            'status': s.get('status'),
+            'stem_urls': stem_urls,
+            'mastered_url': mastered_url,
+        })
+    return result
 
 
 @api_router.get("/submissions")
