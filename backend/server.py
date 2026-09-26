@@ -566,23 +566,13 @@ async def _process_stems(submission_id: str, r2_key: str, artist_name: str, trac
 # Models
 # ---------------------------------------------------------------------------
 
-class StatusCheck(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    client_name: str
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-
-
-class StatusCheckCreate(BaseModel):
-    client_name: str
-
-
 class ContactSubmissionCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=120)
     email: EmailStr
     company: Optional[str] = Field(default=None, max_length=160)
     interest: Optional[str] = Field(default=None, max_length=60)
     message: str = Field(..., min_length=1, max_length=4000)
+    website: str = Field(default="")
 
 
 class ContactSubmission(BaseModel):
@@ -608,6 +598,7 @@ class ArtistCreate(BaseModel):
     spotify_url: str = Field(..., min_length=1, max_length=300)
     genre: str
     bio: str = Field(..., min_length=1, max_length=2000)
+    website: str = Field(default="")
 
     @field_validator('genre')
     @classmethod
@@ -709,31 +700,16 @@ async def root():
     return {"message": "Hello World"}
 
 
-@api_router.post("/status", response_model=StatusCheck)
-async def create_status_check(input: StatusCheckCreate):
-    status_dict = input.model_dump()
-    status_obj = StatusCheck(**status_dict)
-    doc = status_obj.model_dump()
-    doc['timestamp'] = doc['timestamp'].isoformat()
-    await db.status_checks.insert_one(doc)
-    return status_obj
-
-
-@api_router.get("/status", response_model=List[StatusCheck])
-async def get_status_checks():
-    status_checks = await db.status_checks.find({}, {"_id": 0}).to_list(1000)
-    for check in status_checks:
-        if isinstance(check['timestamp'], str):
-            check['timestamp'] = datetime.fromisoformat(check['timestamp'])
-    return status_checks
-
-
 # ---------------------------------------------------------------------------
 # Contact / partnership form routes
 # ---------------------------------------------------------------------------
 
 @api_router.post("/contact", response_model=ContactSubmission, status_code=201)
-async def create_contact_submission(payload: ContactSubmissionCreate):
+@limiter.limit("5/minute")
+async def create_contact_submission(request: Request, payload: ContactSubmissionCreate):
+    if payload.website:
+        logger.info("Honeypot triggered on /contact")
+        return ContactSubmission(**payload.model_dump())
     submission = ContactSubmission(**payload.model_dump())
     doc = submission.model_dump()
     doc['created_at'] = doc['created_at'].isoformat()
@@ -758,10 +734,15 @@ async def get_contact_submissions(request: Request, admin: dict = Depends(requir
 # ---------------------------------------------------------------------------
 
 @api_router.post("/artists", response_model=Artist, status_code=201)
-async def create_artist(payload: ArtistCreate):
+@limiter.limit("5/minute")
+async def create_artist(request: Request, payload: ArtistCreate):
+    if payload.website:
+        logger.info("Honeypot triggered on /artists from %s", payload.email)
+        return Artist(**payload.model_dump())
     existing = await db.artists.find_one({"email": payload.email}, {"_id": 0})
     if existing:
-        raise HTTPException(status_code=409, detail="An application with this email already exists")
+        logger.info("Duplicate artist application suppressed email=%s", payload.email)
+        return Artist(**payload.model_dump())
     artist = Artist(**payload.model_dump())
     doc = artist.model_dump()
     doc['created_at'] = doc['created_at'].isoformat()
@@ -923,7 +904,8 @@ async def complete_upload(request: Request, payload: CompleteUploadRequest, cler
 
 
 @api_router.get('/vault/tracks')
-async def get_vault_tracks(clerk_payload: dict = Depends(verify_clerk_token)):
+@limiter.limit("30/minute")
+async def get_vault_tracks(request: Request, clerk_payload: dict = Depends(verify_clerk_token)):
     clerk_user_id = clerk_payload.get('sub')
     subs = await db.track_submissions.find(
         {'clerk_user_id': clerk_user_id},

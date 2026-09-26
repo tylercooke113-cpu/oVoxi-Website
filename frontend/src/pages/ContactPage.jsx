@@ -30,6 +30,7 @@ const ContactPage = () => {
     company: '',
     interest: initialInterest,
     message: '',
+    website: '',
   });
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
@@ -50,6 +51,7 @@ const ContactPage = () => {
         company: form.company || null,
         interest: form.interest,
         message: form.message,
+        website: form.website,
       });
       setDone(true);
       toast.success("Thanks — we've received your inquiry.");
@@ -107,6 +109,7 @@ const ContactPage = () => {
                 onSubmit={handleSubmit}
                 className="rounded-2xl border border-white/10 bg-white/[0.02] p-8 md:p-10"
               >
+                <input type="text" name="website" value={form.website} onChange={update('website')} style={{ display: 'none' }} tabIndex={-1} autoComplete="off" aria-hidden="true" />
                 <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
                   <div className="space-y-2">
                     <Label htmlFor="name" className="text-slate-300">Name *</Label>

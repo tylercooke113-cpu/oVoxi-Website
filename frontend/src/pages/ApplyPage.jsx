@@ -32,6 +32,7 @@ const ApplyPage = () => {
     spotify_url: '',
     genre: '',
     bio: '',
+    website: '',
   });
   const [submitting, setSubmitting] = useState(false);
 
@@ -49,11 +50,7 @@ const ApplyPage = () => {
       toast.success('Application received. Create your account to get started.');
       navigate('/signup');
     } catch (err) {
-      if (err.response?.status === 409) {
-        toast.error('An application with this email already exists.');
-      } else {
-        toast.error('Something went wrong. Please try again.');
-      }
+      toast.error('Something went wrong. Please try again.');
     } finally {
       setSubmitting(false);
     }
@@ -76,6 +73,7 @@ const ApplyPage = () => {
               onSubmit={handleSubmit}
               className="rounded-2xl border border-white/10 bg-white/[0.02] p-8 md:p-10 space-y-6"
             >
+              <input type="text" name="website" value={form.website} onChange={update('website')} style={{ display: 'none' }} tabIndex={-1} autoComplete="off" aria-hidden="true" />
               <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="artist-name" className="text-slate-300">Artist Name *</Label>
