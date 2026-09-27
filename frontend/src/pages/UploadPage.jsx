@@ -16,6 +16,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../components/ui/select';
+import { Checkbox } from '../components/ui/checkbox';
+import { RadioGroup, RadioGroupItem } from '../components/ui/radio-group';
+import {
+  MOODS,
+  MAX_MOODS,
+  VOCALS_OPTIONS,
+  SAMPLE_OPTIONS,
+  CONTENT_ID_OPTIONS,
+  DISTRIBUTORS,
+  PRO_ORGS,
+  IPI_PATTERN,
+} from '../sync/constants';
 
 const API = `https://ovoxi-website-production.up.railway.app/api`;
 
@@ -34,6 +46,45 @@ const STATUS_LABELS = {
   failed: 'Processing failed',
 };
 
+const EMPTY_INTAKE = {
+  samples: '',
+  samples_attested: false,
+  distributor: '',
+  content_id: '',
+  pro_not_affiliated: false,
+  pro_name: '',
+  ipi: '',
+};
+
+const isIntakeValid = (i) => {
+  if (!i.samples || !i.samples_attested || !i.distributor || !i.content_id) return false;
+  if (i.pro_not_affiliated) return true;
+  return !!i.pro_name && IPI_PATTERN.test(i.ipi);
+};
+
+const buildIntakePayload = (i) => ({
+  samples: i.samples,
+  samples_attested: i.samples_attested,
+  distributor: i.distributor,
+  content_id: i.content_id,
+  pro_not_affiliated: i.pro_not_affiliated,
+  pro_name: i.pro_not_affiliated ? null : i.pro_name,
+  ipi: i.pro_not_affiliated ? null : i.ipi,
+});
+
+// FastAPI returns validation errors as an array; pydantic prefixes
+// messages raised in validators with "Value error, ".
+const validationMessage = (detail) => {
+  const raw = Array.isArray(detail) ? detail[0]?.msg : detail;
+  if (!raw || typeof raw !== 'string') return null;
+  return raw.replace(/^Value error, /, '');
+};
+
+const CHECKBOX_CLASS =
+  'mt-0.5 rounded-[3px] border-white/30 data-[state=checked]:border-electric data-[state=checked]:bg-electric data-[state=checked]:text-white focus-visible:ring-electric';
+const RADIO_CLASS =
+  'mt-0.5 border-white/30 text-electric data-[state=checked]:border-electric focus-visible:ring-electric [&_svg]:fill-electric';
+
 const UploadPage = () => {
   const fileRef = useRef(null);
   const { getToken, isSignedIn, isLoaded } = useAuth();
@@ -43,10 +94,62 @@ const UploadPage = () => {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [stage, setStage] = useState('idle'); // idle | uploading | processing | done | error
   const [submissionId, setSubmissionId] = useState(null);
+  const [moods, setMoods] = useState([]);
+  const [moodLimitHit, setMoodLimitHit] = useState(false);
+  const [vocals, setVocals] = useState('');
+  const [consentAi, setConsentAi] = useState(false);
+  const [consentSync, setConsentSync] = useState(false);
+  const [intake, setIntake] = useState(EMPTY_INTAKE);
 
   if (isLoaded && !isSignedIn) return <Navigate to='/login' replace />;
 
   const update = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
+  const setIntakeField = (key, value) => setIntake((i) => ({ ...i, [key]: value }));
+
+  const toggleMood = (m) => {
+    if (moods.includes(m)) {
+      setMoods(moods.filter((x) => x !== m));
+      setMoodLimitHit(false);
+    } else if (moods.length >= MAX_MOODS) {
+      setMoodLimitHit(true);
+    } else {
+      setMoods([...moods, m]);
+    }
+  };
+
+  const toggleSync = (checked) => {
+    setConsentSync(checked);
+    if (!checked) setIntake(EMPTY_INTAKE);
+  };
+
+  const toggleNotAffiliated = (checked) => {
+    setIntake((i) => ({ ...i, pro_not_affiliated: checked, pro_name: '', ipi: '' }));
+  };
+
+  const resetForm = () => {
+    setStage('idle');
+    setFile(null);
+    setForm({ artist_name: '', track_name: '', genre: '' });
+    setSubmissionId(null);
+    setUploadProgress(0);
+    setMoods([]);
+    setMoodLimitHit(false);
+    setVocals('');
+    setConsentAi(false);
+    setConsentSync(false);
+    setIntake(EMPTY_INTAKE);
+  };
+
+  const missing = [];
+  if (!form.artist_name) missing.push('artist name');
+  if (!form.track_name) missing.push('track name');
+  if (!form.genre) missing.push('genre');
+  if (moods.length < 1) missing.push('mood');
+  if (!vocals) missing.push('vocals');
+  if (!consentAi && !consentSync) missing.push('how it can be used');
+  if (consentSync && !isIntakeValid(intake)) missing.push('sync details');
+  if (!file) missing.push('audio file');
+  const canSubmit = missing.length === 0;
 
   const handleFile = (f) => {
     if (!f) return;
@@ -77,6 +180,10 @@ const UploadPage = () => {
       toast.error('Please select an audio file.');
       return;
     }
+    if (!canSubmit) {
+      toast.error(`Still needed: ${missing.join(', ')}.`);
+      return;
+    }
 
     setStage('uploading');
     setUploadProgress(0);
@@ -90,6 +197,11 @@ const UploadPage = () => {
         genre: form.genre,
         filename: file.name,
         file_size: file.size,
+        consent_ai_training: consentAi,
+        consent_sync: consentSync,
+        moods,
+        vocals,
+        ...(consentSync ? { sync_intake: buildIntakePayload(intake) } : {}),
       }, {
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -123,7 +235,8 @@ const UploadPage = () => {
           ? 'Your account is pending approval. We will email you once you are cleared to upload.'
           : serverDetail;
       } else if (err.response?.status === 422) {
-        detail = 'Please refresh the page and try again.';
+        detail = validationMessage(err.response?.data?.detail)
+          || 'Please refresh the page and try again.';
       } else if (err.response?.data?.detail) {
         detail = err.response.data.detail;
       } else if (err.code === 'ERR_NETWORK' || err.message === 'Network Error') {
@@ -169,13 +282,7 @@ const UploadPage = () => {
               Go to My Vault →
             </Link>
             <button
-              onClick={() => {
-                setStage('idle');
-                setFile(null);
-                setForm({ artist_name: '', track_name: '', genre: '' });
-                setSubmissionId(null);
-                setUploadProgress(0);
-              }}
+              onClick={resetForm}
               className="inline-flex items-center gap-2 rounded-full border border-white/10 px-6 py-2.5 text-sm text-slate-300 transition-colors hover:border-electric/40 hover:text-white"
             >
               Upload another track
@@ -259,6 +366,252 @@ const UploadPage = () => {
                 </Select>
               </div>
 
+              {/* Moods */}
+              <div className="space-y-2">
+                <div className="flex items-baseline justify-between">
+                  <Label className="text-slate-300">
+                    Mood * <span className="text-slate-500">(pick 1 to 3)</span>
+                  </Label>
+                  <span className="text-xs text-slate-500">{moods.length} / {MAX_MOODS}</span>
+                </div>
+                <div className="flex flex-wrap gap-2" data-testid="upload-moods">
+                  {MOODS.map((m) => {
+                    const on = moods.includes(m);
+                    return (
+                      <button
+                        key={m}
+                        type="button"
+                        aria-pressed={on}
+                        onClick={() => toggleMood(m)}
+                        disabled={isUploading}
+                        className={`rounded-full border px-3.5 py-1.5 text-sm transition-colors ${
+                          on
+                            ? 'border-electric-light bg-electric/20 text-white'
+                            : 'border-white/10 text-slate-300 hover:border-electric/40 hover:text-white'
+                        }`}
+                      >
+                        {m}
+                      </button>
+                    );
+                  })}
+                </div>
+                {moodLimitHit && (
+                  <p className="text-xs text-red-400">Up to 3 moods.</p>
+                )}
+              </div>
+
+              {/* Vocals */}
+              <div className="space-y-2">
+                <Label className="text-slate-300">Vocals *</Label>
+                <div className="flex" data-testid="upload-vocals">
+                  <div className="inline-flex rounded-full border border-white/10 p-1">
+                    {VOCALS_OPTIONS.map((o) => (
+                      <button
+                        key={o.value}
+                        type="button"
+                        aria-pressed={vocals === o.value}
+                        onClick={() => setVocals(o.value)}
+                        disabled={isUploading}
+                        className={`rounded-full px-5 py-1.5 text-sm transition-colors ${
+                          vocals === o.value
+                            ? 'bg-gradient-brand text-white'
+                            : 'text-slate-300 hover:text-white'
+                        }`}
+                      >
+                        {o.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="border-t border-white/10" />
+
+              {/* Consent */}
+              <div className="space-y-3">
+                <Label className="text-slate-300">How can this upload be used? *</Label>
+                {[
+                  {
+                    id: 'consent-ai',
+                    checked: consentAi,
+                    onChange: setConsentAi,
+                    title: 'Use this upload for AI training.',
+                    help: 'Licensed to AI companies as training data.',
+                  },
+                  {
+                    id: 'consent-sync',
+                    checked: consentSync,
+                    onChange: toggleSync,
+                    title: 'Use this upload for sync placements.',
+                    help: 'Listed in the oVoxi sync library for creators and brands to license.',
+                  },
+                ].map((c) => (
+                  <label
+                    key={c.id}
+                    htmlFor={c.id}
+                    className={`flex cursor-pointer items-start gap-3 rounded-xl border px-4 py-3.5 transition-colors ${
+                      c.checked
+                        ? 'border-electric/60 bg-electric/[0.06]'
+                        : 'border-white/10 hover:border-electric/35'
+                    }`}
+                  >
+                    <Checkbox
+                      id={c.id}
+                      data-testid={`upload-${c.id}`}
+                      checked={c.checked}
+                      onCheckedChange={(v) => c.onChange(v === true)}
+                      disabled={isUploading}
+                      className={CHECKBOX_CLASS}
+                    />
+                    <span>
+                      <span className="block text-sm font-medium text-white">{c.title}</span>
+                      <span className="mt-0.5 block text-xs text-slate-500">{c.help}</span>
+                    </span>
+                  </label>
+                ))}
+                {!consentAi && !consentSync && (
+                  <p className="text-xs text-red-400">Choose at least one.</p>
+                )}
+              </div>
+
+              {/* Sync details */}
+              {consentSync && (
+                <div
+                  data-testid="upload-sync-panel"
+                  className="space-y-6 rounded-2xl border border-cyan/25 bg-cyan/[0.03] p-5 sm:p-6"
+                >
+                  <div>
+                    <h3 className="font-heading text-base font-semibold text-white">Sync details</h3>
+                    <p className="mt-1 text-sm text-slate-400">
+                      Buyers need these answers before your track can be licensed.
+                    </p>
+                  </div>
+
+                  {/* Samples */}
+                  <div className="space-y-2">
+                    <Label className="text-slate-300">Samples *</Label>
+                    <RadioGroup
+                      value={intake.samples}
+                      onValueChange={(v) => setIntakeField('samples', v)}
+                      disabled={isUploading}
+                      className="gap-2.5"
+                    >
+                      {SAMPLE_OPTIONS.map((o) => (
+                        <label key={o.value} className="flex cursor-pointer items-start gap-3 text-sm text-slate-300">
+                          <RadioGroupItem value={o.value} className={RADIO_CLASS} />
+                          {o.label}
+                        </label>
+                      ))}
+                    </RadioGroup>
+                    <label className="flex cursor-pointer items-start gap-3 pt-2 text-sm text-slate-300">
+                      <Checkbox
+                        checked={intake.samples_attested}
+                        onCheckedChange={(v) => setIntakeField('samples_attested', v === true)}
+                        disabled={isUploading}
+                        className={CHECKBOX_CLASS}
+                      />
+                      I confirm this is accurate and I have the rights described.
+                    </label>
+                  </div>
+
+                  {/* Distributor */}
+                  <div className="space-y-2">
+                    <Label className="text-slate-300">Distributor *</Label>
+                    <Select
+                      value={intake.distributor}
+                      onValueChange={(v) => setIntakeField('distributor', v)}
+                      disabled={isUploading}
+                    >
+                      <SelectTrigger className="border-white/10 bg-ink text-white focus:ring-electric">
+                        <SelectValue placeholder="Select distributor" />
+                      </SelectTrigger>
+                      <SelectContent className="border-white/10 bg-ink-2 text-white">
+                        {DISTRIBUTORS.map((d) => (
+                          <SelectItem key={d} value={d}>{d}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Content ID */}
+                  <div className="space-y-2">
+                    <Label className="text-slate-300">
+                      Is this song registered in YouTube Content ID? *
+                    </Label>
+                    <RadioGroup
+                      value={intake.content_id}
+                      onValueChange={(v) => setIntakeField('content_id', v)}
+                      disabled={isUploading}
+                      className="flex flex-wrap gap-5"
+                    >
+                      {CONTENT_ID_OPTIONS.map((o) => (
+                        <label key={o.value} className="flex cursor-pointer items-start gap-2.5 text-sm text-slate-300">
+                          <RadioGroupItem value={o.value} className={RADIO_CLASS} />
+                          {o.label}
+                        </label>
+                      ))}
+                    </RadioGroup>
+                    <p className="text-xs leading-relaxed text-slate-500">
+                      Songs in Content ID are not listed in the sync library, because buyers' videos would be claimed.
+                    </p>
+                  </div>
+
+                  {/* PRO */}
+                  <div className="space-y-3">
+                    <Label className="text-slate-300">Performing rights (PRO)</Label>
+                    <label className="flex cursor-pointer items-start gap-3 text-sm text-slate-300">
+                      <Checkbox
+                        checked={intake.pro_not_affiliated}
+                        onCheckedChange={(v) => toggleNotAffiliated(v === true)}
+                        disabled={isUploading}
+                        className={CHECKBOX_CLASS}
+                      />
+                      I'm not affiliated with a PRO.
+                    </label>
+                    {!intake.pro_not_affiliated && (
+                      <>
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                          <div className="space-y-2">
+                            <Label className="text-slate-300">PRO *</Label>
+                            <Select
+                              value={intake.pro_name}
+                              onValueChange={(v) => setIntakeField('pro_name', v)}
+                              disabled={isUploading}
+                            >
+                              <SelectTrigger className="border-white/10 bg-ink text-white focus:ring-electric">
+                                <SelectValue placeholder="Select PRO" />
+                              </SelectTrigger>
+                              <SelectContent className="border-white/10 bg-ink-2 text-white">
+                                {PRO_ORGS.map((p) => (
+                                  <SelectItem key={p} value={p}>{p}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="upload-ipi" className="text-slate-300">IPI number *</Label>
+                            <Input
+                              id="upload-ipi"
+                              inputMode="numeric"
+                              maxLength={11}
+                              value={intake.ipi}
+                              onChange={(e) => setIntakeField('ipi', e.target.value.replace(/\D/g, ''))}
+                              placeholder="9 to 11 digits"
+                              disabled={isUploading}
+                              className="border-white/10 bg-ink text-white placeholder:text-slate-600 focus-visible:ring-electric"
+                            />
+                            {intake.ipi && !IPI_PATTERN.test(intake.ipi) && (
+                              <p className="text-xs text-red-400">IPI must be 9 to 11 digits.</p>
+                            )}
+                          </div>
+                        </div>
+                        <p className="text-xs text-slate-500">Your IPI number is in your PRO account.</p>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {/* File drop zone */}
               <div className="space-y-2">
                 <Label className="text-slate-300">
@@ -335,8 +688,8 @@ const UploadPage = () => {
               <button
                 type="submit"
                 data-testid="upload-submit-button"
-                disabled={isUploading}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-gradient-brand px-7 py-3.5 text-sm font-semibold text-white transition-all duration-300 hover:shadow-[0_0_28px_rgba(194,24,91,0.55)] disabled:opacity-60 sm:w-auto"
+                disabled={isUploading || !canSubmit}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-gradient-brand px-7 py-3.5 text-sm font-semibold text-white transition-all duration-300 hover:shadow-[0_0_28px_rgba(194,24,91,0.55)] disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
               >
                 {isUploading ? (
                   <Loader2 size={16} className="animate-spin" />
@@ -345,6 +698,11 @@ const UploadPage = () => {
                 )}
                 {isUploading ? 'Uploading…' : 'Upload & Separate Stems'}
               </button>
+              {!isUploading && !canSubmit && (
+                <p className="text-xs text-slate-500" data-testid="upload-missing">
+                  Still needed: {missing.join(', ')}.
+                </p>
+              )}
             </form>
           </Reveal>
         </div>
