@@ -26,7 +26,12 @@ from fastapi import Depends, FastAPI, APIRouter, HTTPException, Header, Request
 from fastapi.responses import JSONResponse
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo import ReturnDocument
-from pydantic import BaseModel, Field, ConfigDict, EmailStr, field_validator
+from pydantic import BaseModel, Field, ConfigDict, EmailStr, field_validator, model_validator
+from sync_constants import (
+    MOODS, MAX_MOODS, VOCALS, SAMPLE_DECLARATIONS, CONTENT_ID_ANSWERS,
+    DISTRIBUTORS, PRO_ORGS, IPI_PATTERN,
+)
+from consent_ledger import record_grants, GRANT_VERSION
 from starlette.middleware.cors import CORSMiddleware
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
@@ -639,6 +644,57 @@ class Artist(BaseModel):
     tracks: List[dict] = []
 
 
+def _one_of(value, allowed, label):
+    if value not in allowed:
+        raise ValueError(f"Invalid {label}.")
+    return value
+
+
+class SyncIntake(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    samples: str
+    samples_attested: bool
+    distributor: str
+    content_id: str
+    pro_not_affiliated: bool = False
+    pro_name: Optional[str] = None
+    ipi: Optional[str] = None
+
+    @field_validator("samples")
+    @classmethod
+    def _samples(cls, v):
+        return _one_of(v, SAMPLE_DECLARATIONS, "samples declaration")
+
+    @field_validator("samples_attested")
+    @classmethod
+    def _attested(cls, v):
+        if not v:
+            raise ValueError("Confirm the samples declaration to use sync.")
+        return v
+
+    @field_validator("distributor")
+    @classmethod
+    def _distributor(cls, v):
+        return _one_of(v, DISTRIBUTORS, "distributor")
+
+    @field_validator("content_id")
+    @classmethod
+    def _content_id(cls, v):
+        return _one_of(v, CONTENT_ID_ANSWERS, "Content ID answer")
+
+    @model_validator(mode="after")
+    def _pro_rules(self):
+        if self.pro_not_affiliated:
+            if self.pro_name or self.ipi:
+                raise ValueError("Leave PRO and IPI empty when not affiliated.")
+        else:
+            _one_of(self.pro_name, PRO_ORGS, "PRO")
+            if not self.ipi or not re.fullmatch(IPI_PATTERN, self.ipi):
+                raise ValueError("IPI must be 9 to 11 digits.")
+        return self
+
+
 class PresignRequest(BaseModel):
     artist_name: str = Field(..., min_length=1, max_length=120)
     track_name: str = Field(..., min_length=1, max_length=120)
@@ -648,6 +704,37 @@ class PresignRequest(BaseModel):
     pro_registered: bool = False
     pro_org: str = ''
     pro_register_us: bool = False
+    consent_ai_training: bool = False
+    consent_sync: bool = False
+    moods: List[str]                        # required, no default
+    vocals: str                             # required, no default
+    sync_intake: Optional[SyncIntake] = None
+
+    @field_validator("moods")
+    @classmethod
+    def _moods(cls, v):
+        if not 1 <= len(v) <= MAX_MOODS:
+            raise ValueError("Pick 1 to 3 moods.")
+        if len(set(v)) != len(v):
+            raise ValueError("Moods must not repeat.")
+        for m in v:
+            _one_of(m, MOODS, "mood")
+        return v
+
+    @field_validator("vocals")
+    @classmethod
+    def _vocals(cls, v):
+        return _one_of(v, VOCALS, "vocals value")
+
+    @model_validator(mode="after")
+    def _consent_rules(self):
+        if not (self.consent_ai_training or self.consent_sync):
+            raise ValueError("Choose at least one use for this upload.")
+        if self.consent_sync and self.sync_intake is None:
+            raise ValueError("Sync details are required when sync is selected.")
+        if not self.consent_sync and self.sync_intake is not None:
+            raise ValueError("Sync details were sent without sync consent.")
+        return self
 
 
 class CompleteUploadRequest(BaseModel):
@@ -708,6 +795,10 @@ class TrackSubmission(BaseModel):
     claimed_at: Optional[datetime] = None
     attempts: int = 0
     modal_dispatched_at: Optional[datetime] = None
+    consent: Optional[dict] = None
+    consent_grant_version: Optional[str] = None
+    metadata: Optional[dict] = None
+    intake: Optional[dict] = None
 
 
 # ---------------------------------------------------------------------------
@@ -857,6 +948,21 @@ async def presign_upload(request: Request, payload: PresignRequest, clerk_payloa
         raise HTTPException(status_code=500, detail="Failed to generate upload URL")
 
     clerk_user_id = clerk_payload.get('sub')
+    now_iso = datetime.now(timezone.utc).isoformat()
+    scopes = []
+    if payload.consent_ai_training:
+        scopes.append("ai_training")
+    if payload.consent_sync:
+        scopes.append("sync")
+    try:
+        await record_grants(
+            db, user_id=clerk_user_id, track_id=submission_id, scopes=scopes,
+            source="upload", ip=get_real_client_ip(request),
+        )
+    except Exception as exc:
+        logger.error("Consent ledger write failed for %s: %s", submission_id, exc)
+        raise HTTPException(status_code=503, detail="Could not record consent. Please try again.")
+
     submission = TrackSubmission(
         id=submission_id,
         artist_name=payload.artist_name,
@@ -872,6 +978,21 @@ async def presign_upload(request: Request, payload: PresignRequest, clerk_payloa
     doc = submission.model_dump()
     doc['upload_date'] = doc['upload_date'].isoformat()
     doc['expected_size'] = payload.file_size
+    doc['consent'] = {"ai_training": payload.consent_ai_training, "sync": payload.consent_sync}
+    doc['consent_grant_version'] = GRANT_VERSION
+    doc['metadata'] = {"moods": payload.moods, "vocals": payload.vocals}
+    if payload.consent_sync:
+        doc['intake'] = {
+            "samples": payload.sync_intake.samples,
+            "samples_attested_at": now_iso,
+            "distributor": payload.sync_intake.distributor,
+            "content_id": payload.sync_intake.content_id,
+            "pro_not_affiliated": payload.sync_intake.pro_not_affiliated,
+            "pro_name": payload.sync_intake.pro_name,
+            "ipi": payload.sync_intake.ipi,
+        }
+    else:
+        doc.pop('intake', None)
     await db.track_submissions.insert_one(doc)
 
     return {
@@ -1251,6 +1372,8 @@ async def create_indexes():
         await db.track_submissions.create_index([("status", 1), ("upload_date", 1)])
         await db.track_submissions.create_index([("id", 1)])
         await db.appeals.create_index([("id", 1)])
+        await db.consent_events.create_index([("track_id", 1)])
+        await db.consent_events.create_index([("user_id", 1), ("created_at", 1)])
     except Exception as exc:
         logger.warning("Index creation failed (non-fatal): %s", exc)
     if RUN_WORKER:
