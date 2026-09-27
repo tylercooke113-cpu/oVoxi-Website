@@ -440,3 +440,27 @@ same condition, so with the flag off the prerender step is skipped entirely.
 CRA bakes `REACT_APP_*` in at **build** time, so the value present when Vercel builds is
 what ships. Changing it in the dashboard has no effect until the next deployment.
 
+
+---
+
+## OQ-12: Fingerprint dead end for NEEDS_DOCS and SCAN_ERROR tracks
+
+**Found:** 2026-09-27, while writing PRD-03.
+
+ACRCloud NEEDS_DOCS (score 70 to 89) and SCAN_ERROR stop the pipeline before mastering.
+Appeals are view-only: no route resolves one. These tracks can never be cleared for AI or sync.
+
+**Needs:** its own PRD. Out of scope for PRD-03 (sections 2 and 14).
+
+**Owner:** unassigned.
+
+---
+
+## OQ-13: Purpose of `pro_register_us`
+
+**Found:** 2026-09-27, during PRD-03 Phase 0.
+
+Present in the presign model, never sent by the frontend, meaning unknown. Left untouched by
+PRD-03, which never reads or writes it.
+
+**Owner:** unassigned.
