@@ -146,10 +146,14 @@ The evaluator runs only for tracks with `consent.sync == true`. AI-only tracks k
 
 Photo, display name, location, bio, Spotify and Instagram links, and the artist's listed tracks using the same row component as the library.
 
+- **Who can see it:** the artist themselves and admins always. Everyone else only when public pages are switched on (`SYNC_PUBLIC_PAGES_ENABLED=true`) **and** the artist has at least one listed track; otherwise "Page not found".
+- The artist viewing their own page sees an **Edit profile** button linking to the Vault's Sync Profile tab. With no listed tracks it reads: "No tracks listed yet. Add tracks to your sync profile in your Vault."
+- While public pages are off, the owner and admins see a banner saying who can see the page.
+
 ### 6.3 Audio previews
 
 - The pipeline produces a 320 kbps MP3 of the master at `catalog/{artist}/{track}/previews/{submission_id}.mp3`, plus precomputed waveform peaks (JSON) at `catalog/{artist}/{track}/previews/{submission_id}.waveform.json`. The MP3 is a playback derivative only, never licensed or delivered, so the WAV24 catalog rule in `stem_worker.py` still holds.
-- `vercel.json` CSP `media-src` must allow the R2 presigned host for playback.
+- No CSP change is needed: `vercel.json` restricts only scripts, styles and `connect-src`, so `<audio>` and `<img>` load from R2 signed links. The waveform JSON is fetched through the backend (`GET /api/sync/tracks/{id}/waveform`), not from R2. Photos and previews are served as short-lived signed links, because the R2 bucket has no public address.
 - The waveform JSON is public.
 - The MP3 is private. Each play calls the backend, which returns a presigned URL valid for 5 minutes. There is no download button, and the endpoint is rate limited.
 - This stops link sharing and bulk scraping. It does not stop someone recording the audio. Accepted.
@@ -299,6 +303,7 @@ Used for webhook idempotency.
 - Masters and stems are never in a public path.
 - Rate limits on preview, checkout, and download endpoints.
 - Existing open item applies: slowapi limits are per process, so confirm the Railway replica count is 1.
+- Profile photos are processed on Railway with Pillow in a background thread, with a size and pixel-count guard against oversized-image attacks (a recorded exception to CLAUDE.md rule 3).
 
 ## 12. Configuration
 
@@ -315,6 +320,7 @@ Used for webhook idempotency.
 | `SYNC_DOWNLOAD_MAX_PER_FILE` | `10` |
 | `SYNC_GRANT_VERSION` | `draft-0` |
 | `SYNC_TERMS_VERSION` | `draft-0` |
+| `SYNC_PUBLIC_PAGES_ENABLED` | `false` until counsel confirms the grant text covers public profiles |
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | test mode keys first |
 | `EMAIL_PROVIDER`, `RESEND_API_KEY`, `EMAIL_FROM` | `resend` |
 
@@ -364,6 +370,10 @@ Each phase ships and is verified in production before the next starts.
 | 14 | CONFLICT wording for artists stays "this recording appears to match existing copyrighted material" with the appeal link |
 | 15 | Pre-Phase-1 tracks stay in the Vault without usage controls; no backfill |
 | 16 | Phase 4a file exception: `VaultPage.jsx`, `AdminPage.jsx` (match detail removal only), new files in `frontend/src/sync/`, new `backend/sync_vault.py`, `consent_ledger.py`, and the vault and admin endpoints in `server.py` |
+| 17 | Public artist and track pages are built now but gated by `SYNC_PUBLIC_PAGES_ENABLED`; admins and the owning artist can always see them |
+| 18 | An artist page with no listed tracks is visible only to its owner and admins |
+| 19 | Profile photos processed with Pillow on Railway (rule 3 exception) |
+| 20 | Phase 4b file exception: `App.js` (two routes), `AdminPage.jsx` (sync controls), `backend/requirements.txt` (Pillow), plus new files in `frontend/src/sync/` and `backend/` |
 
 Open items depend on the Phase 0 report only.
 
