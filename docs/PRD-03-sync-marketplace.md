@@ -59,14 +59,13 @@ Always shown:
 - Genre: the existing top-level `genre` field, already a fixed select validated server-side against `VALID_GENRES` (Hip-Hop, R&B, Afrobeats, Trap, Soul, Pop, Electronic, Latin, Reggaeton, Afropop, Other). No change.
 - Mood (one to three, fixed list, Appendix A)
 - Vocals or instrumental
+- BPM (a number) or "I'm unsure", and key (one of the 24 major and minor keys) or "I'm unsure". The artist's answer is the source of truth; detection cross-checks it (4.4).
 - **Splits (check 1, Option A).** Uses the PRD-02 rights model: three lists (writers, publishers, master owners), 1 to 4 parties each, each list summing to exactly 100% (stored as basis points). Every party has a legal name. Role, PRO and IPI are optional. Two shortcuts: "I own 100% of the writing, publishing and master" is expanded server-side into one self row per list using the artist's legal name, and "I self-publish" fills the publishers list. Plus an attestation checkbox.
 
 Shown only when sync is checked:
 - **Samples (check 3).** Fully original / cleared sample / royalty-free loop whose license allows sync, plus attestation.
 - **Distributor and Content ID (check 4).** Distributor name. "Is this song registered in YouTube Content ID?" Yes / No / Not sure.
 - **PRO (check 5).** PRO name and IPI number, or "Not affiliated".
-
-BPM and key are not asked at upload. They are detected after processing (4.4).
 
 ### 4.2 Changing consent from the Vault
 
@@ -84,11 +83,25 @@ Available to every artist.
 
 The tab's components live in `frontend/src/sync/`. `VaultPage.jsx` only mounts the tab, which keeps the D8 exception small.
 
-### 4.4 Detected BPM and key
+### 4.4 BPM and key
 
-The pipeline detects BPM and key after processing. The Vault shows them as "Detected" with an edit control. An artist edit sets the source to `artist`. A detected value is enough to pass check 6.
+The artist supplies BPM and key at upload, or ticks "I'm unsure". After processing, the pipeline detects both and reconciles:
 
-Detection runs in the Modal stem worker after separation, on the mastered file. BPM uses librosa's beat tracker (ISC license). Key uses Krumhansl-Schmuckler profile matching, written in-house. Essentia (AGPL), madmom (non-commercial model weights) and aubio (GPL) were rejected on license grounds. If detection fails the job still completes: check 6 fails until the artist enters the value.
+| Artist | Detector | Result |
+|---|---|---|
+| BPM value | within ±1.5% | Artist value, confirmed |
+| BPM value | half or double (within ±1.5%) | Artist value, confirmed |
+| BPM value | any other value | Held: artist confirms |
+| Key | same key | Artist value, confirmed |
+| Key | same root, opposite mode, or the relative key | Artist value, confirmed |
+| Key | any other key | Held: artist confirms |
+| I'm unsure | a value | Detected value, held: artist confirms |
+| a value | detection failed | Artist value, confirmed |
+| I'm unsure | detection failed | Held: artist enters it |
+
+A held value fails check 6 until the artist confirms or edits it in the Vault (Phase 4). Confirming or editing sets the source to `artist`. Detected values are stored separately and never overwrite the artist's answer.
+
+Detection runs in the Modal stem worker after separation, on the mastered file. BPM uses librosa's onset and beat analysis (ISC license). Key uses Krumhansl-Schmuckler profile matching, written in-house. Essentia (AGPL), madmom (non-commercial model weights) and aubio (GPL) were rejected on license grounds. Tempo is measured from beat-to-beat spacing and snapped to the nearest whole BPM when within 0.2. If detection fails the job still completes and reconciliation follows the table above.
 
 ## 5. Clearance evaluator
 
@@ -101,7 +114,7 @@ Runs automatically when a track finishes processing and again whenever any input
 | 3 | Samples | An option is selected and the attestation is recorded |
 | 4 | Content ID | Answer is "No". "Yes" and "Not sure" fail with reason `content_id` |
 | 5 | PRO | PRO and IPI present, or "Not affiliated" |
-| 6 | Metadata | Genre, 1 to 3 moods, vocals/instrumental, BPM, key, duration present, and stems produced |
+| 6 | Metadata | Genre, 1 to 3 moods, vocals/instrumental, BPM, key, duration present, and stems produced, and neither BPM nor key is awaiting artist confirmation |
 
 Check 2 needs a new `fingerprint_result` field written at scan time, because the scan result in `status` is overwritten as processing continues.
 
@@ -182,8 +195,9 @@ Issued manually in the Stripe dashboard. Webhook `charge.refunded` sets the orde
 ```
 consent:   { ai_training: bool, sync: bool }
 metadata:  { moods: [str], vocals: "vocal" | "instrumental",
-             bpm, bpm_source: "detected" | "artist",
-             key, key_source: "detected" | "artist", duration_s }
+             bpm, bpm_source: "artist" | "detected", bpm_detected, bpm_needs_confirmation: bool,
+             key, key_source: "artist" | "detected", key_detected, key_needs_confirmation: bool,
+             duration_s }
 intake:    { samples: "original" | "cleared_sample" | "royalty_free_loop",
              samples_attested_at, distributor,
              content_id: "yes" | "no" | "not_sure",
@@ -341,6 +355,8 @@ Each phase ships and is verified in production before the next starts.
 | 8 | IPI numbers are exactly 9 or 11 digits everywhere, including the sync intake |
 | 9 | BPM detected with librosa, key with in-house profile matching; detection is non-fatal |
 | 10 | Phase 3 file exception: `infra/modal/stem_worker.py`, new `infra/modal/audio_analysis.py`, new `backend/clearance.py`, plus pipeline and callback code in `server.py` |
+| 11 | Artists supply BPM and key at upload on every upload, with "I'm unsure"; detection is a cross-check |
+| 12 | Reconciliation per 4.4: artist wins on half/double tempo, same-root and relative keys; other disagreements and "unsure" are held for one artist confirmation |
 
 Open items depend on the Phase 0 report only.
 
