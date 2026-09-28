@@ -33,7 +33,7 @@ L4_RATE_PER_SEC = 0.000222  # $/sec as of Modal pricing page (PRD §2)
 
 # Bump this string on every meaningful deploy so Modal logs confirm which
 # code version executed. A warm container on old code logs the old string.
-WORKER_VERSION = "wav24-v1"
+WORKER_VERSION = "wav24-v2-analysis"
 
 # ---------------------------------------------------------------------------
 # Image: CUDA-capable Python 3.12 with models baked in at build time
@@ -84,6 +84,11 @@ _gpu_image = (
         "requests",
     )
     .run_function(_download_models)
+    # PRD-03 phase 3: preview, waveform, BPM and key. Must stay the last layer
+    # (Modal requires add_local_* after build steps). An explicit file path, so
+    # the deploy works from any working directory. /root is the container's
+    # working directory and is on sys.path.
+    .add_local_file(Path(__file__).parent / "audio_analysis.py", "/root/audio_analysis.py")
 )
 
 app = modal.App("ovoxi-stem-worker")
@@ -122,6 +127,10 @@ def separate_stems(
 
     other_subtract (instrumental − drums − bass) is still computed but not uploaded;
     kept per CLAUDE.md rule 4 (additive first, delete second).
+
+    After the stems, a non-fatal analysis step (PRD-03 4.4, 6.3) adds
+    preview_key, waveform_key, bpm and key to the success callback when each
+    one succeeds. A failure there is logged and never fails the job.
     """
     import numpy as np
     import boto3
@@ -445,6 +454,46 @@ def separate_stems(
                 len(stems), total_out_bytes / 1_048_576,
             )
 
+            # ── 5b. Sync library analysis (PRD-03 4.4, 6.3). Never fatal. ────
+            #
+            # Runs on the mastered file. Each piece is independent: a failed
+            # step is logged and left out of the callback; the stems above are
+            # already stored and the job still completes.
+            analysis: dict = {}
+            try:
+                import audio_analysis
+                an_dir = workdir / "analysis"
+                an_dir.mkdir()
+                res = audio_analysis.analyze(src_path, an_dir)
+                for err in res["errors"]:
+                    log.warning("Analysis step failed for %s: %s", submission_id, err)
+
+                preview_base = f"{key_prefix}/{artist_slug}/{track_slug}/previews/{submission_id}"
+                for field, path, key, ctype in (
+                    ("preview_key",  res["preview_path"],  f"{preview_base}.mp3",           "audio/mpeg"),
+                    ("waveform_key", res["waveform_path"], f"{preview_base}.waveform.json", "application/json"),
+                ):
+                    if path is None:
+                        continue
+                    try:
+                        if _exists(key):
+                            raise RuntimeError(f"Refusing to overwrite existing object {key}")
+                        r2.put_object(Bucket=bucket, Key=key,
+                                      Body=path.read_bytes(), ContentType=ctype)
+                        analysis[field] = key
+                    except Exception as exc:
+                        log.warning("Upload of %s failed for %s: %s", field, submission_id, exc)
+
+                if res["bpm"] is not None:
+                    analysis["bpm"] = res["bpm"]
+                if res["key"] is not None:
+                    analysis["key"] = res["key"]
+                log.info("Analysis for %s: %s", submission_id,
+                         {k: v for k, v in analysis.items() if k in ("bpm", "key")})
+            except Exception as exc:
+                log.warning("Analysis failed for %s (non-fatal): %s",
+                            submission_id, exc, exc_info=True)
+
             # ── 6. Success callback ───────────────────────────────────────────
             payload = {
                 "submission_id":       submission_id,
@@ -453,6 +502,7 @@ def separate_stems(
                 "stem_format":         "wav24",
                 "stem_paths":          stem_paths,
                 "source_sample_rate":  src_sr,
+                **analysis,
             }
             _post_callback(payload)
             return payload

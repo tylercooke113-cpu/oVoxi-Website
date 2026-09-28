@@ -35,3 +35,8 @@ MAX_PARTIES = 4
 TOTAL_BP = 10000  # basis points, 100.00%
 WRITER_ROLES = ("CA", "C", "A", "AR", "AD", "TR")
 PUBLISHER_ROLES = ("E", "AM", "SE", "PA")
+
+# Detected metadata (PRD-03 4.4). Must match infra/modal/audio_analysis.py.
+PITCHES = ("C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B")
+MUSICAL_KEYS = tuple(f"{p} {m}" for m in ("major", "minor") for p in PITCHES)
+BPM_MIN, BPM_MAX = 20, 300

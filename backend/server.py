@@ -29,10 +29,11 @@ from pymongo import ReturnDocument
 from pydantic import BaseModel, Field, ConfigDict, EmailStr, field_validator, model_validator
 from sync_constants import (
     MOODS, MAX_MOODS, VOCALS, SAMPLE_DECLARATIONS, CONTENT_ID_ANSWERS,
-    DISTRIBUTORS, PRO_ORGS, IPI_PATTERN,
+    DISTRIBUTORS, PRO_ORGS, IPI_PATTERN, MUSICAL_KEYS, BPM_MIN, BPM_MAX,
 )
 from consent_ledger import record_grants, GRANT_VERSION
 from rights import TrackRightsIn, build_rights
+from clearance import evaluate as evaluate_clearance
 from starlette.middleware.cors import CORSMiddleware
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
@@ -223,6 +224,33 @@ async def _set_status(submission_id: str, status: str, extra: Optional[dict] = N
         filter_doc.update(match)
     result = await db.track_submissions.update_one(filter_doc, {"$set": fields})
     return result.matched_count
+
+
+async def _run_clearance(submission_id: str) -> None:
+    """PRD-03 section 5. Evaluate a sync-consented track and store the result.
+    Never raises: a clearance error must not break the pipeline or a callback."""
+    try:
+        doc = await db.track_submissions.find_one({"id": submission_id}, {"_id": 0})
+        if not doc:
+            return
+        result = evaluate_clearance(doc)
+        if result is None:
+            return
+        now = datetime.now(timezone.utc).isoformat()
+        fields = {
+            "checks": result["checks"],
+            "sync_status": result["sync_status"],
+            "clearance_evaluated_at": now,
+        }
+        if (result["sync_status"] == "cleared"
+                and not doc.get("on_sync_profile")
+                and not doc.get("sync_delisted_by_admin")):
+            fields["on_sync_profile"] = True
+            fields["sync_listed_at"] = now
+        await db.track_submissions.update_one({"id": submission_id}, {"$set": fields})
+        logger.info("Clearance submission=%s sync_status=%s", submission_id, result["sync_status"])
+    except Exception as exc:
+        logger.error("Clearance evaluation failed for %s: %s", submission_id, exc)
 
 
 async def _claim_next() -> Optional[dict]:
@@ -497,7 +525,7 @@ async def _process_stems(submission_id: str, r2_key: str, artist_name: str, trac
             # Raises RuntimeError("file_rejected_format"), caught by the outer except.
             MAX_TRACK_SECONDS = int(os.environ.get("MAX_TRACK_SECONDS", "900"))
 
-            def _ffprobe():
+            def _ffprobe() -> float:
                 result = subprocess.run(
                     ["ffprobe", "-v", "error", "-show_entries", "format=duration",
                      "-of", "json", scan_path],
@@ -508,21 +536,30 @@ async def _process_stems(submission_id: str, r2_key: str, artist_name: str, trac
                 dur = json.loads(result.stdout).get("format", {}).get("duration")
                 if dur is None or float(dur) > MAX_TRACK_SECONDS:
                     raise RuntimeError("file_rejected_format")
+                return float(dur)
 
-            await asyncio.to_thread(_ffprobe)
+            duration_s = await asyncio.to_thread(_ffprobe)
             acr_result = await asyncio.to_thread(acrcloud_check.scan_file, scan_path)
 
         acr_status = acr_result["status"]
         logger.info("ACRCloud result submission=%s status=%s", submission_id, acr_status)
 
+        # PRD-03 section 5 check 2 needs the scan result kept after `status` moves on.
+        scan_fields = {
+            "fingerprint_result": acr_status,
+            "metadata.duration_s": round(duration_s, 2),
+        }
+
         if acr_status != "CLEARED":
             extra = {f: acr_result[f] for f in ("matched_title", "matched_artist",
                      "matched_label", "matched_isrc", "confidence", "acrid", "raw_code")
                      if acr_result.get(f) is not None}
+            extra.update(scan_fields)
             await _set_status(submission_id, acr_status, extra)
+            await _run_clearance(submission_id)
             return
 
-        await _set_status(submission_id, "mastering")
+        await _set_status(submission_id, "mastering", scan_fields)
         mastered_r2_key = await _master_track(submission_id, r2_key)
         await _set_status(submission_id, "mastering", {"mastered_r2_key": mastered_r2_key})
 
@@ -1334,11 +1371,41 @@ async def stems_callback(request: Request):
         # absent on v1 (LALAL pcm_s24le) and v2 (MP3 320) documents.
         if "stem_format" in payload:
             extra["stem_format"] = payload["stem_format"]
+
+        # PRD-03 phase 3 fields. Optional, and never a reason to reject the
+        # callback: a 400 here would leave the track stuck in "processing"
+        # (the worker does not retry). Anything invalid is logged and dropped.
+        preview_base = f"{parts[0]}/{parts[1]}/{parts[2]}/previews/{sid}"
+        for field, suffix in (("preview_key", ".mp3"), ("waveform_key", ".waveform.json")):
+            value = payload.get(field)
+            if value is None:
+                continue
+            if value == preview_base + suffix:
+                extra[field] = value
+            else:
+                logger.error("Callback %s: %s outside expected path, dropped", sid, field)
+
+        bpm = payload.get("bpm")
+        if bpm is not None:
+            if isinstance(bpm, (int, float)) and not isinstance(bpm, bool) and BPM_MIN <= bpm <= BPM_MAX:
+                extra["metadata.bpm"] = round(float(bpm), 1)
+                extra["metadata.bpm_source"] = "detected"
+            else:
+                logger.warning("Callback %s: bpm %r out of range, dropped", sid, bpm)
+
+        key = payload.get("key")
+        if key is not None:
+            if key in MUSICAL_KEYS:
+                extra["metadata.key"] = key
+                extra["metadata.key_source"] = "detected"
+            else:
+                logger.warning("Callback %s: key %r not recognised, dropped", sid, key)
         matched = await _set_status(sid, "completed", extra, match={"status": "processing"})
         if matched == 0:
             logger.warning("Callback completed for %s but document no longer processing — ignored", sid)
         else:
             logger.info("Stem callback completed submission=%s", sid)
+            await _run_clearance(sid)
 
     else:  # failed
         matched = await _set_status(
