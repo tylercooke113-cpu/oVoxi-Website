@@ -46,7 +46,7 @@ Artists opt each upload into AI training, sync placements, or both. Every artist
 
 **3.5 Consent is enforced server-side at upload.** Presign rejects with 422 if neither consent is true, so no audio reaches R2 without consent. The disabled button in the UI is convenience only.
 
-**3.6 Fingerprint detail stays admin-only.** Artists see "Needs docs" with the missing item named, or a generic "Conflict: contact support". No ACRCloud match detail reaches the artist or the public.
+**3.6 Fingerprint match detail is database-only.** No API returns ACRCloud match detail (matched title, artist, label, ISRC, acrid, confidence, raw code): not the Vault, not the admin panel, not any public endpoint. It is visible only in MongoDB. Artists with a CONFLICT track see "this recording appears to match existing copyrighted material" and the File Appeal link. The fingerprint status itself may appear in the admin panel.
 
 ## 4. Artist flows
 
@@ -72,14 +72,16 @@ Shown only when sync is checked:
 - **Add sync:** an AI-only track shows "Add to sync library". It opens the sync-only questions from 4.1, writes a `grant` event with `source: vault`, and sends the track through the clearance evaluator. When it reaches Cleared it is added to the profile automatically.
 - **Remove sync:** confirmation dialog stating that sold licenses stay valid. Writes a `withdraw` event and delists the track.
 - **Add or remove AI training:** a toggle with a confirmation dialog. Writes a `grant` or `withdraw` event.
+- Tracks uploaded before Phase 1 have no usage choices, splits, moods, BPM or key. The Vault shows them with downloads only and the note "Uploaded before usage options. Re-upload to add it to AI training or sync." No backfill.
 
 ### 4.3 Vault: Sync Profile tab
 
 Available to every artist.
 - **Empty state:** blank profile with "Submit your music to your sync library."
-- **Profile editor:** display name, photo, bio (500 characters), location (80 characters), Spotify artist URL, Instagram URL. Published immediately on save.
+- **Profile editor:** display name, photo *(Phase 4b)*, bio (500 characters), location (80 characters), Spotify artist URL, Instagram URL. Published immediately on save.
 - **Slug:** generated from display name on first save, unique, lowercase. Artist cannot change it in v1 (shared links would break); admin can.
 - **Sync tracks list:** every sync-consented track with its state: Live, Needs docs (with the missing item named), Conflict, Processing. Each live track has a copy-link button for its share page.
+- "Live" is shown for cleared sync tracks from Phase 4a, before the public library launches.
 
 The tab's components live in `frontend/src/sync/`. `VaultPage.jsx` only mounts the tab, which keeps the D8 exception small.
 
@@ -324,7 +326,8 @@ Used for webhook idempotency.
 | 1 | Upload: consent boxes, 422 enforcement, consent ledger, genre, mood, vocals, sync-only intake (checks 3 to 5) | Phase 0 report reviewed |
 | 2 | Splits entry (Option A) | Phase 1 live |
 | 3 | Pipeline: `fingerprint_result` and `duration_s` persisted, 320 kbps preview, waveform peaks, BPM and key detection, clearance evaluator | Phase 2 live |
-| 4 | Vault Sync Profile tab, "Add to sync library", public artist page, track share page, admin hide and delist | Phase 3 live |
+| 4a | Vault: usage toggles with consent events, BPM/key confirm and edit, moods and genre edit, sync status; Sync Profile tab (text fields, sync tracks list); match detail removed from all APIs | Phase 3 live |
+| 4b | Profile photo, public artist page, track share page, admin hide and delist | Phase 4a live |
 | 5 | Library page with filters and sort | Cleared sync tracks exist |
 | 6 | Checkout, webhook, license PDF, email, download page, order CSV | Stripe account and email domain ready. Live sales only after license text is final. |
 
@@ -357,6 +360,10 @@ Each phase ships and is verified in production before the next starts.
 | 10 | Phase 3 file exception: `infra/modal/stem_worker.py`, new `infra/modal/audio_analysis.py`, new `backend/clearance.py`, plus pipeline and callback code in `server.py` |
 | 11 | Artists supply BPM and key at upload on every upload, with "I'm unsure"; detection is a cross-check |
 | 12 | Reconciliation per 4.4: artist wins on half/double tempo, same-root and relative keys; other disagreements and "unsure" are held for one artist confirmation |
+| 13 | ACRCloud match detail is database-only: removed from the admin panel and every API (supersedes the old 3.6) |
+| 14 | CONFLICT wording for artists stays "this recording appears to match existing copyrighted material" with the appeal link |
+| 15 | Pre-Phase-1 tracks stay in the Vault without usage controls; no backfill |
+| 16 | Phase 4a file exception: `VaultPage.jsx`, `AdminPage.jsx` (match detail removal only), new files in `frontend/src/sync/`, new `backend/sync_vault.py`, `consent_ledger.py`, and the vault and admin endpoints in `server.py` |
 
 Open items depend on the Phase 0 report only.
 
