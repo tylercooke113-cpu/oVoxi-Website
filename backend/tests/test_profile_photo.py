@@ -8,6 +8,7 @@ from unittest.mock import MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
+import numpy as np
 from PIL import Image
 
 import server
@@ -104,6 +105,69 @@ def test_oversized_pixel_count_rejected_without_decoding():
     assert 8000 * 6000 > MAX_PIXELS
     with pytest.raises(PhotoRejected):
         process_photo(buf.getvalue())
+
+
+# ---------------------------------------------------------------------------
+# Large photos: memory and time (regression for the 7 MB upload that hung)
+# ---------------------------------------------------------------------------
+
+def _peak_rss_mb_of(code: str) -> tuple:
+    """Run code in a fresh interpreter; return (peak RSS MB, baseline MB) there."""
+    import subprocess, sys, os
+    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    script = (
+        "import resource, sys\n"
+        f"sys.path.insert(0, {here!r})\n"
+        "from io import BytesIO\n"
+        "import numpy as np\n"
+        "from PIL import Image\n"
+        "from profile_photo import process_photo\n"
+        + code +
+        "\nbase = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss // 1024\n"
+        "process_photo(data)\n"
+        "print(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss // 1024, base)\n"
+    )
+    out = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, check=True)
+    peak, base = map(int, out.stdout.split())
+    return peak, base
+
+
+PHONE_JPEG = (
+    "rng = np.random.default_rng(0)\n"
+    "arr = rng.integers(0, 256, size=(3024, 4032, 3), dtype=np.uint8)\n"
+    "buf = BytesIO(); Image.fromarray(arr).save(buf, 'JPEG', quality=85)\n"
+    "data = buf.getvalue(); del arr, buf\n"
+)
+
+
+def test_12mp_phone_photo_is_fast():
+    import time
+    rng = np.random.default_rng(1)
+    arr = (rng.random((3024, 4032, 3)) * 255).astype("uint8")
+    buf = BytesIO()
+    Image.fromarray(arr).save(buf, "JPEG", quality=85)
+    data = buf.getvalue()
+    assert len(data) > 5_000_000                    # a realistic multi-MB phone photo
+    t = time.time()
+    out = process_photo(data)
+    assert time.time() - t < 5.0
+    assert open_webp(out[800]).size == (800, 800)
+
+
+def test_12mp_phone_photo_memory_stays_small():
+    peak, base = _peak_rss_mb_of(PHONE_JPEG)
+    # Before the fix this added ~700 MB on top of the baseline.
+    assert peak - base < 150, (peak, base)
+
+
+def test_large_png_memory_stays_bounded():
+    code = (
+        "arr = np.zeros((5000, 7000, 3), dtype='uint8'); arr[:, :3500] = 200\n"   # 35 MP
+        "buf = BytesIO(); Image.fromarray(arr).save(buf, 'PNG')\n"
+        "data = buf.getvalue(); del arr, buf\n"
+    )
+    peak, base = _peak_rss_mb_of(code)
+    assert peak - base < 350, (peak, base)          # one decoded copy, not a Python pixel list
 
 
 # ---------------------------------------------------------------------------

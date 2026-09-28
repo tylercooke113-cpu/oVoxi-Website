@@ -84,7 +84,8 @@ const SyncProfileTab = ({ getToken, tracks }) => {
     try {
       const { presigned_url: url, upload_id: uploadId, content_type: type } =
         await api.presignPhoto(getToken, { content_type: file.type, file_size: file.size });
-      await axios.put(url, file, { headers: { 'Content-Type': type } });
+      // 2 minutes covers 10 MB on a slow connection; never spin forever.
+      await axios.put(url, file, { headers: { 'Content-Type': type }, timeout: 120000 });
       const p = await api.completePhoto(getToken, uploadId);
       setPhotoUrl(p.photo_url || null);
       toast.success('Photo updated.');

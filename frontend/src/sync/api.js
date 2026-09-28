@@ -45,8 +45,10 @@ export const api = {
     (await axios.put(`${API}/sync/profile`, body, await authed(getToken))).data,
   presignPhoto: async (getToken, body) =>
     (await axios.post(`${API}/sync/profile/photo/presign`, body, await authed(getToken))).data,
+  // Processing is normally about a second; 60 s means something went wrong.
   completePhoto: async (getToken, uploadId) =>
-    (await axios.post(`${API}/sync/profile/photo/complete`, { upload_id: uploadId }, await authed(getToken))).data,
+    (await axios.post(`${API}/sync/profile/photo/complete`, { upload_id: uploadId },
+      { ...(await authed(getToken)), timeout: 60000 })).data,
   deletePhoto: async (getToken) =>
     (await axios.delete(`${API}/sync/profile/photo`, await authed(getToken))).data,
   adminProfiles: async (getToken) =>

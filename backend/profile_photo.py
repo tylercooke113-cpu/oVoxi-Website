@@ -15,6 +15,7 @@ MAX_PIXELS = 40_000_000           # ~40 megapixels: guards against decompression
 PHOTO_SIZES = (800, 200)
 WEBP_QUALITY = 85
 BACKGROUND = (0, 0, 0)            # transparent areas become the site's black
+WORKING_EDGE = 1600                # longest side kept while cropping (2x the largest output)
 
 REJECT_MESSAGE = "That image couldn't be read. Use a JPEG, PNG or WebP under 10 MB."
 
@@ -37,6 +38,10 @@ def process_photo(data: bytes) -> dict:
 
     try:
         img = Image.open(BytesIO(data))
+        if fmt == "JPEG":
+            # Let the JPEG decoder skip detail we would throw away: it decodes at
+            # 1/2, 1/4 or 1/8 scale while keeping both sides >= the largest output.
+            img.draft("RGB", (PHOTO_SIZES[0], PHOTO_SIZES[0]))
         img.load()
         img = ImageOps.exif_transpose(img)     # apply camera rotation, then drop the tag
         if img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info):
@@ -46,9 +51,12 @@ def process_photo(data: bytes) -> dict:
             img = flat
         else:
             img = img.convert("RGB")
-        # Fresh image from pixels only: nothing from the original's info survives.
-        clean = Image.new("RGB", img.size)
-        clean.putdata(list(img.getdata()))
+        # Shrink early so the steps below work on at most WORKING_EDGE pixels a side.
+        img.thumbnail((WORKING_EDGE, WORKING_EDGE), Image.LANCZOS, reducing_gap=2.0)
+        # Fresh image from the raw pixel bytes only: nothing from the original's
+        # info (EXIF, XMP, ICC, comments) survives. One C-level copy, not a
+        # per-pixel Python list (which used ~1 GB for a 12 MP photo).
+        clean = Image.frombytes("RGB", img.size, img.tobytes())
         out = {}
         for size in PHOTO_SIZES:
             square = ImageOps.fit(clean, (size, size), Image.LANCZOS, centering=(0.5, 0.5))
