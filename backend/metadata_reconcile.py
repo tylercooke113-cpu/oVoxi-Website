@@ -60,6 +60,12 @@ def reconcile(metadata: dict, bpm_detected: Optional[float], key_detected: Optio
                 out[f"metadata.{field}_source"] = "detected"
             continue
         artist = metadata.get(field) if metadata.get(f"{field}_source") == "artist" else None
+        if artist is not None and metadata.get(f"{field}_confirmed") is True:
+            # Confirmed in the Vault (PRD-03 4.4): final, never held by detection.
+            out[f"metadata.{field}"] = artist
+            out[f"metadata.{field}_source"] = "artist"
+            out[f"metadata.{field}_needs_confirmation"] = False
+            continue
         r = _resolve(artist, metadata.get(f"{field}_unsure") is True, detected, agrees)
         out[f"metadata.{field}"] = r["value"]
         out[f"metadata.{field}_source"] = r["source"]

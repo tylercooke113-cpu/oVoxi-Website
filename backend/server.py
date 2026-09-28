@@ -26,12 +26,17 @@ from fastapi import Depends, FastAPI, APIRouter, HTTPException, Header, Request
 from fastapi.responses import JSONResponse
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo import ReturnDocument
+from pymongo.errors import DuplicateKeyError
 from pydantic import BaseModel, Field, ConfigDict, EmailStr, field_validator, model_validator
 from sync_constants import (
     MOODS, MAX_MOODS, VOCALS, SAMPLE_DECLARATIONS, CONTENT_ID_ANSWERS,
     DISTRIBUTORS, PRO_ORGS, IPI_PATTERN, MUSICAL_KEYS, BPM_MIN, BPM_MAX,
 )
-from consent_ledger import record_grants, GRANT_VERSION
+from consent_ledger import record_grants, record_withdrawals, GRANT_VERSION
+from sync_vault import (
+    INSTAGRAM_URL, SPOTIFY_ARTIST_URL, is_legacy, metadata_patch_fields,
+    slugify_profile, vault_track_view,
+)
 from rights import TrackRightsIn, build_rights
 from clearance import evaluate as evaluate_clearance
 from metadata_reconcile import reconcile as reconcile_metadata
@@ -807,6 +812,131 @@ class PresignRequest(BaseModel):
         return self
 
 
+class VaultMetadataPatch(BaseModel):
+    """PRD-03 4.4 / 9: artist edits from the Vault. A BPM or key sent here is
+    the artist's confirmed value."""
+    model_config = ConfigDict(extra="forbid")
+
+    bpm: Optional[float] = None
+    key: Optional[str] = None
+    moods: Optional[List[str]] = None
+    genre: Optional[str] = None
+
+    @field_validator("bpm")
+    @classmethod
+    def _bpm(cls, v):
+        if v is None:
+            return v
+        if not BPM_MIN <= v <= BPM_MAX:
+            raise ValueError(f"BPM must be between {BPM_MIN} and {BPM_MAX}.")
+        return round(float(v), 1)
+
+    @field_validator("key")
+    @classmethod
+    def _key(cls, v):
+        return v if v is None else _one_of(v, MUSICAL_KEYS, "key")
+
+    @field_validator("moods")
+    @classmethod
+    def _moods(cls, v):
+        if v is None:
+            return v
+        if not 1 <= len(v) <= MAX_MOODS:
+            raise ValueError("Pick 1 to 3 moods.")
+        if len(set(v)) != len(v):
+            raise ValueError("Moods must not repeat.")
+        for m in v:
+            _one_of(m, MOODS, "mood")
+        return v
+
+    @field_validator("genre")
+    @classmethod
+    def _genre(cls, v):
+        return v if v is None else _one_of(v, VALID_GENRES, "genre")
+
+    @model_validator(mode="after")
+    def _something(self):
+        if self.bpm is None and self.key is None and self.moods is None and self.genre is None:
+            raise ValueError("Nothing to change.")
+        return self
+
+
+CONSENT_SCOPES = ("ai_training", "sync")
+CONSENT_ACTIONS = ("grant", "withdraw")
+
+
+class ConsentChange(BaseModel):
+    """PRD-03 3.4 / 4.2: add or remove a use from the Vault."""
+    model_config = ConfigDict(extra="forbid")
+
+    scope: str
+    action: str
+    sync_intake: Optional[SyncIntake] = None
+
+    @field_validator("scope")
+    @classmethod
+    def _scope(cls, v):
+        return _one_of(v, CONSENT_SCOPES, "use")
+
+    @field_validator("action")
+    @classmethod
+    def _action(cls, v):
+        return _one_of(v, CONSENT_ACTIONS, "action")
+
+    @model_validator(mode="after")
+    def _intake_rule(self):
+        adding_sync = self.scope == "sync" and self.action == "grant"
+        if adding_sync and self.sync_intake is None:
+            raise ValueError("Sync details are required to add sync.")
+        if not adding_sync and self.sync_intake is not None:
+            raise ValueError("Sync details are only sent when adding sync.")
+        return self
+
+
+class SyncProfileUpdate(BaseModel):
+    """PRD-03 4.3 / 11. Photo arrives in Phase 4b."""
+    model_config = ConfigDict(extra="forbid")
+
+    display_name: str = Field(..., max_length=80)
+    bio: str = Field(default="", max_length=500)
+    location: str = Field(default="", max_length=80)
+    spotify_url: str = Field(default="", max_length=300)
+    instagram_url: str = Field(default="", max_length=300)
+
+    @field_validator("display_name")
+    @classmethod
+    def _name(cls, v):
+        v = v.strip()
+        if not v:
+            raise ValueError("Enter a display name.")
+        return v
+
+    @field_validator("bio", "location")
+    @classmethod
+    def _strip(cls, v):
+        return v.strip()
+
+    @field_validator("spotify_url")
+    @classmethod
+    def _spotify(cls, v):
+        v = v.strip()
+        if v and not SPOTIFY_ARTIST_URL.match(v):
+            raise ValueError("Use your Spotify artist link (https://open.spotify.com/artist/...).")
+        return v
+
+    @field_validator("instagram_url")
+    @classmethod
+    def _instagram(cls, v):
+        v = v.strip()
+        if v and not INSTAGRAM_URL.match(v):
+            raise ValueError("Use your Instagram profile link (https://instagram.com/...).")
+        return v
+
+
+PROFILE_PUBLIC_FIELDS = ("slug", "display_name", "bio", "location",
+                         "spotify_url", "instagram_url", "created_at", "updated_at")
+
+
 class CompleteUploadRequest(BaseModel):
     submission_id: str
 
@@ -835,6 +965,12 @@ class Appeal(BaseModel):
     message: Optional[str] = None
     status: str = "pending"
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+# PRD-03 3.6 / decision 13: ACRCloud match detail is never returned by any API.
+# It is written by the pipeline and visible only in the database.
+MATCH_DETAIL_FIELDS = ("matched_title", "matched_artist", "matched_label",
+                       "matched_isrc", "confidence", "acrid", "raw_code")
 
 
 class TrackSubmission(BaseModel):
@@ -1134,7 +1270,8 @@ async def get_vault_tracks(request: Request, clerk_payload: dict = Depends(verif
     subs = await db.track_submissions.find(
         {'clerk_user_id': clerk_user_id},
         {'_id': 0, 'id': 1, 'artist_name': 1, 'track_name': 1, 'genre': 1,
-         'upload_date': 1, 'status': 1, 'stem_paths': 1, 'mastered_r2_key': 1},
+         'upload_date': 1, 'status': 1, 'stem_paths': 1, 'mastered_r2_key': 1,
+         'consent': 1, 'metadata': 1, 'sync_status': 1, 'checks': 1, 'on_sync_profile': 1},
     ).sort('upload_date', -1).to_list(1000)
 
     def _presign_get(key: str) -> str:
@@ -1173,15 +1310,136 @@ async def get_vault_tracks(request: Request, clerk_payload: dict = Depends(verif
             'status': s.get('status'),
             'stem_urls': stem_urls,
             'mastered_url': mastered_url,
+            **vault_track_view(s),
         })
     return result
+
+
+# ---------------------------------------------------------------------------
+# Vault: artist edits and consent changes (PRD-03 Phase 4a)
+# ---------------------------------------------------------------------------
+
+async def _owned_track(track_id: str, clerk_payload: dict) -> dict:
+    """The artist's own track, or 404 (never reveals whether another artist's exists)."""
+    doc = await db.track_submissions.find_one(
+        {"id": track_id, "clerk_user_id": clerk_payload["sub"]},
+        {"_id": 0, **{f: 0 for f in MATCH_DETAIL_FIELDS}},
+    )
+    if not doc:
+        raise HTTPException(status_code=404, detail="Track not found")
+    if is_legacy(doc):
+        raise HTTPException(status_code=409, detail="This track was uploaded before usage options.")
+    return doc
+
+
+@api_router.patch("/vault/tracks/{track_id}/metadata")
+@limiter.limit("30/minute")
+async def patch_vault_metadata(request: Request, track_id: str, payload: VaultMetadataPatch,
+                               clerk_payload: dict = Depends(require_artist)):
+    await _owned_track(track_id, clerk_payload)
+    fields = metadata_patch_fields(payload.bpm, payload.key, payload.moods, payload.genre)
+    await db.track_submissions.update_one(
+        {"id": track_id, "clerk_user_id": clerk_payload["sub"]}, {"$set": fields})
+    await _run_clearance(track_id)
+    doc = await _owned_track(track_id, clerk_payload)
+    return {"id": track_id, "genre": doc.get("genre"), **vault_track_view(doc)}
+
+
+@api_router.post("/vault/tracks/{track_id}/consent")
+@limiter.limit("10/minute")
+async def change_vault_consent(request: Request, track_id: str, payload: ConsentChange,
+                               clerk_payload: dict = Depends(require_artist)):
+    doc = await _owned_track(track_id, clerk_payload)
+    want = payload.action == "grant"
+    if (doc["consent"].get(payload.scope) is True) == want:
+        label = "AI training" if payload.scope == "ai_training" else "Sync"
+        raise HTTPException(status_code=409, detail=f"{label} is already {'on' if want else 'off'}.")
+
+    # PRD-03 3.4: every change is a new consent event, written first.
+    record = record_grants if want else record_withdrawals
+    try:
+        await record(db, user_id=clerk_payload["sub"], track_id=track_id, scopes=[payload.scope],
+                     source="vault", ip=get_real_client_ip(request))
+    except Exception as exc:
+        logger.error("Consent ledger write failed for %s: %s", track_id, exc)
+        raise HTTPException(status_code=503, detail="Could not record consent. Please try again.")
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    fields: dict = {f"consent.{payload.scope}": want}
+    if payload.scope == "sync" and want:
+        i = payload.sync_intake
+        fields["intake"] = {
+            "samples": i.samples, "samples_attested_at": now_iso,
+            "distributor": i.distributor, "content_id": i.content_id,
+            "pro_not_affiliated": i.pro_not_affiliated, "pro_name": i.pro_name, "ipi": i.ipi,
+        }
+    elif payload.scope == "sync":
+        # Delisted for future sales; licenses already sold stay valid.
+        fields.update({"on_sync_profile": False, "sync_delisted_at": now_iso,
+                       "sync_status": None, "checks": None})
+    await db.track_submissions.update_one(
+        {"id": track_id, "clerk_user_id": clerk_payload["sub"]}, {"$set": fields})
+    if payload.scope == "sync" and want:
+        await _run_clearance(track_id)
+    doc = await _owned_track(track_id, clerk_payload)
+    return {"id": track_id, **vault_track_view(doc)}
+
+
+# ---------------------------------------------------------------------------
+# Sync profile (PRD-03 4.3). Public page arrives in Phase 4b.
+# ---------------------------------------------------------------------------
+
+def _profile_view(p: Optional[dict]) -> dict:
+    return {k: p.get(k) for k in PROFILE_PUBLIC_FIELDS} if p else {}
+
+
+@api_router.get("/sync/profile")
+@limiter.limit("30/minute")
+async def get_sync_profile(request: Request, clerk_payload: dict = Depends(require_artist)):
+    p = await db.sync_profiles.find_one({"user_id": clerk_payload["sub"]}, {"_id": 0})
+    return _profile_view(p)
+
+
+@api_router.put("/sync/profile")
+@limiter.limit("10/minute")
+async def put_sync_profile(request: Request, payload: SyncProfileUpdate,
+                           clerk_payload: dict = Depends(require_artist)):
+    uid = clerk_payload["sub"]
+    now_iso = datetime.now(timezone.utc).isoformat()
+    fields = {**payload.model_dump(), "updated_at": now_iso}
+
+    existing = await db.sync_profiles.find_one({"user_id": uid}, {"_id": 0, "slug": 1})
+    if existing:
+        await db.sync_profiles.update_one({"user_id": uid}, {"$set": fields})
+    else:
+        # Slug is set once from the display name and never changed by the artist.
+        base = slugify_profile(payload.display_name) or "artist"
+        for n in range(1, 51):
+            slug = base if n == 1 else f"{base}-{n}"
+            try:
+                await db.sync_profiles.insert_one({
+                    "user_id": uid, "slug": slug, **fields, "created_at": now_iso,
+                    "sales_count": 0, "hidden_by_admin": False, "photo_key": None,
+                })
+                break
+            except DuplicateKeyError as exc:
+                if "user_id" in str(exc):  # created by a parallel request: update it instead
+                    await db.sync_profiles.update_one({"user_id": uid}, {"$set": fields})
+                    break
+        else:
+            raise HTTPException(status_code=503, detail="Could not save your profile. Please try again.")
+
+    p = await db.sync_profiles.find_one({"user_id": uid}, {"_id": 0})
+    return _profile_view(p)
 
 
 @api_router.get("/submissions")
 @limiter.limit("30/minute")
 async def get_submissions(request: Request, admin: dict = Depends(require_admin)):
     logger.info("admin_access user=%s path=%s", admin.get("sub"), request.url.path)
-    subs = await db.track_submissions.find({}, {"_id": 0}).sort("upload_date", -1).to_list(1000)
+    subs = await db.track_submissions.find(
+        {}, {"_id": 0, **{f: 0 for f in MATCH_DETAIL_FIELDS}}
+    ).sort("upload_date", -1).to_list(1000)
 
     def _presign_get(key: str) -> str:
         return r2_client.generate_presigned_url(
@@ -1494,6 +1752,8 @@ async def create_indexes():
         await db.appeals.create_index([("id", 1)])
         await db.consent_events.create_index([("track_id", 1)])
         await db.consent_events.create_index([("user_id", 1), ("created_at", 1)])
+        await db.sync_profiles.create_index([("user_id", 1)], unique=True)
+        await db.sync_profiles.create_index([("slug", 1)], unique=True)
     except Exception as exc:
         logger.warning("Index creation failed (non-fatal): %s", exc)
     if RUN_WORKER:

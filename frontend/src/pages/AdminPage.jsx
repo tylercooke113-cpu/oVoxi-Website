@@ -3,7 +3,7 @@ import axios from 'axios';
 import { toast } from 'sonner';
 import { useAuth } from '@clerk/clerk-react';
 import { Navigate, Link } from 'react-router-dom';
-import { Loader2, ExternalLink, RefreshCw, CheckCircle2, Clock, AlertCircle, Zap, ChevronDown } from 'lucide-react';
+import { Loader2, ExternalLink, RefreshCw, CheckCircle2, Clock, AlertCircle, Zap } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 const API = `https://ovoxi-website-production.up.railway.app/api`;
@@ -43,7 +43,6 @@ const AdminPage = () => {
   const [loading, setLoading] = useState(false);
   const [forbidden, setForbidden] = useState(false);
   const [loadError, setLoadError] = useState(null);
-  const [expandedId, setExpandedId] = useState(null);
 
   const fetchAll = useCallback(async () => {
     setLoadError(null);
@@ -211,18 +210,6 @@ const AdminPage = () => {
                             </td>
                             <td className="px-4 py-3 whitespace-nowrap">
                               <StatusBadge status={s.status} />
-                              {(s.status === 'NEEDS_DOCS' || s.status === 'CONFLICT') && (
-                                <button
-                                  onClick={() => setExpandedId(expandedId === s.id ? null : s.id)}
-                                  className="mt-1 flex items-center gap-0.5 text-xs text-slate-500 hover:text-slate-300 transition-colors"
-                                >
-                                  <ChevronDown
-                                    size={12}
-                                    className={`transition-transform duration-150 ${expandedId === s.id ? 'rotate-180' : ''}`}
-                                  />
-                                  {expandedId === s.id ? 'Hide' : 'Details'}
-                                </button>
-                              )}
                               {s.status === 'failed' && s.error && (
                                 <p className="mt-1 text-xs text-red-400/70 max-w-[200px] break-words">
                                   {s.error}
@@ -265,40 +252,6 @@ const AdminPage = () => {
                               )}
                             </td>
                           </tr>
-                          {expandedId === s.id && (s.status === 'NEEDS_DOCS' || s.status === 'CONFLICT') && (
-                            <tr className={`border-b border-white/5 ${
-                              s.status === 'CONFLICT' ? 'bg-red-500/[0.04]' : 'bg-amber-400/[0.04]'
-                            }`}>
-                              <td colSpan={7} className="px-6 py-4">
-                                <div className="grid grid-cols-2 gap-x-8 gap-y-3 text-xs md:grid-cols-5">
-                                  <div>
-                                    <p className="text-slate-500 uppercase tracking-wider mb-0.5">Matched Title</p>
-                                    <p className="text-white font-medium">{s.matched_title ?? '—'}</p>
-                                  </div>
-                                  <div>
-                                    <p className="text-slate-500 uppercase tracking-wider mb-0.5">Matched Artist</p>
-                                    <p className="text-white font-medium">{s.matched_artist ?? '—'}</p>
-                                  </div>
-                                  <div>
-                                    <p className="text-slate-500 uppercase tracking-wider mb-0.5">Label</p>
-                                    <p className="text-white font-medium">{s.matched_label ?? '—'}</p>
-                                  </div>
-                                  <div>
-                                    <p className="text-slate-500 uppercase tracking-wider mb-0.5">ISRC</p>
-                                    <p className="text-white font-mono">{s.matched_isrc ?? '—'}</p>
-                                  </div>
-                                  <div>
-                                    <p className="text-slate-500 uppercase tracking-wider mb-0.5">Confidence</p>
-                                    <p className={`font-semibold ${
-                                      s.status === 'CONFLICT' ? 'text-red-400' : 'text-amber-400'
-                                    }`}>
-                                      {s.confidence != null ? `${s.confidence}%` : '—'}
-                                    </p>
-                                  </div>
-                                </div>
-                              </td>
-                            </tr>
-                          )}
                           </React.Fragment>
                         ))}
                       </tbody>
@@ -461,7 +414,7 @@ const AdminPage = () => {
                     <table className="w-full text-left text-sm">
                       <thead>
                         <tr className="border-b border-white/10 bg-white/[0.02]">
-                          {['Artist', 'Track', 'Match', 'Note', 'Proof', 'Status', 'Date'].map((h) => (
+                          {['Artist', 'Track', 'Note', 'Proof', 'Status', 'Date'].map((h) => (
                             <th
                               key={h}
                               className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-400 whitespace-nowrap"
@@ -473,7 +426,6 @@ const AdminPage = () => {
                       </thead>
                       <tbody>
                         {appeals?.map((a, i) => {
-                          const sub = submissions?.find((s) => s.id === a.submission_id);
                           return (
                             <tr
                               key={a.id}
@@ -486,19 +438,6 @@ const AdminPage = () => {
                               </td>
                               <td className="px-4 py-3 text-slate-300 whitespace-nowrap">
                                 {a.track_name}
-                              </td>
-                              <td className="px-4 py-3 text-slate-400 max-w-[180px]">
-                                {sub?.matched_title ? (
-                                  <div>
-                                    <p className="text-white text-xs font-medium truncate">{sub.matched_title}</p>
-                                    <p className="text-slate-500 text-xs truncate">{sub.matched_artist ?? '—'}</p>
-                                    {sub.confidence != null && (
-                                      <p className="text-red-400 text-xs font-semibold">{sub.confidence}%</p>
-                                    )}
-                                  </div>
-                                ) : (
-                                  <span className="text-slate-600">—</span>
-                                )}
                               </td>
                               <td className="px-4 py-3 text-slate-300 max-w-xs">
                                 {a.message ? (
