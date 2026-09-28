@@ -17,6 +17,23 @@ export const errorMessage = (err, fallback = 'Something went wrong. Please try a
   return fallback;
 };
 
+// Public pages send a token only when someone is signed in (owner / admin preview).
+const maybeAuthed = async (getToken, isSignedIn) => {
+  if (!isSignedIn) return {};
+  try { return await authed(getToken); } catch { return {}; }
+};
+
+export const publicApi = {
+  artist: async (slug, getToken, isSignedIn) =>
+    (await axios.get(`${API}/sync/artists/${encodeURIComponent(slug)}`, await maybeAuthed(getToken, isSignedIn))).data,
+  track: async (id, getToken, isSignedIn) =>
+    (await axios.get(`${API}/sync/tracks/${encodeURIComponent(id)}`, await maybeAuthed(getToken, isSignedIn))).data,
+  waveform: async (id, getToken, isSignedIn) =>
+    (await axios.get(`${API}/sync/tracks/${encodeURIComponent(id)}/waveform`, await maybeAuthed(getToken, isSignedIn))).data,
+  preview: async (id, getToken, isSignedIn) =>
+    (await axios.post(`${API}/sync/tracks/${encodeURIComponent(id)}/preview`, null, await maybeAuthed(getToken, isSignedIn))).data,
+};
+
 export const api = {
   patchMetadata: async (getToken, id, body) =>
     (await axios.patch(`${API}/vault/tracks/${id}/metadata`, body, await authed(getToken))).data,
@@ -26,4 +43,16 @@ export const api = {
     (await axios.get(`${API}/sync/profile`, await authed(getToken))).data,
   putProfile: async (getToken, body) =>
     (await axios.put(`${API}/sync/profile`, body, await authed(getToken))).data,
+  presignPhoto: async (getToken, body) =>
+    (await axios.post(`${API}/sync/profile/photo/presign`, body, await authed(getToken))).data,
+  completePhoto: async (getToken, uploadId) =>
+    (await axios.post(`${API}/sync/profile/photo/complete`, { upload_id: uploadId }, await authed(getToken))).data,
+  deletePhoto: async (getToken) =>
+    (await axios.delete(`${API}/sync/profile/photo`, await authed(getToken))).data,
+  adminProfiles: async (getToken) =>
+    (await axios.get(`${API}/admin/sync/profiles`, await authed(getToken))).data,
+  adminDelist: async (getToken, id, delisted) =>
+    (await axios.post(`${API}/admin/sync/tracks/${id}/delist`, { delisted }, await authed(getToken))).data,
+  adminHide: async (getToken, slug, hidden) =>
+    (await axios.post(`${API}/admin/sync/profiles/${slug}/hide`, { hidden }, await authed(getToken))).data,
 };

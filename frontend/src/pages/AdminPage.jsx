@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { useAuth } from '@clerk/clerk-react';
+import AdminSyncSection from '../sync/AdminSyncSection';
 import { Navigate, Link } from 'react-router-dom';
 import { Loader2, ExternalLink, RefreshCw, CheckCircle2, Clock, AlertCircle, Zap } from 'lucide-react';
 import { motion } from 'framer-motion';
@@ -149,6 +150,7 @@ const AdminPage = () => {
                 { key: 'applications', label: `Applications (${artists?.length ?? 0})` },
                 { key: 'messages', label: `Messages (${messages?.length ?? 0})` },
                 { key: 'appeals', label: `Appeals (${appeals?.length ?? 0})` },
+                { key: 'sync', label: 'Sync' },
               ].map(({ key, label }) => (
                 <button
                   key={key}
@@ -163,6 +165,10 @@ const AdminPage = () => {
                 </button>
               ))}
             </div>
+
+            {tab === 'sync' && (
+              <AdminSyncSection getToken={getToken} submissions={submissions} onChanged={fetchAll} />
+            )}
 
             {/* Submissions tab */}
             {tab === 'submissions' && (

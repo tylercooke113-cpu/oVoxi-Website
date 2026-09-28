@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useUser, useAuth, SignOutButton } from '@clerk/clerk-react';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import { Loader2, Music2, ExternalLink, RefreshCw, CheckCircle2, XCircle } from 'lucide-react';
 import { Link } from 'react-router-dom';
@@ -74,7 +74,8 @@ const VaultPage = () => {
   const { getToken } = useAuth();
   const [tracks, setTracks] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState('tracks');
+  const [searchParams] = useSearchParams();
+  const [tab, setTab] = useState(searchParams.get('tab') === 'profile' ? 'profile' : 'tracks');
   const updateTrack = useCallback((t) => setTracks((all) => all.map((x) => (x.id === t.id ? t : x))), []);
 
   const fetchTracks = useCallback(async () => {

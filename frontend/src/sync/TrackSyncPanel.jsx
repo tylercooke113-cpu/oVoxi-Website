@@ -86,8 +86,30 @@ const SyncStatus = ({ track }) => {
   if (track.status === 'CONFLICT' || track.sync_status === 'conflict') {
     return <p className="text-sm font-medium text-red-400">● Conflict: this recording appears to match existing copyrighted material</p>;
   }
+  if (track.delisted_by_admin) {
+    return (
+      <>
+        <p className="text-sm font-medium text-red-400">● Removed by oVoxi</p>
+        <p className="mt-1 text-xs text-slate-500">Contact support if you think this is a mistake.</p>
+      </>
+    );
+  }
   if (track.sync_status === 'cleared' && track.on_sync_profile) {
-    return <p className="text-sm font-medium text-green-400">● Live</p>;
+    const url = `${window.location.origin}/sync/track/${track.id}`;
+    const copy = async () => {
+      try { await navigator.clipboard.writeText(url); toast.success('Share link copied.'); }
+      catch { toast.error('Could not copy. The link is: ' + url); }
+    };
+    return (
+      <>
+        <p className="text-sm font-medium text-green-400">● Live</p>
+        <div className="mt-2 flex flex-wrap gap-2">
+          <SmallBtn onClick={copy}>Copy share link</SmallBtn>
+          <a href={`/sync/track/${track.id}`} target="_blank" rel="noopener noreferrer"
+            className="rounded-md border border-white/10 px-2.5 py-1 text-xs text-slate-300 hover:text-white">View page</a>
+        </div>
+      </>
+    );
   }
   if (track.sync_status === 'needs_docs' || track.sync_status === 'cleared') {
     return (
