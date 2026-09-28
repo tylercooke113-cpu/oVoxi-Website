@@ -88,6 +88,8 @@ The tab's components live in `frontend/src/sync/`. `VaultPage.jsx` only mounts t
 
 The pipeline detects BPM and key after processing. The Vault shows them as "Detected" with an edit control. An artist edit sets the source to `artist`. A detected value is enough to pass check 6.
 
+Detection runs in the Modal stem worker after separation, on the mastered file. BPM uses librosa's beat tracker (ISC license). Key uses Krumhansl-Schmuckler profile matching, written in-house. Essentia (AGPL), madmom (non-commercial model weights) and aubio (GPL) were rejected on license grounds. If detection fails the job still completes: check 6 fails until the artist enters the value.
+
 ## 5. Clearance evaluator
 
 Runs automatically when a track finishes processing and again whenever any input changes (intake answers, splits, metadata edits, admin action).
@@ -104,6 +106,8 @@ Runs automatically when a track finishes processing and again whenever any input
 Check 2 needs a new `fingerprint_result` field written at scan time, because the scan result in `status` is overwritten as processing continues.
 
 **Status derivation:** any Conflict gives `conflict`; otherwise any failed or missing check gives `needs_docs`; all six passing gives `cleared`. On `cleared` with sync consent, set `on_sync_profile = true` and `sync_listed_at`.
+
+The evaluator runs only for tracks with `consent.sync == true`. AI-only tracks keep `sync_status: null`. In Phase 3 it runs when processing completes and when the fingerprint scan stops a track. Later phases add the runs triggered by artist edits and admin actions.
 
 ## 6. Public surfaces
 
@@ -129,11 +133,12 @@ Photo, display name, location, bio, Spotify and Instagram links, and the artist'
 
 ### 6.3 Audio previews
 
-- The pipeline produces a 320 kbps MP3 of the master at `catalog/{artist}/{track}/previews/{submission_id}.mp3`, plus precomputed waveform peaks (JSON). The MP3 is a playback derivative only, never licensed or delivered, so the WAV24 catalog rule in `stem_worker.py` still holds.
+- The pipeline produces a 320 kbps MP3 of the master at `catalog/{artist}/{track}/previews/{submission_id}.mp3`, plus precomputed waveform peaks (JSON) at `catalog/{artist}/{track}/previews/{submission_id}.waveform.json`. The MP3 is a playback derivative only, never licensed or delivered, so the WAV24 catalog rule in `stem_worker.py` still holds.
 - `vercel.json` CSP `media-src` must allow the R2 presigned host for playback.
 - The waveform JSON is public.
 - The MP3 is private. Each play calls the backend, which returns a presigned URL valid for 5 minutes. There is no download button, and the endpoint is rate limited.
 - This stops link sharing and bulk scraping. It does not stop someone recording the audio. Accepted.
+- How the waveform JSON is served publicly is decided in Phase 4 or 5. Phase 3 only produces it.
 
 ## 7. Purchase flow
 
@@ -334,6 +339,8 @@ Each phase ships and is verified in production before the next starts.
 | 6 | The public library at `/sync` stays hidden behind a flag until Tyler approves it. Upload form changes, the track share page and the public artist page ship live as their phases land. |
 | 7 | Splits use the PRD-02 rights model (writers, publishers, master owners), required on every upload |
 | 8 | IPI numbers are exactly 9 or 11 digits everywhere, including the sync intake |
+| 9 | BPM detected with librosa, key with in-house profile matching; detection is non-fatal |
+| 10 | Phase 3 file exception: `infra/modal/stem_worker.py`, new `infra/modal/audio_analysis.py`, new `backend/clearance.py`, plus pipeline and callback code in `server.py` |
 
 Open items depend on the Phase 0 report only.
 
