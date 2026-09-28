@@ -59,9 +59,9 @@ Always shown:
 - Genre: the existing top-level `genre` field, already a fixed select validated server-side against `VALID_GENRES` (Hip-Hop, R&B, Afrobeats, Trap, Soul, Pop, Electronic, Latin, Reggaeton, Afropop, Other). No change.
 - Mood (one to three, fixed list, Appendix A)
 - Vocals or instrumental
+- **Splits (check 1, Option A).** Uses the PRD-02 rights model: three lists (writers, publishers, master owners), 1 to 4 parties each, each list summing to exactly 100% (stored as basis points). Every party has a legal name. Role, PRO and IPI are optional. Two shortcuts: "I own 100% of the writing, publishing and master" is expanded server-side into one self row per list using the artist's legal name, and "I self-publish" fills the publishers list. Plus an attestation checkbox.
 
 Shown only when sync is checked:
-- **Splits (check 1, Option A).** Uses the PRD-02 rights model: three lists (writers, publishers, master owners), 1 to 4 parties each, each list summing to exactly 100% (stored as basis points). Every party has a legal name. Role, PRO and IPI are optional. Two shortcuts: "I own 100% of the writing, publishing and master" is expanded server-side into one self row per list using the artist's legal name, and "I self-publish" fills the publishers list. Plus an attestation checkbox.
 - **Samples (check 3).** Fully original / cleared sample / royalty-free loop whose license allows sync, plus attestation.
 - **Distributor and Content ID (check 4).** Distributor name. "Is this song registered in YouTube Content ID?" Yes / No / Not sure.
 - **PRO (check 5).** PRO name and IPI number, or "Not affiliated".
@@ -332,7 +332,7 @@ Each phase ships and is verified in production before the next starts.
 | 4 | "Not affiliated with a PRO" passes check 5 |
 | 5 | Stems add-on is +22%, rounded to the nearest dollar |
 | 6 | The public library at `/sync` stays hidden behind a flag until Tyler approves it. Upload form changes, the track share page and the public artist page ship live as their phases land. |
-| 7 | Splits use the PRD-02 rights model (writers, publishers, master owners), collected for sync uploads only |
+| 7 | Splits use the PRD-02 rights model (writers, publishers, master owners), required on every upload |
 | 8 | IPI numbers are exactly 9 or 11 digits everywhere, including the sync intake |
 
 Open items depend on the Phase 0 report only.

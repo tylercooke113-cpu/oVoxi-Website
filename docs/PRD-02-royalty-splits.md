@@ -305,8 +305,8 @@ completed first or artists will see blank states for `scanning`, `mastering`, `C
 ## 11. Implementation note (2026-09-28)
 
 PRD-03 Phase 2 builds this PRD's Phase 1 (model and validation) and Phase 2 (splits entry
-on the upload page) for **sync uploads only**. The splits sit inside the sync details panel
-rather than on a separate step 2 page. AI-only uploads do not collect rights yet.
+on the upload page) on **every upload**. The splits sit in the upload form under "How can
+this upload be used?" rather than on a separate step 2 page.
 
 Not built there: `iswc` and `isrc` (PRD-03 keeps artist ISRC entry out of scope),
 `performing_name`, rule 5's IPI requirement for PRO registration, rule 7 revisions, and the
