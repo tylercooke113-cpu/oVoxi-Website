@@ -33,6 +33,12 @@ from sync_constants import (
     DISTRIBUTORS, PRO_ORGS, IPI_PATTERN, MUSICAL_KEYS, BPM_MIN, BPM_MAX,
 )
 from consent_ledger import record_grants, record_withdrawals, GRANT_VERSION
+from profile_photo import (
+    MAX_PHOTO_BYTES, PHOTO_CONTENT_TYPES, PHOTO_SIZES, PhotoRejected, REJECT_MESSAGE, process_photo,
+)
+from sync_public import (
+    LISTING_FILTER, is_listed, photo_visible, public_profile_view, public_track_view,
+)
 from sync_vault import (
     INSTAGRAM_URL, SPOTIFY_ARTIST_URL, is_legacy, metadata_patch_fields,
     slugify_profile, vault_track_view,
@@ -191,6 +197,17 @@ async def verify_clerk_token(authorization: str = Header(default=None)) -> dict:
         logger.info("Rejected Clerk token: azp=%s", azp)
         raise HTTPException(status_code=401, detail="Not authenticated")
     return payload
+
+
+async def optional_clerk(authorization: str = Header(default=None)) -> Optional[dict]:
+    """Viewer identity for public pages. Never fails the request: a missing,
+    invalid or expired token simply means an anonymous viewer."""
+    if not authorization:
+        return None
+    try:
+        return await verify_clerk_token(authorization)
+    except HTTPException:
+        return None
 
 
 def _role(payload: dict) -> Optional[str]:
@@ -933,6 +950,43 @@ class SyncProfileUpdate(BaseModel):
         return v
 
 
+class PhotoPresignRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    content_type: str
+    file_size: int = Field(..., gt=0)
+
+    @field_validator("content_type")
+    @classmethod
+    def _type(cls, v):
+        if v not in PHOTO_CONTENT_TYPES:
+            raise ValueError("Use a JPEG, PNG or WebP image.")
+        return v
+
+    @field_validator("file_size")
+    @classmethod
+    def _size(cls, v):
+        if v > MAX_PHOTO_BYTES:
+            raise ValueError("Photo must be 10 MB or smaller.")
+        return v
+
+
+class PhotoCompleteRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    upload_id: str = Field(..., min_length=1, max_length=64)
+
+
+class AdminDelist(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    delisted: bool = Field(..., strict=True)
+    reason: str = Field(default="", max_length=500)
+
+
+class AdminHideProfile(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    hidden: bool = Field(..., strict=True)
+    reason: str = Field(default="", max_length=500)
+
+
 PROFILE_PUBLIC_FIELDS = ("slug", "display_name", "bio", "location",
                          "spotify_url", "instagram_url", "created_at", "updated_at")
 
@@ -1389,8 +1443,35 @@ async def change_vault_consent(request: Request, track_id: str, payload: Consent
 # Sync profile (PRD-03 4.3). Public page arrives in Phase 4b.
 # ---------------------------------------------------------------------------
 
+def _photo_keys(base: str) -> dict:
+    return {size: f"{base}-{size}.webp" for size in PHOTO_SIZES}
+
+
+def _signed_get(key: str, ttl: int = 3600) -> str:
+    return r2_client.generate_presigned_url(
+        "get_object", Params={"Bucket": R2_BUCKET, "Key": key}, ExpiresIn=ttl)
+
+
+async def _r2_delete_quietly(key: str) -> None:
+    try:
+        await asyncio.to_thread(r2_client.delete_object, Bucket=R2_BUCKET, Key=key)
+    except Exception as exc:
+        logger.warning("Could not delete R2 object %s: %s", key, exc)
+
+
 def _profile_view(p: Optional[dict]) -> dict:
-    return {k: p.get(k) for k in PROFILE_PUBLIC_FIELDS} if p else {}
+    if not p:
+        return {}
+    view = {k: p.get(k) for k in PROFILE_PUBLIC_FIELDS}
+    view["photo_url"] = view["photo_thumb_url"] = None
+    if p.get("photo_key"):
+        keys = _photo_keys(p["photo_key"])
+        try:
+            view["photo_url"] = _signed_get(keys[800])
+            view["photo_thumb_url"] = _signed_get(keys[200])
+        except Exception as exc:
+            logger.warning("Could not sign photo URLs: %s", exc)
+    return view
 
 
 @api_router.get("/sync/profile")
@@ -1429,6 +1510,279 @@ async def put_sync_profile(request: Request, payload: SyncProfileUpdate,
         else:
             raise HTTPException(status_code=503, detail="Could not save your profile. Please try again.")
 
+    p = await db.sync_profiles.find_one({"user_id": uid}, {"_id": 0})
+    return _profile_view(p)
+
+
+# ---------------------------------------------------------------------------
+# Public sync pages (PRD-03 6.2, 6.3; decisions 17, 18). Gated by
+# SYNC_PUBLIC_PAGES_ENABLED; the owning artist and admins can always see them.
+# Every "not visible" answer is a 404, so nothing reveals what exists.
+# ---------------------------------------------------------------------------
+
+MAX_WAVEFORM_BYTES = 200 * 1024
+PREVIEW_URL_TTL = int(os.environ.get("SYNC_PREVIEW_URL_TTL_SECONDS", "300"))
+
+
+def _public_pages_enabled() -> bool:
+    return os.environ.get("SYNC_PUBLIC_PAGES_ENABLED", "false") == "true"
+
+
+def _viewer(viewer: Optional[dict]) -> tuple:
+    if not viewer:
+        return None, False
+    return viewer.get("sub"), _role(viewer) == "admin"
+
+
+def _not_found():
+    return HTTPException(status_code=404, detail="Not found")
+
+
+async def _visible_track(track_id: str, viewer: Optional[dict]) -> tuple:
+    """(track doc, profile or None, is_privileged) or 404."""
+    doc = await db.track_submissions.find_one(
+        {"id": track_id}, {"_id": 0, **{f: 0 for f in MATCH_DETAIL_FIELDS}})
+    if not doc or (doc.get("consent") or {}).get("sync") is not True:
+        raise _not_found()
+    uid, is_admin = _viewer(viewer)
+    privileged = is_admin or (uid is not None and uid == doc.get("clerk_user_id"))
+    if not privileged and not (_public_pages_enabled() and is_listed(doc)):
+        raise _not_found()
+    profile = await db.sync_profiles.find_one({"user_id": doc.get("clerk_user_id")}, {"_id": 0})
+    return doc, profile, privileged
+
+
+def _public_profile_with_photo(profile: dict, show_hidden: bool) -> dict:
+    view = public_profile_view(profile, show_hidden)
+    view["photo_url"] = None
+    if photo_visible(profile, show_hidden):
+        try:
+            view["photo_url"] = _signed_get(_photo_keys(profile["photo_key"])[800])
+        except Exception as exc:
+            logger.warning("Could not sign photo URL: %s", exc)
+    return view
+
+
+@api_router.get("/sync/artists/{slug}")
+@limiter.limit("60/minute")
+async def get_public_artist(request: Request, slug: str, viewer: Optional[dict] = Depends(optional_clerk)):
+    profile = await db.sync_profiles.find_one({"slug": slug}, {"_id": 0})
+    if not profile:
+        raise _not_found()
+    uid, is_admin = _viewer(viewer)
+    is_owner = uid is not None and uid == profile.get("user_id")
+    docs = await db.track_submissions.find(
+        {"clerk_user_id": profile["user_id"], **LISTING_FILTER},
+        {"_id": 0, **{f: 0 for f in MATCH_DETAIL_FIELDS}},
+    ).sort("upload_date", -1).to_list(500)
+    public = _public_pages_enabled() and len(docs) > 0
+    if not (is_owner or is_admin or public):
+        raise _not_found()
+    return {
+        "profile": _public_profile_with_photo(profile, show_hidden=is_admin),
+        "tracks": [public_track_view(d, profile) for d in docs],
+        "viewer": {"is_owner": is_owner, "is_admin": is_admin, "public": public},
+    }
+
+
+@api_router.get("/sync/tracks/{track_id}")
+@limiter.limit("60/minute")
+async def get_public_track(request: Request, track_id: str, viewer: Optional[dict] = Depends(optional_clerk)):
+    doc, profile, privileged = await _visible_track(track_id, viewer)
+    uid, is_admin = _viewer(viewer)
+    return {
+        "track": public_track_view(doc, profile),
+        "artist": _public_profile_with_photo(profile, show_hidden=is_admin) if profile else None,
+        "listed": is_listed(doc),
+        "viewer": {"is_owner": privileged and not is_admin, "is_admin": is_admin,
+                   "public": _public_pages_enabled() and is_listed(doc)},
+    }
+
+
+@api_router.get("/sync/tracks/{track_id}/waveform")
+@limiter.limit("120/minute")
+async def get_public_waveform(request: Request, track_id: str, viewer: Optional[dict] = Depends(optional_clerk)):
+    doc, _, _ = await _visible_track(track_id, viewer)
+    key = doc.get("waveform_key")
+    if not key:
+        raise _not_found()
+    try:
+        obj = await asyncio.to_thread(r2_client.get_object, Bucket=R2_BUCKET, Key=key)
+        if (obj.get("ContentLength") or 0) > MAX_WAVEFORM_BYTES:
+            raise ValueError("waveform too large")
+        data = json.loads(await asyncio.to_thread(obj["Body"].read, MAX_WAVEFORM_BYTES + 1))
+        peaks = data.get("peaks")
+        if not isinstance(peaks, list) or len(peaks) > 5000:
+            raise ValueError("bad waveform")
+        peaks = [max(0.0, min(1.0, float(p))) for p in peaks]
+    except Exception as exc:
+        logger.warning("Waveform unavailable for %s: %s", track_id, exc)
+        raise _not_found()
+    return JSONResponse({"version": 1, "points": len(peaks), "peaks": peaks},
+                        headers={"Cache-Control": "private, max-age=3600"})
+
+
+@api_router.post("/sync/tracks/{track_id}/preview")
+@limiter.limit("30/minute")
+async def get_public_preview(request: Request, track_id: str, viewer: Optional[dict] = Depends(optional_clerk)):
+    doc, _, _ = await _visible_track(track_id, viewer)
+    key = doc.get("preview_key")
+    if not key:
+        raise _not_found()
+    try:
+        url = await asyncio.to_thread(
+            r2_client.generate_presigned_url, "get_object",
+            Params={"Bucket": R2_BUCKET, "Key": key, "ResponseContentDisposition": "inline",
+                    "ResponseContentType": "audio/mpeg"},
+            ExpiresIn=PREVIEW_URL_TTL,
+        )
+    except Exception as exc:
+        logger.error("Preview sign failed for %s: %s", track_id, exc)
+        raise HTTPException(status_code=503, detail="Preview unavailable. Please try again.")
+    return {"url": url, "expires_in": PREVIEW_URL_TTL}
+
+
+# ---------------------------------------------------------------------------
+# Admin sync controls (PRD-03 9). Every action is appended to admin_actions.
+# ---------------------------------------------------------------------------
+
+async def _log_admin_action(admin: dict, action: str, target: str, reason: str) -> None:
+    await db.admin_actions.insert_one({
+        "admin_id": admin.get("sub"), "action": action, "target": target,
+        "reason": reason, "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+
+
+@api_router.post("/admin/sync/tracks/{track_id}/delist")
+@limiter.limit("30/minute")
+async def admin_delist_track(request: Request, track_id: str, payload: AdminDelist,
+                             admin: dict = Depends(require_admin)):
+    doc = await db.track_submissions.find_one({"id": track_id}, {"_id": 0, "id": 1})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Track not found")
+    now_iso = datetime.now(timezone.utc).isoformat()
+    if payload.delisted:
+        fields = {"sync_delisted_by_admin": True, "on_sync_profile": False,
+                  "sync_delisted_at": now_iso}
+    else:
+        fields = {"sync_delisted_by_admin": False}
+    await db.track_submissions.update_one({"id": track_id}, {"$set": fields})
+    await _log_admin_action(admin, "delist" if payload.delisted else "relist", track_id, payload.reason)
+    if not payload.delisted:
+        await _run_clearance(track_id)   # re-lists only if it still clears
+    doc = await db.track_submissions.find_one(
+        {"id": track_id}, {"_id": 0, "id": 1, "sync_status": 1, "on_sync_profile": 1,
+                           "sync_delisted_by_admin": 1})
+    return doc
+
+
+@api_router.post("/admin/sync/profiles/{slug}/hide")
+@limiter.limit("30/minute")
+async def admin_hide_profile(request: Request, slug: str, payload: AdminHideProfile,
+                             admin: dict = Depends(require_admin)):
+    p = await db.sync_profiles.find_one({"slug": slug}, {"_id": 0, "slug": 1})
+    if not p:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    await db.sync_profiles.update_one({"slug": slug}, {"$set": {
+        "hidden_by_admin": payload.hidden, "updated_at": datetime.now(timezone.utc).isoformat()}})
+    await _log_admin_action(admin, "hide_profile" if payload.hidden else "unhide_profile",
+                            slug, payload.reason)
+    return {"slug": slug, "hidden_by_admin": payload.hidden}
+
+
+@api_router.get("/admin/sync/profiles")
+@limiter.limit("30/minute")
+async def admin_list_profiles(request: Request, admin: dict = Depends(require_admin)):
+    profiles = await db.sync_profiles.find(
+        {}, {"_id": 0, "slug": 1, "display_name": 1, "hidden_by_admin": 1, "created_at": 1, "updated_at": 1},
+    ).sort("created_at", -1).to_list(2000)
+    return profiles
+
+
+@api_router.post("/sync/profile/photo/presign")
+@limiter.limit("10/minute")
+async def presign_profile_photo(request: Request, payload: PhotoPresignRequest,
+                                clerk_payload: dict = Depends(require_artist)):
+    uid = clerk_payload["sub"]
+    p = await db.sync_profiles.find_one({"user_id": uid}, {"_id": 0, "slug": 1})
+    if not p:
+        raise HTTPException(status_code=409, detail="Save your profile first.")
+    upload_id = str(uuid.uuid4())
+    key = f"profiles/{p['slug']}/incoming/{upload_id}"
+    try:
+        url = await asyncio.to_thread(
+            r2_client.generate_presigned_url, "put_object",
+            Params={"Bucket": R2_BUCKET, "Key": key, "ContentType": payload.content_type,
+                    "ContentLength": payload.file_size},
+            ExpiresIn=600,
+        )
+    except Exception as exc:
+        logger.error("Photo presign failed: %s", exc)
+        raise HTTPException(status_code=500, detail="Could not start the upload.")
+    await db.sync_profiles.update_one({"user_id": uid}, {"$set": {"photo_pending": {
+        "upload_id": upload_id, "key": key, "content_type": payload.content_type,
+        "size": payload.file_size, "created_at": datetime.now(timezone.utc).isoformat(),
+    }}})
+    return {"presigned_url": url, "upload_id": upload_id, "content_type": payload.content_type}
+
+
+@api_router.post("/sync/profile/photo/complete")
+@limiter.limit("10/minute")
+async def complete_profile_photo(request: Request, payload: PhotoCompleteRequest,
+                                 clerk_payload: dict = Depends(require_artist)):
+    uid = clerk_payload["sub"]
+    p = await db.sync_profiles.find_one({"user_id": uid}, {"_id": 0})
+    pending = (p or {}).get("photo_pending") or {}
+    if not p or pending.get("upload_id") != payload.upload_id:
+        raise HTTPException(status_code=404, detail="Upload not found.")
+    incoming = pending["key"]
+    try:
+        try:
+            head = await asyncio.to_thread(r2_client.head_object, Bucket=R2_BUCKET, Key=incoming)
+            if head.get("ContentLength") != pending.get("size"):
+                raise PhotoRejected(REJECT_MESSAGE)
+            obj = await asyncio.to_thread(r2_client.get_object, Bucket=R2_BUCKET, Key=incoming)
+            data = await asyncio.to_thread(obj["Body"].read)
+            images = await asyncio.to_thread(process_photo, data)
+        except PhotoRejected as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+        except HTTPException:
+            raise
+        except Exception as exc:
+            logger.error("Photo processing failed for %s: %s", p.get("slug"), exc)
+            raise HTTPException(status_code=422, detail=REJECT_MESSAGE)
+
+        base = f"profiles/{p['slug']}/photo/{uuid.uuid4()}"
+        keys = _photo_keys(base)
+        for size, body in images.items():
+            await asyncio.to_thread(r2_client.put_object, Bucket=R2_BUCKET, Key=keys[size],
+                                    Body=body, ContentType="image/webp")
+        await db.sync_profiles.update_one({"user_id": uid}, {
+            "$set": {"photo_key": base, "updated_at": datetime.now(timezone.utc).isoformat()}})
+        if p.get("photo_key"):
+            for key in _photo_keys(p["photo_key"]).values():
+                await _r2_delete_quietly(key)
+    finally:
+        # The original upload never stays in R2, whatever happened above.
+        await _r2_delete_quietly(incoming)
+        await db.sync_profiles.update_one({"user_id": uid}, {"$unset": {"photo_pending": ""}})
+
+    p = await db.sync_profiles.find_one({"user_id": uid}, {"_id": 0})
+    return _profile_view(p)
+
+
+@api_router.delete("/sync/profile/photo")
+@limiter.limit("10/minute")
+async def delete_profile_photo(request: Request, clerk_payload: dict = Depends(require_artist)):
+    uid = clerk_payload["sub"]
+    p = await db.sync_profiles.find_one({"user_id": uid}, {"_id": 0})
+    if not p:
+        raise HTTPException(status_code=404, detail="Profile not found.")
+    if p.get("photo_key"):
+        await db.sync_profiles.update_one({"user_id": uid}, {
+            "$set": {"photo_key": None, "updated_at": datetime.now(timezone.utc).isoformat()}})
+        for key in _photo_keys(p["photo_key"]).values():
+            await _r2_delete_quietly(key)
     p = await db.sync_profiles.find_one({"user_id": uid}, {"_id": 0})
     return _profile_view(p)
 
