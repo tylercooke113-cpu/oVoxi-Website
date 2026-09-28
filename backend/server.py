@@ -32,6 +32,7 @@ from sync_constants import (
     DISTRIBUTORS, PRO_ORGS, IPI_PATTERN,
 )
 from consent_ledger import record_grants, GRANT_VERSION
+from rights import TrackRightsIn, build_rights
 from starlette.middleware.cors import CORSMiddleware
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
@@ -691,7 +692,7 @@ class SyncIntake(BaseModel):
         else:
             _one_of(self.pro_name, PRO_ORGS, "PRO")
             if not self.ipi or not re.fullmatch(IPI_PATTERN, self.ipi):
-                raise ValueError("IPI must be 9 to 11 digits.")
+                raise ValueError("IPI must be 9 or 11 digits.")
         return self
 
 
@@ -709,6 +710,7 @@ class PresignRequest(BaseModel):
     moods: List[str]                        # required, no default
     vocals: str                             # required, no default
     sync_intake: Optional[SyncIntake] = None
+    rights: Optional[TrackRightsIn] = None
 
     @field_validator("moods")
     @classmethod
@@ -734,6 +736,8 @@ class PresignRequest(BaseModel):
             raise ValueError("Sync details are required when sync is selected.")
         if not self.consent_sync and self.sync_intake is not None:
             raise ValueError("Sync details were sent without sync consent.")
+        if self.rights is None:
+            raise ValueError("Add the splits for this upload.")
         return self
 
 
@@ -799,6 +803,7 @@ class TrackSubmission(BaseModel):
     consent_grant_version: Optional[str] = None
     metadata: Optional[dict] = None
     intake: Optional[dict] = None
+    rights: Optional[dict] = None
 
 
 # ---------------------------------------------------------------------------
@@ -993,6 +998,10 @@ async def presign_upload(request: Request, payload: PresignRequest, clerk_payloa
         }
     else:
         doc.pop('intake', None)
+    doc['rights'] = build_rights(
+        payload.rights, intake=payload.sync_intake,
+        clerk_user_id=clerk_user_id, now_iso=now_iso,
+    )
     await db.track_submissions.insert_one(doc)
 
     return {

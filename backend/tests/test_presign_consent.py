@@ -52,7 +52,14 @@ def base(**overrides):
         "consent_sync": False,
         "moods": ["Chill", "Dreamy"],
         "vocals": "vocal",
+        "rights": rights(),
     }
+    body.update(overrides)
+    return body
+
+
+def rights(**overrides):
+    body = {"owns_everything": True, "self_legal_name": "Test Person", "attested": True}
     body.update(overrides)
     return body
 
@@ -201,7 +208,7 @@ def test_not_affiliated_clean_accepted(client, fake_db):
     assert resp.status_code == 200, resp.text
 
 
-@pytest.mark.parametrize("ipi", [None, "12345678", "12345abc901"])
+@pytest.mark.parametrize("ipi", [None, "12345678", "1234567890", "12345abc901"])
 def test_bad_ipi_rejected(client, fake_db, ipi):
     assert_rejected(post(client, sync_body(ipi=ipi)), fake_db)
 
@@ -210,8 +217,9 @@ def test_unknown_pro_rejected(client, fake_db):
     assert_rejected(post(client, sync_body(pro_name="Spotify")), fake_db)
 
 
-def test_valid_pro_and_11_digit_ipi_accepted(client, fake_db):
-    resp = post(client, sync_body(pro_name="ASCAP", ipi="12345678901"))
+@pytest.mark.parametrize("ipi", ["123456789", "12345678901"])
+def test_valid_pro_and_9_or_11_digit_ipi_accepted(client, fake_db, ipi):
+    resp = post(client, sync_body(pro_name="ASCAP", ipi=ipi))
     assert resp.status_code == 200, resp.text
 
 

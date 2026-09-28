@@ -27,5 +27,11 @@ PRO_ORGS = (
     "APRA AMCOS", "SACEM", "GEMA", "SAMRO", "COSON", "Other",
 )
 
-# IPI name numbers are up to 11 digits. Deliberately loose.
-IPI_PATTERN = r"^\d{9,11}$"
+# IPI name numbers: 11 digits, or 9 for older CAE numbers (PRD-03 decision 8).
+IPI_PATTERN = r"^(\d{9}|\d{11})$"
+
+# Rights (splits). See docs/PRD-02 section 3.
+MAX_PARTIES = 4
+TOTAL_BP = 10000  # basis points, 100.00%
+WRITER_ROLES = ("CA", "C", "A", "AR", "AD", "TR")
+PUBLISHER_ROLES = ("E", "AM", "SE", "PA")
