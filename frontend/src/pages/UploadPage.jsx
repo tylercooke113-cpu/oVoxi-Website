@@ -28,6 +28,7 @@ import {
   PRO_ORGS,
   IPI_PATTERN,
 } from '../sync/constants';
+import RightsSection, { emptyRights, isRightsValid, buildRightsPayload } from '../sync/RightsSection';
 
 const API = `https://ovoxi-website-production.up.railway.app/api`;
 
@@ -100,10 +101,18 @@ const UploadPage = () => {
   const [consentAi, setConsentAi] = useState(false);
   const [consentSync, setConsentSync] = useState(false);
   const [intake, setIntake] = useState(EMPTY_INTAKE);
+  const [rights, setRights] = useState(emptyRights);
 
   if (isLoaded && !isSignedIn) return <Navigate to='/login' replace />;
 
-  const update = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
+  const update = (key) => (e) => {
+    const { value } = e.target;
+    setForm((f) => ({ ...f, [key]: value }));
+    // Prefill the legal name from the artist name until the artist edits it (PRD-02 10.1).
+    if (key === 'artist_name') {
+      setRights((r) => (r.legal_name_touched ? r : { ...r, self_legal_name: value }));
+    }
+  };
   const setIntakeField = (key, value) => setIntake((i) => ({ ...i, [key]: value }));
 
   const toggleMood = (m) => {
@@ -138,6 +147,7 @@ const UploadPage = () => {
     setConsentAi(false);
     setConsentSync(false);
     setIntake(EMPTY_INTAKE);
+    setRights(emptyRights());
   };
 
   const missing = [];
@@ -147,6 +157,7 @@ const UploadPage = () => {
   if (moods.length < 1) missing.push('mood');
   if (!vocals) missing.push('vocals');
   if (!consentAi && !consentSync) missing.push('how it can be used');
+  if (!isRightsValid(rights)) missing.push('splits');
   if (consentSync && !isIntakeValid(intake)) missing.push('sync details');
   if (!file) missing.push('audio file');
   const canSubmit = missing.length === 0;
@@ -201,6 +212,7 @@ const UploadPage = () => {
         consent_sync: consentSync,
         moods,
         vocals,
+        rights: buildRightsPayload(rights),
         ...(consentSync ? { sync_intake: buildIntakePayload(intake) } : {}),
       }, {
         headers: { Authorization: `Bearer ${token}` }
@@ -474,6 +486,9 @@ const UploadPage = () => {
                 )}
               </div>
 
+              {/* Splits (every upload) */}
+              <RightsSection value={rights} onChange={setRights} disabled={isUploading} />
+
               {/* Sync details */}
               {consentSync && (
                 <div
@@ -596,12 +611,12 @@ const UploadPage = () => {
                               maxLength={11}
                               value={intake.ipi}
                               onChange={(e) => setIntakeField('ipi', e.target.value.replace(/\D/g, ''))}
-                              placeholder="9 to 11 digits"
+                              placeholder="9 or 11 digits"
                               disabled={isUploading}
                               className="border-white/10 bg-ink text-white placeholder:text-slate-600 focus-visible:ring-electric"
                             />
                             {intake.ipi && !IPI_PATTERN.test(intake.ipi) && (
-                              <p className="text-xs text-red-400">IPI must be 9 to 11 digits.</p>
+                              <p className="text-xs text-red-400">IPI must be 9 or 11 digits.</p>
                             )}
                           </div>
                         </div>

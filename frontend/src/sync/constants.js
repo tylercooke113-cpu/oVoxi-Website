@@ -35,4 +35,25 @@ export const PRO_ORGS = [
   'APRA AMCOS', 'SACEM', 'GEMA', 'SAMRO', 'COSON', 'Other',
 ];
 
-export const IPI_PATTERN = /^\d{9,11}$/;
+// IPI name numbers: 11 digits, or 9 for older CAE numbers (PRD-03 decision 8).
+export const IPI_PATTERN = /^(\d{9}|\d{11})$/;
+
+// Rights (splits). See docs/PRD-02 section 3.
+export const MAX_PARTIES = 4;
+export const TOTAL_BP = 10000; // basis points, 100.00%
+
+export const WRITER_ROLES = [
+  { value: 'CA', label: 'Composer & lyricist' },
+  { value: 'C', label: 'Composer' },
+  { value: 'A', label: 'Lyricist' },
+  { value: 'AR', label: 'Arranger' },
+  { value: 'AD', label: 'Adaptor' },
+  { value: 'TR', label: 'Translator' },
+];
+
+export const PUBLISHER_ROLES = [
+  { value: 'E', label: 'Original publisher' },
+  { value: 'AM', label: 'Administrator' },
+  { value: 'SE', label: 'Sub-publisher' },
+  { value: 'PA', label: 'Income participant' },
+];
