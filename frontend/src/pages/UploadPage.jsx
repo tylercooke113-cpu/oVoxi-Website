@@ -27,6 +27,10 @@ import {
   DISTRIBUTORS,
   PRO_ORGS,
   IPI_PATTERN,
+  BPM_MIN,
+  BPM_MAX,
+  MAJOR_KEYS,
+  MINOR_KEYS,
 } from '../sync/constants';
 import RightsSection, { emptyRights, isRightsValid, buildRightsPayload } from '../sync/RightsSection';
 
@@ -98,6 +102,10 @@ const UploadPage = () => {
   const [moods, setMoods] = useState([]);
   const [moodLimitHit, setMoodLimitHit] = useState(false);
   const [vocals, setVocals] = useState('');
+  const [bpm, setBpm] = useState('');
+  const [bpmUnsure, setBpmUnsure] = useState(false);
+  const [musicalKey, setMusicalKey] = useState('');
+  const [keyUnsure, setKeyUnsure] = useState(false);
   const [consentAi, setConsentAi] = useState(false);
   const [consentSync, setConsentSync] = useState(false);
   const [intake, setIntake] = useState(EMPTY_INTAKE);
@@ -144,6 +152,10 @@ const UploadPage = () => {
     setMoods([]);
     setMoodLimitHit(false);
     setVocals('');
+    setBpm('');
+    setBpmUnsure(false);
+    setMusicalKey('');
+    setKeyUnsure(false);
     setConsentAi(false);
     setConsentSync(false);
     setIntake(EMPTY_INTAKE);
@@ -156,6 +168,10 @@ const UploadPage = () => {
   if (!form.genre) missing.push('genre');
   if (moods.length < 1) missing.push('mood');
   if (!vocals) missing.push('vocals');
+  const bpmNumber = parseFloat(bpm);
+  const bpmValid = Number.isFinite(bpmNumber) && bpmNumber >= BPM_MIN && bpmNumber <= BPM_MAX;
+  if (!bpmUnsure && !bpmValid) missing.push('BPM');
+  if (!keyUnsure && !musicalKey) missing.push('key');
   if (!consentAi && !consentSync) missing.push('how it can be used');
   if (!isRightsValid(rights)) missing.push('splits');
   if (consentSync && !isIntakeValid(intake)) missing.push('sync details');
@@ -212,6 +228,8 @@ const UploadPage = () => {
         consent_sync: consentSync,
         moods,
         vocals,
+        ...(bpmUnsure ? { bpm_unsure: true } : { bpm: Math.round(bpmNumber * 10) / 10 }),
+        ...(keyUnsure ? { key_unsure: true } : { key: musicalKey }),
         rights: buildRightsPayload(rights),
         ...(consentSync ? { sync_intake: buildIntakePayload(intake) } : {}),
       }, {
@@ -436,6 +454,73 @@ const UploadPage = () => {
                   </div>
                 </div>
               </div>
+
+              {/* BPM and key: the artist's answer is the source of truth (PRD-03 4.4) */}
+              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="upload-bpm" className="text-slate-300">BPM *</Label>
+                  <Input
+                    id="upload-bpm"
+                    data-testid="upload-bpm-input"
+                    inputMode="decimal"
+                    value={bpm}
+                    onChange={(e) => {
+                      const v = e.target.value.replace(/[^0-9.]/g, '');
+                      const [whole, ...rest] = v.split('.');
+                      setBpm(rest.length ? `${whole.slice(0, 3)}.${rest.join('').slice(0, 1)}` : whole.slice(0, 3));
+                    }}
+                    placeholder="e.g. 128"
+                    disabled={isUploading || bpmUnsure}
+                    className="border-white/10 bg-ink text-white placeholder:text-slate-600 focus-visible:ring-electric"
+                  />
+                  {!bpmUnsure && bpm && !bpmValid && (
+                    <p className="text-xs text-red-400">BPM must be between {BPM_MIN} and {BPM_MAX}.</p>
+                  )}
+                  <label className="flex cursor-pointer items-center gap-2 text-xs text-slate-400">
+                    <Checkbox
+                      data-testid="upload-bpm-unsure"
+                      checked={bpmUnsure}
+                      onCheckedChange={(v) => { setBpmUnsure(v === true); if (v === true) setBpm(''); }}
+                      disabled={isUploading}
+                      className={CHECKBOX_CLASS}
+                    />
+                    I'm unsure
+                  </label>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-slate-300">Key *</Label>
+                  <Select
+                    value={musicalKey}
+                    onValueChange={setMusicalKey}
+                    disabled={isUploading || keyUnsure}
+                  >
+                    <SelectTrigger
+                      data-testid="upload-key-select"
+                      className="border-white/10 bg-ink text-white focus:ring-electric"
+                    >
+                      <SelectValue placeholder="Select key" />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-72 border-white/10 bg-ink-2 text-white">
+                      {[...MAJOR_KEYS, ...MINOR_KEYS].map((k) => (
+                        <SelectItem key={k} value={k}>{k}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <label className="flex cursor-pointer items-center gap-2 text-xs text-slate-400">
+                    <Checkbox
+                      data-testid="upload-key-unsure"
+                      checked={keyUnsure}
+                      onCheckedChange={(v) => { setKeyUnsure(v === true); if (v === true) setMusicalKey(''); }}
+                      disabled={isUploading}
+                      className={CHECKBOX_CLASS}
+                    />
+                    I'm unsure
+                  </label>
+                </div>
+              </div>
+              <p className="-mt-3 text-xs text-slate-500">
+                Use the tempo and key from your session. We double-check them after processing.
+              </p>
 
               <div className="border-t border-white/10" />
 

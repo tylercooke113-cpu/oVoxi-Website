@@ -57,3 +57,10 @@ export const PUBLISHER_ROLES = [
   { value: 'SE', label: 'Sub-publisher' },
   { value: 'PA', label: 'Income participant' },
 ];
+
+// BPM and key at upload (PRD-03 4.4). Must match backend/sync_constants.py.
+export const BPM_MIN = 20;
+export const BPM_MAX = 300;
+const PITCHES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+export const MAJOR_KEYS = PITCHES.map((p) => `${p} major`);
+export const MINOR_KEYS = PITCHES.map((p) => `${p} minor`);
