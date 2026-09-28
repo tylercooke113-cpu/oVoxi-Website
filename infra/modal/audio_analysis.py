@@ -21,6 +21,8 @@ PREVIEW_BITRATE = "320k"
 WAVEFORM_POINTS = 800
 WAVEFORM_VERSION = 1
 ANALYSIS_SR = 22050
+TEMPO_HOP = 128          # ~172 onset frames per second: fine tempo resolution
+BPM_SNAP = 0.2           # snap to a whole BPM when this close (DAW tempos are whole numbers)
 
 PITCHES = ("C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B")
 MAJOR_PROFILE = np.array([6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88])
@@ -62,42 +64,81 @@ def write_waveform(peaks: list, dst: Path) -> None:
 
 
 def detect_bpm(y: np.ndarray, sr: int = ANALYSIS_SR) -> Optional[float]:
+    """Tempo from the spacing of onsets across the whole track.
+
+    1. Coarse estimate with librosa.feature.tempo (not beat.beat_track: in
+       librosa 0.10.1 beat_track calls scipy.signal.hann, removed in scipy >= 1.13).
+    2. Refine: autocorrelate the onset envelope at a fine hop and interpolate
+       the peak near the coarse lag, so the result is not limited to whole frames.
+    3. Snap to the nearest whole BPM when within BPM_SNAP.
+    """
     import librosa
     if y.size == 0 or not np.any(y):
         return None
-    # librosa.feature.tempo, not beat.beat_track: in librosa 0.10.1 beat_track
-    # calls scipy.signal.hann, which scipy >= 1.13 removed. The tempo estimate
-    # is the same one beat_track uses internally.
-    tempo = librosa.feature.tempo(y=y, sr=sr)
-    bpm = float(np.atleast_1d(tempo)[0])
+    onset = librosa.onset.onset_strength(y=y, sr=sr, hop_length=TEMPO_HOP)
+    if not np.any(onset):
+        return None
+    coarse = float(np.atleast_1d(
+        librosa.feature.tempo(onset_envelope=onset, sr=sr, hop_length=TEMPO_HOP))[0])
+    if not np.isfinite(coarse) or coarse <= 0:
+        return None
+
+    fps = sr / TEMPO_HOP
+    lag0 = fps * 60.0 / coarse
+    ac = librosa.autocorrelate(onset - onset.mean(), max_size=int(lag0 * 1.5) + 3)
+    lo, hi = max(1, int(lag0 * 0.9)), min(len(ac) - 2, int(lag0 * 1.1) + 1)
+    if hi <= lo:
+        return round(coarse, 1)
+    k = lo + int(np.argmax(ac[lo:hi + 1]))
+    a, b, c = ac[k - 1], ac[k], ac[k + 1]
+    denom = a - 2 * b + c
+    offset = 0.5 * (a - c) / denom if denom != 0 else 0.0
+    lag = k + float(np.clip(offset, -0.5, 0.5))
+    bpm = fps * 60.0 / lag
+
     if not np.isfinite(bpm) or bpm <= 0:
         return None
+    nearest = round(bpm)
+    if abs(bpm - nearest) <= BPM_SNAP:
+        return float(nearest)
     return round(bpm, 1)
 
 
 def detect_key(y: np.ndarray, sr: int = ANALYSIS_SR) -> Optional[str]:
-    """Krumhansl-Schmuckler: correlate the average chroma with all 24 rotated
-    key profiles and take the best. Returns e.g. "A minor"."""
+    result = detect_key_with_confidence(y, sr)
+    return result[0] if result else None
+
+
+def detect_key_with_confidence(y: np.ndarray, sr: int = ANALYSIS_SR) -> Optional[tuple]:
+    """Krumhansl-Schmuckler on the harmonic part of the signal, tuning-corrected.
+
+    Returns (key, confidence): e.g. ("A minor", 0.12). Confidence is the gap
+    between the best and second-best correlation (0 = a toss-up). None on silence.
+    """
     import librosa
     if y.size == 0 or not np.any(y):
         return None
-    chroma = librosa.feature.chroma_cqt(y=y, sr=sr)
+    harmonic = librosa.effects.harmonic(y)
+    if not np.any(harmonic):
+        return None
+    tuning = librosa.estimate_tuning(y=harmonic, sr=sr)
+    chroma = librosa.feature.chroma_cqt(y=harmonic, sr=sr, tuning=tuning)
     profile = chroma.mean(axis=1)
     if not np.any(profile) or np.allclose(profile, profile[0]):
         return None
-    best, best_score = None, -np.inf
+    scores = []
     for tonic in range(12):
         for mode, ref in (("major", MAJOR_PROFILE), ("minor", MINOR_PROFILE)):
-            score = np.corrcoef(profile, np.roll(ref, tonic))[0, 1]
-            if score > best_score:
-                best, best_score = f"{PITCHES[tonic]} {mode}", score
-    return best
+            scores.append((np.corrcoef(profile, np.roll(ref, tonic))[0, 1], f"{PITCHES[tonic]} {mode}"))
+    scores.sort(reverse=True)
+    return scores[0][1], round(float(scores[0][0] - scores[1][0]), 4)
 
 
 def analyze(mastered: Path, workdir: Path) -> dict:
     """Run every step independently. A failed step leaves its result as None
     and is listed in `errors`; it never raises."""
-    out = {"preview_path": None, "waveform_path": None, "bpm": None, "key": None, "errors": []}
+    out = {"preview_path": None, "waveform_path": None, "bpm": None, "key": None,
+           "key_confidence": None, "errors": []}
 
     try:
         preview = workdir / "preview.mp3"
@@ -115,12 +156,15 @@ def analyze(mastered: Path, workdir: Path) -> dict:
     for name, step in (
         ("waveform", lambda: _waveform_step(y, workdir)),
         ("bpm", lambda: detect_bpm(y)),
-        ("key", lambda: detect_key(y)),
+        ("key", lambda: detect_key_with_confidence(y)),
     ):
         try:
             result = step()
             if name == "waveform":
                 out["waveform_path"] = result
+            elif name == "key":
+                if result:
+                    out["key"], out["key_confidence"] = result
             else:
                 out[name] = result
         except Exception as exc:

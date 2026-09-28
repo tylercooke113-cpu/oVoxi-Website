@@ -488,6 +488,8 @@ def separate_stems(
                     analysis["bpm"] = res["bpm"]
                 if res["key"] is not None:
                     analysis["key"] = res["key"]
+                    if res.get("key_confidence") is not None:
+                        analysis["key_confidence"] = res["key_confidence"]
                 log.info("Analysis for %s: %s", submission_id,
                          {k: v for k, v in analysis.items() if k in ("bpm", "key")})
             except Exception as exc:

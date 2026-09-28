@@ -84,7 +84,15 @@ def check_metadata(doc: dict) -> dict:
     stems = doc.get("stem_paths") or {}
     if not all(stems.get(name) for name in STEM_NAMES):
         missing.append("stems")
-    return _ok() if not missing else _fail("missing: " + ", ".join(missing))
+    # PRD-03 4.4: a value held for artist confirmation does not pass.
+    confirm = [f for f in ("bpm", "key")
+               if meta.get(f) not in (None, "") and meta.get(f"{f}_needs_confirmation") is True]
+    parts = []
+    if missing:
+        parts.append("missing: " + ", ".join(missing))
+    if confirm:
+        parts.append("confirm: " + ", ".join(confirm))
+    return _ok() if not parts else _fail("; ".join(parts))
 
 
 CHECKS = (

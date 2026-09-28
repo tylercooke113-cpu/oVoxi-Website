@@ -31,12 +31,39 @@ def click_track(bpm, seconds, sr=SR):
     return y
 
 
-def midi(n):
-    return 440.0 * 2 ** ((n - 69) / 12)
+def drum_loop(bpm, seconds, sr=SR):
+    """Kick on 1 and 3, noise snare on 2 and 4, eighth-note hats."""
+    rng = np.random.default_rng(0)
+    y = np.zeros(int(seconds * sr))
+    beat = sr * 60 / bpm
+    kick = np.exp(-np.arange(4000) / 600) * np.sin(2 * np.pi * 55 * np.arange(4000) / sr)
+    snare = np.exp(-np.arange(3000) / 400) * rng.standard_normal(3000) * 0.5
+    hat = np.exp(-np.arange(800) / 100) * rng.standard_normal(800) * 0.2
+    n = 0
+    while int((n + 1) * beat) + 4000 < len(y):
+        s = int(n * beat)
+        hit = kick if n % 2 == 0 else snare
+        y[s:s + len(hit)] += hit
+        for half in (0, 0.5):
+            h = int(s + half * beat)
+            y[h:h + 800] += hat
+        n += 1
+    return y
 
 
-def progression(chords, seconds_each=2.0, repeats=3):
-    return np.concatenate([tone([midi(n) for n in c], seconds_each) for _ in range(repeats) for c in chords])
+def midi(n, cents=0):
+    return 440.0 * 2 ** ((n - 69) / 12 + cents / 1200)
+
+
+def progression(chords, seconds_each=2.0, repeats=3, cents=0):
+    return np.concatenate([tone([midi(n, cents) for n in c], seconds_each)
+                           for _ in range(repeats) for c in chords])
+
+
+C_MAJOR = [(60, 64, 67), (65, 69, 72), (67, 71, 74), (60, 64, 67)]
+A_MINOR = [(57, 60, 64), (62, 65, 69), (64, 67, 71), (57, 60, 64)]
+D_MINOR = [(62, 65, 69), (67, 70, 74), (69, 72, 76), (62, 65, 69)]
+D_MAJOR = [(62, 66, 69), (67, 71, 74), (69, 73, 76), (62, 66, 69)]
 
 
 @pytest.fixture
@@ -48,21 +75,34 @@ def wav(tmp_path):
     return _write
 
 
-def test_bpm_click_track_120(wav):
-    y = aa.load_mono(wav(click_track(120, 30)))
-    assert aa.detect_bpm(y) == pytest.approx(120, abs=3)
+@pytest.mark.parametrize("bpm", [75, 87, 90, 120, 128, 130, 140])
+def test_bpm_click_track_exact_whole_number(wav, bpm):
+    # Regression: the coarse estimator could only return tempo "rungs"
+    # (89.1 for 90, 129.2 for 130). Refined and snapped, it must be exact.
+    y = aa.load_mono(wav(click_track(bpm, 40)))
+    assert aa.detect_bpm(y) == float(bpm)
 
 
-def test_key_c_major_progression(wav):
-    # I - IV - V - I in C major
-    y = aa.load_mono(wav(progression([(60, 64, 67), (65, 69, 72), (67, 71, 74), (60, 64, 67)])))
-    assert aa.detect_key(y) == "C major"
+def test_bpm_fractional_tempo_kept(wav):
+    y = aa.load_mono(wav(click_track(93.5, 40)))
+    assert aa.detect_bpm(y) == 93.5
 
 
-def test_key_a_minor_progression(wav):
-    # i - iv - v - i in A minor
-    y = aa.load_mono(wav(progression([(57, 60, 64), (62, 65, 69), (64, 67, 71), (57, 60, 64)])))
-    assert aa.detect_key(y) == "A minor"
+@pytest.mark.parametrize("bpm", [90, 97, 128, 130])
+def test_bpm_drum_loop_exact(wav, bpm):
+    y = aa.load_mono(wav(drum_loop(bpm, 40)))
+    assert aa.detect_bpm(y) == float(bpm)
+
+
+@pytest.mark.parametrize("chords, expected", [
+    (C_MAJOR, "C major"), (A_MINOR, "A minor"), (D_MINOR, "D minor"), (D_MAJOR, "D major"),
+])
+@pytest.mark.parametrize("cents", [0, 35])
+def test_key_progressions_including_detuned(wav, chords, expected, cents):
+    # I-IV-V-I / i-iv-v-i. 35 cents sharp checks the tuning correction.
+    key, confidence = aa.detect_key_with_confidence(aa.load_mono(wav(progression(chords, cents=cents))))
+    assert key == expected
+    assert confidence > 0
 
 
 def test_silence_gives_none(wav):
@@ -81,7 +121,7 @@ def test_waveform_shape_and_scale():
 
 
 def test_analyze_end_to_end(wav, tmp_path):
-    src = wav(progression([(60, 64, 67), (65, 69, 72), (67, 71, 74), (60, 64, 67)]))
+    src = wav(progression(C_MAJOR))
     out = aa.analyze(src, tmp_path)
     assert out["errors"] == []
     assert out["preview_path"].exists()
@@ -89,6 +129,7 @@ def test_analyze_end_to_end(wav, tmp_path):
     assert data["version"] == 1 and data["points"] == aa.WAVEFORM_POINTS
     assert len(data["peaks"]) == aa.WAVEFORM_POINTS
     assert out["key"] == "C major"
+    assert out["key_confidence"] > 0
     assert out["bpm"] is None or out["bpm"] > 0
 
 

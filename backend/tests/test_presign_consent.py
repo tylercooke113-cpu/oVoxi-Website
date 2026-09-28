@@ -52,6 +52,8 @@ def base(**overrides):
         "consent_sync": False,
         "moods": ["Chill", "Dreamy"],
         "vocals": "vocal",
+        "bpm": 120.0,
+        "key": "C major",
         "rights": rights(),
     }
     body.update(overrides)
@@ -116,7 +118,11 @@ def test_ai_only(client, fake_db):
     doc = inserted_doc(fake_db)
     assert doc["consent"] == {"ai_training": True, "sync": False}
     assert doc["consent_grant_version"] == "draft-0"
-    assert doc["metadata"] == {"moods": ["Chill", "Dreamy"], "vocals": "vocal"}
+    assert doc["metadata"] == {
+        "moods": ["Chill", "Dreamy"], "vocals": "vocal",
+        "bpm": 120.0, "bpm_source": "artist", "bpm_unsure": False,
+        "key": "C major", "key_source": "artist", "key_unsure": False,
+    }
     assert "intake" not in doc
 
 

@@ -34,6 +34,7 @@ from sync_constants import (
 from consent_ledger import record_grants, GRANT_VERSION
 from rights import TrackRightsIn, build_rights
 from clearance import evaluate as evaluate_clearance
+from metadata_reconcile import reconcile as reconcile_metadata
 from starlette.middleware.cors import CORSMiddleware
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
@@ -748,6 +749,10 @@ class PresignRequest(BaseModel):
     vocals: str                             # required, no default
     sync_intake: Optional[SyncIntake] = None
     rights: Optional[TrackRightsIn] = None
+    bpm: Optional[float] = None
+    bpm_unsure: bool = False
+    key: Optional[str] = None
+    key_unsure: bool = False
 
     @field_validator("moods")
     @classmethod
@@ -765,6 +770,22 @@ class PresignRequest(BaseModel):
     def _vocals(cls, v):
         return _one_of(v, VOCALS, "vocals value")
 
+    @field_validator("bpm")
+    @classmethod
+    def _bpm(cls, v):
+        if v is None:
+            return v
+        if not BPM_MIN <= v <= BPM_MAX:
+            raise ValueError(f"BPM must be between {BPM_MIN} and {BPM_MAX}.")
+        return round(float(v), 1)
+
+    @field_validator("key")
+    @classmethod
+    def _key(cls, v):
+        if v is None:
+            return v
+        return _one_of(v, MUSICAL_KEYS, "key")
+
     @model_validator(mode="after")
     def _consent_rules(self):
         if not (self.consent_ai_training or self.consent_sync):
@@ -775,6 +796,14 @@ class PresignRequest(BaseModel):
             raise ValueError("Sync details were sent without sync consent.")
         if self.rights is None:
             raise ValueError("Add the splits for this upload.")
+        if self.bpm is None and not self.bpm_unsure:
+            raise ValueError("Enter the BPM or choose I'm unsure.")
+        if self.bpm is not None and self.bpm_unsure:
+            raise ValueError("Choose a BPM or I'm unsure, not both.")
+        if self.key is None and not self.key_unsure:
+            raise ValueError("Enter the key or choose I'm unsure.")
+        if self.key is not None and self.key_unsure:
+            raise ValueError("Choose a key or I'm unsure, not both.")
         return self
 
 
@@ -1022,7 +1051,16 @@ async def presign_upload(request: Request, payload: PresignRequest, clerk_payloa
     doc['expected_size'] = payload.file_size
     doc['consent'] = {"ai_training": payload.consent_ai_training, "sync": payload.consent_sync}
     doc['consent_grant_version'] = GRANT_VERSION
-    doc['metadata'] = {"moods": payload.moods, "vocals": payload.vocals}
+    doc['metadata'] = {
+        "moods": payload.moods,
+        "vocals": payload.vocals,
+        "bpm": payload.bpm,
+        "bpm_source": "artist" if payload.bpm is not None else None,
+        "bpm_unsure": payload.bpm_unsure,
+        "key": payload.key,
+        "key_source": "artist" if payload.key is not None else None,
+        "key_unsure": payload.key_unsure,
+    }
     if payload.consent_sync:
         doc['intake'] = {
             "samples": payload.sync_intake.samples,
@@ -1328,7 +1366,7 @@ async def stems_callback(request: Request):
         raise HTTPException(status_code=400, detail=f"Unknown status: {status!r}")
 
     doc = await db.track_submissions.find_one(
-        {"id": sid}, {"_id": 0, "status": 1, "original_r2_path": 1}
+        {"id": sid}, {"_id": 0, "status": 1, "original_r2_path": 1, "metadata": 1}
     )
     if not doc:
         raise HTTPException(status_code=404, detail="Submission not found")
@@ -1385,21 +1423,27 @@ async def stems_callback(request: Request):
             else:
                 logger.error("Callback %s: %s outside expected path, dropped", sid, field)
 
+        bpm_detected = None
         bpm = payload.get("bpm")
         if bpm is not None:
             if isinstance(bpm, (int, float)) and not isinstance(bpm, bool) and BPM_MIN <= bpm <= BPM_MAX:
-                extra["metadata.bpm"] = round(float(bpm), 1)
-                extra["metadata.bpm_source"] = "detected"
+                bpm_detected = round(float(bpm), 1)
             else:
                 logger.warning("Callback %s: bpm %r out of range, dropped", sid, bpm)
 
+        key_detected = None
         key = payload.get("key")
         if key is not None:
             if key in MUSICAL_KEYS:
-                extra["metadata.key"] = key
-                extra["metadata.key_source"] = "detected"
+                key_detected = key
+                conf = payload.get("key_confidence")
+                if isinstance(conf, (int, float)) and not isinstance(conf, bool) and 0 <= conf <= 1:
+                    extra["metadata.key_detected_confidence"] = float(conf)
             else:
                 logger.warning("Callback %s: key %r not recognised, dropped", sid, key)
+
+        # PRD-03 4.4: the artist's answer wins; detection only confirms or holds it.
+        extra.update(reconcile_metadata(doc.get("metadata") or {}, bpm_detected, key_detected))
         matched = await _set_status(sid, "completed", extra, match={"status": "processing"})
         if matched == 0:
             logger.warning("Callback completed for %s but document no longer processing — ignored", sid)
