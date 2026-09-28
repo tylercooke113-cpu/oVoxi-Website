@@ -4,6 +4,8 @@ import { Navigate } from 'react-router-dom';
 import axios from 'axios';
 import { Loader2, Music2, ExternalLink, RefreshCw, CheckCircle2, XCircle } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import TrackSyncPanel from '../sync/TrackSyncPanel';
+import SyncProfileTab from '../sync/SyncProfileTab';
 
 const API = 'https://ovoxi-website-production.up.railway.app/api';
 
@@ -72,6 +74,8 @@ const VaultPage = () => {
   const { getToken } = useAuth();
   const [tracks, setTracks] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState('tracks');
+  const updateTrack = useCallback((t) => setTracks((all) => all.map((x) => (x.id === t.id ? t : x))), []);
 
   const fetchTracks = useCallback(async () => {
     if (!isLoaded || !isSignedIn) return;
@@ -128,7 +132,19 @@ const VaultPage = () => {
           </div>
         </div>
 
-        {loading ? (
+        <div className="mb-6 flex gap-1 border-b border-white/10" role="tablist">
+          {[['tracks', 'My Tracks'], ['profile', 'Sync Profile']].map(([key, label]) => (
+            <button key={key} type="button" role="tab" aria-selected={tab === key} onClick={() => setTab(key)}
+              className={`-mb-px border-b-2 px-4 py-2.5 text-sm transition-colors ${
+                tab === key ? 'border-electric text-white' : 'border-transparent text-slate-400 hover:text-white'}`}>
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {tab === 'profile' ? (
+          <SyncProfileTab getToken={getToken} tracks={tracks} />
+        ) : loading ? (
           <div className="flex justify-center py-20">
             <Loader2 className="animate-spin text-electric" size={32} />
           </div>
@@ -166,6 +182,13 @@ const VaultPage = () => {
                       </a>
                     ))}
                   </div>
+                )}
+                {t.legacy ? (
+                  <p className="mt-4 border-t border-white/10 pt-3 text-sm text-slate-500">
+                    Uploaded before usage options. Re-upload to add it to AI training or sync.
+                  </p>
+                ) : t.consent && (
+                  <TrackSyncPanel track={t} getToken={getToken} onUpdated={updateTrack} />
                 )}
               </div>
             ))}
