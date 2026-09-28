@@ -61,7 +61,7 @@ Always shown:
 - Vocals or instrumental
 
 Shown only when sync is checked:
-- **Splits (check 1, Option A).** Master and publishing sides, up to 4 parties per side, each side sums to 100%, "I own 100% of the publishing and master" shortcut, attestation checkbox.
+- **Splits (check 1, Option A).** Uses the PRD-02 rights model: three lists (writers, publishers, master owners), 1 to 4 parties each, each list summing to exactly 100% (stored as basis points). Every party has a legal name. Role, PRO and IPI are optional. Two shortcuts: "I own 100% of the writing, publishing and master" is expanded server-side into one self row per list using the artist's legal name, and "I self-publish" fills the publishers list. Plus an attestation checkbox.
 - **Samples (check 3).** Fully original / cleared sample / royalty-free loop whose license allows sync, plus attestation.
 - **Distributor and Content ID (check 4).** Distributor name. "Is this song registered in YouTube Content ID?" Yes / No / Not sure.
 - **PRO (check 5).** PRO name and IPI number, or "Not affiliated".
@@ -94,7 +94,7 @@ Runs automatically when a track finishes processing and again whenever any input
 
 | # | Check | Pass when |
 |---|---|---|
-| 1 | Splits | Both sides sum to 100%, 1 to 4 parties per side, attestation recorded |
+| 1 | Splits | Writers, publishers and master owners each sum to exactly 10000 basis points, 1 to 4 parties per list, attestation recorded (`rights.attested_at`) |
 | 2 | Fingerprint | Persisted `fingerprint_result` is CLEARED. CONFLICT sets Conflict. NEEDS_DOCS and SCAN_ERROR fail. |
 | 3 | Samples | An option is selected and the attestation is recorded |
 | 4 | Content ID | Answer is "No". "Yes" and "Not sure" fail with reason `content_id` |
@@ -185,8 +185,10 @@ intake:    { samples: "original" | "cleared_sample" | "royalty_free_loop",
              pro_not_affiliated: bool, pro_name, ipi }
 consent_grant_version
 fingerprint_result: "CLEARED" | "NEEDS_DOCS" | "CONFLICT" | "SCAN_ERROR"
-splits:    { master: [{ name, role, share }], publishing: [{ name, role, share }],
-             attested_at }
+rights:    { owns_everything: bool,
+             writers: [party], publishers: [party], master_owners: [party],
+             attested_at, attested_by_clerk_user_id }
+           party = { legal_name, ipi_name_number, society, role, share_bp, is_self }
 checks:    { splits, fingerprint, samples, content_id, pro, metadata }
            each { result: "pass" | "fail" | "pending", reason }
 sync_status:      "cleared" | "needs_docs" | "conflict" | null
@@ -235,7 +237,7 @@ Used for webhook idempotency.
 ## 9. API (proposed; final names after Phase 0)
 
 **Artist (Clerk auth)**
-- Existing presign and complete: add consent, metadata, intake and splits
+- Existing presign and complete: add consent, metadata, intake and rights
 - `POST /api/vault/tracks/{id}/consent`: add or remove a consent (`scope`, `action`, and the sync intake when adding sync)
 - `PATCH /api/vault/tracks/{id}/metadata`: correct BPM or key, edit genre or moods
 - `GET` and `PUT /api/sync/profile`
@@ -330,6 +332,8 @@ Each phase ships and is verified in production before the next starts.
 | 4 | "Not affiliated with a PRO" passes check 5 |
 | 5 | Stems add-on is +22%, rounded to the nearest dollar |
 | 6 | The public library at `/sync` stays hidden behind a flag until Tyler approves it. Upload form changes, the track share page and the public artist page ship live as their phases land. |
+| 7 | Splits use the PRD-02 rights model (writers, publishers, master owners), collected for sync uploads only |
+| 8 | IPI numbers are exactly 9 or 11 digits everywhere, including the sync intake |
 
 Open items depend on the Phase 0 report only.
 

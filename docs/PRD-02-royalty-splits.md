@@ -299,3 +299,18 @@ so its `STATUS_LABELS` map is unreachable. It covers only 5 of the 11 real statu
 any phase of this PRD introduces progress polling on the upload page, that map must be
 completed first or artists will see blank states for `scanning`, `mastering`, `CONFLICT`,
 `NEEDS_DOCS` and `SCAN_ERROR`.
+
+---
+
+## 11. Implementation note (2026-09-28)
+
+PRD-03 Phase 2 builds this PRD's Phase 1 (model and validation) and Phase 2 (splits entry
+on the upload page) for **sync uploads only**. The splits sit inside the sync details panel
+rather than on a separate step 2 page. AI-only uploads do not collect rights yet.
+
+Not built there: `iswc` and `isrc` (PRD-03 keeps artist ISRC entry out of scope),
+`performing_name`, rule 5's IPI requirement for PRO registration, rule 7 revisions, and the
+Vault view, Admin view and CWR export (Phases 3 to 5 here).
+
+§10.2 (file before rights): the upload page is a single form that keeps everything typed
+when the server rejects it, so a bad file never loses the splits. No reordering is needed.
