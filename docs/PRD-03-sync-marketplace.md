@@ -186,9 +186,17 @@ What each tier permits is defined by the license text, pending counsel. Prices a
 
 If the email fails, the order stays fulfilled, the success page still delivers, and an admin can resend.
 
+Phase 6 details (decisions 24 to 30):
+- Stripe Tax: every Checkout Session sets `automatic_tax` and requires a billing address. Tax is added on top of the list price. The order stores `price_cents` (license price, the artist earnings basis), `tax_cents` and `amount_total_cents` separately. Product tax code comes from `SYNC_STRIPE_TAX_CODE` (unset uses the account default).
+- Webhook events handled: `checkout.session.completed` and `checkout.session.async_payment_succeeded` (fulfil only when `payment_status == "paid"`), `checkout.session.expired` (order `failed`), `charge.refunded`.
+- The webhook responds immediately and fulfils in a background task. Each order transition is conditional on the prior status, so a repeated event is a no-op. An event ID is written to `stripe_events` only after it was handled successfully.
+- Success page fallback: if the order is still `pending`, `GET /api/sync/orders/by-session/{session_id}` retrieves the session from Stripe and fulfils when it is paid.
+
 ### 7.3 Download page
 
-`/license/:token` lists the license PDF, the 24-bit master WAV and, if purchased, the five stems (vocals, instrumental, drums, bass, other). Each click mints a short-lived presigned URL. The token is valid for 30 days with a maximum of 10 downloads per file, and an admin can reissue it. Files are served individually; there is no zip in v1.
+`/license/:token` lists the license PDF, the 24-bit master WAV and, if purchased, the five stems (vocals, instrumental, drums, bass, other). Each click mints a short-lived presigned URL. The token is valid for 30 days with a maximum of 10 downloads per file, and an admin can reissue it.
+
+The token is derived, not stored: `HMAC-SHA256(SYNC_TOKEN_SECRET, order_id + ":" + token_version)`, URL-safe encoded. Only its SHA-256 hash is stored, for lookup. The success page can rebuild the link on refresh, and a reissue increments `token_version`, which invalidates the old link (decision 26). Files are served individually; there is no zip in v1.
 
 ### 7.4 License PDF (ReportLab)
 
@@ -196,7 +204,7 @@ License ID, date, buyer name, company and email, track title, artist name, tier,
 
 ### 7.5 Refunds
 
-Issued manually in the Stripe dashboard. Webhook `charge.refunded` sets the order to `refunded`, disables its download token, and decrements the artist's popularity count.
+Issued manually in the Stripe dashboard. Webhook `charge.refunded` sets the order to `refunded`, disables its download token, and decrements the artist's popularity count. Only a full refund does this; a partial refund is logged on the order and changes nothing else (decision 28).
 
 ## 8. Data model
 
@@ -246,11 +254,14 @@ Unchanged: top-level `genre`, `track_name`, `artist_name`. The legacy fields `pr
 
 ```
 { order_id, license_id, track_id, artist_user_id, tier, include_stems,
-  price_cents, currency, buyer_name, buyer_company, buyer_email,
+  price_cents, tax_cents, amount_total_cents, currency,
+  buyer_name, buyer_company, buyer_email,
   terms_version, stripe_session_id, stripe_payment_intent,
   status: "pending" | "paid" | "fulfilled" | "failed" | "refunded",
-  download_token_hash, token_expires_at, download_counts,
-  license_pdf_key, created_at, paid_at, fulfilled_at }
+  download_token_hash, token_version, token_expires_at, download_counts,
+  license_pdf_key, email_status: "sent" | "failed" | "skipped",
+  refunds: [{ amount_cents, at }], test_mode: bool,
+  created_at, paid_at, fulfilled_at, refunded_at }
 ```
 
 The orders collection is the earnings record for manual payouts.
@@ -313,7 +324,7 @@ Used for webhook idempotency.
 
 | Variable | Default |
 |---|---|
-| `SYNC_CHECKOUT_ENABLED` | `false` until license text exists |
+| `SYNC_CHECKOUT_ENABLED` | `false` until license text exists. While false, only admins can check out, and only with an `sk_test_` key |
 | `SYNC_DELIVER_STEMS` | `true` |
 | `SYNC_STEMS_UPLIFT` | `0.22`, applied server-side and rounded to the nearest dollar |
 | `SYNC_PRICE_CREATOR` | `1900` (cents) |
@@ -327,6 +338,8 @@ Used for webhook idempotency.
 | `SYNC_PUBLIC_PAGES_ENABLED` | `false` until counsel confirms the grant text covers public profiles |
 | `SYNC_LIBRARY_ENABLED` | `false` until Tyler approves the library |
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | test mode keys first |
+| `SYNC_TOKEN_SECRET` | required for checkout; never change once orders exist (breaks issued links) |
+| `SYNC_STRIPE_TAX_CODE` | unset (account default) until chosen with an accountant |
 | `EMAIL_PROVIDER`, `RESEND_API_KEY`, `EMAIL_FROM` | `resend` |
 
 ## 13. Phases and gates
@@ -382,6 +395,13 @@ Each phase ships and is verified in production before the next starts.
 | 21 | Library gated by its own switch, `SYNC_LIBRARY_ENABLED`; admins always see it |
 | 22 | Default sort is Newest until the first sale, then Popular |
 | 23 | Phase 5 file exception: `App.js` (one route), new `backend/sync_search.py`, the library endpoint in `server.py`, new files in `frontend/src/sync/` |
+| 24 | Phase 6 split: 6a backend, 6b frontend (license modal, success page, download page), 6c email and admin orders. Email (6c) waits for Resend; buyers get files from the success page |
+| 25 | While checkout is disabled, the License button stays "coming soon" for the public; admins can run test purchases with an `sk_test_` key only |
+| 26 | Download token derived from `SYNC_TOKEN_SECRET` (7.3), replacing "store only the hash of a random token" so the success page survives a refresh |
+| 27 | Prices sent inline to Stripe per session (no dashboard Products); the server config is the only price source |
+| 28 | Only a full refund revokes a license |
+| 29 | Stripe Tax on, tax exclusive, billing address required; tax code set with an accountant before launch |
+| 30 | Stems delivered in test (`SYNC_DELIVER_STEMS=true`). The live value is a launch decision tied to OQ-3. Phase 6a file exception: `server.py` (endpoints), `backend/requirements.txt` (`stripe`, `reportlab`), new `backend/sync_orders.py`, `backend/license_pdf.py` and tests |
 
 Open items depend on the Phase 0 report only.
 
