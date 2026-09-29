@@ -17,6 +17,7 @@ import PrivacyPage from './pages/PrivacyPage';
 import TermsPage from './pages/TermsPage';
 import ArtistPage from './sync/ArtistPage';
 import TrackSharePage from './sync/TrackSharePage';
+import LibraryPage from './sync/LibraryPage';
 
 const NEW_MARKETING = process.env.REACT_APP_NEW_MARKETING === 'true';
 const MarketingPage = lazy(() => import('./marketing/MarketingPage'));
@@ -57,7 +58,8 @@ function AppContent() {
           <Route path='/appeal/:submissionId' element={<AppealPage />} />
           <Route path='/privacy' element={<PrivacyPage />} />
           <Route path='/terms' element={<TermsPage />} />
-          {/* PRD-03 4b. The library at /sync is intentionally not routed yet. */}
+          {/* PRD-03 phase 5: the library is gated server-side by SYNC_LIBRARY_ENABLED (admins always). */}
+          <Route path='/sync' element={<LibraryPage />} />
           <Route path='/artist/:slug' element={<ArtistPage />} />
           <Route path='/sync/track/:id' element={<TrackSharePage />} />
         </Routes>

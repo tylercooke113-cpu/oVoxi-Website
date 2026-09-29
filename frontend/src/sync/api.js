@@ -24,6 +24,8 @@ const maybeAuthed = async (getToken, isSignedIn) => {
 };
 
 export const publicApi = {
+  library: async (params, getToken, isSignedIn) =>
+    (await axios.get(`${API}/sync/tracks`, { params, ...(await maybeAuthed(getToken, isSignedIn)) })).data,
   artist: async (slug, getToken, isSignedIn) =>
     (await axios.get(`${API}/sync/artists/${encodeURIComponent(slug)}`, await maybeAuthed(getToken, isSignedIn))).data,
   track: async (id, getToken, isSignedIn) =>

@@ -8,8 +8,9 @@ import { fmtTime, usePlayer } from './PlayerContext';
 
 export const LicenseButton = () => (
   <button type="button" disabled title="Licensing opens soon"
-    className="cursor-not-allowed whitespace-nowrap rounded-full border border-white/10 px-4 py-2 text-xs text-slate-500">
-    License · coming soon
+    className="cursor-not-allowed whitespace-nowrap rounded-full border border-white/10 px-3 py-2 text-xs text-slate-500 sm:px-4">
+    <span className="sm:hidden">License</span>
+    <span className="hidden sm:inline">License · coming soon</span>
   </button>
 );
 

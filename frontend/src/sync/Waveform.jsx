@@ -1,13 +1,29 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useAuth } from '@clerk/clerk-react';
 import { publicApi } from './api';
 
 // Waveform bars from the backend (never straight from R2; see PRD-03 6.3).
 const cache = new Map();
 
-const Waveform = ({ track, progress = 0, bars = 90, height = 40, onSeek }) => {
+const BAR_SLOT_PX = 4;   // 2px bar + 2px gap: the bar count follows the available width
+
+const Waveform = ({ track, progress = 0, bars: maxBars = 90, height = 40, onSeek }) => {
   const { getToken, isSignedIn } = useAuth();
   const [peaks, setPeaks] = useState(cache.get(track.id) || null);
+  const boxRef = useRef(null);
+  const [bars, setBars] = useState(Math.min(maxBars, 40));
+
+  // Fit the number of bars to the width, so narrow layouts never squeeze
+  // bars to zero width (the gaps alone would fill the space).
+  useEffect(() => {
+    const el = boxRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return undefined;
+    const fit = () => setBars(Math.max(12, Math.min(maxBars, Math.floor(el.clientWidth / BAR_SLOT_PX))));
+    fit();
+    const ro = new ResizeObserver(fit);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [maxBars]);
 
   useEffect(() => {
     if (!track.has_waveform || cache.has(track.id)) return undefined;
@@ -37,6 +53,7 @@ const Waveform = ({ track, progress = 0, bars = 90, height = 40, onSeek }) => {
 
   return (
     <div
+      ref={boxRef}
       role="slider"
       aria-label={`Seek ${track.track_name}`}
       aria-valuemin={0}
