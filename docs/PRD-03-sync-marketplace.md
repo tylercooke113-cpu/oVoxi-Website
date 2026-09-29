@@ -288,9 +288,10 @@ Used for webhook idempotency.
 - `GET /api/sync/tracks/{id}`
 - `POST /api/sync/tracks/{id}/preview`: returns a 5-minute preview URL
 - `GET /api/sync/artists/{slug}`
-- `POST /api/sync/checkout`
-- `GET /api/sync/orders/by-session/{session_id}`: status and download link only, no buyer details
-- `GET /api/sync/downloads/{token}` and `POST /api/sync/downloads/{token}/{file}`
+- `POST /api/sync/checkout`: returns the Stripe Checkout URL; 403 while checkout is disabled (admins with a test key excepted)
+- `GET /api/sync/orders/by-session/{session_id}`: status (`processing`, `ready`, `failed`, `refunded`) and download token only, no buyer details. While pending it asks Stripe directly, at most every 5 seconds per order
+- `GET /api/sync/downloads/{token}`: file list with downloads remaining
+- `POST /api/sync/downloads/{token}/{file}`: counts one download and returns a 5-minute signed attachment link (`file`: license, master, vocals, instrumental, drums, bass, other)
 
 **Stripe**
 - `POST /api/stripe/webhook`
@@ -340,6 +341,7 @@ Used for webhook idempotency.
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | test mode keys first |
 | `SYNC_TOKEN_SECRET` | required for checkout; never change once orders exist (breaks issued links) |
 | `SYNC_STRIPE_TAX_CODE` | unset (account default) until chosen with an accountant |
+| `SYNC_SITE_URL` | `https://ovoxi.net`; base for Stripe success and cancel URLs, must be https |
 | `EMAIL_PROVIDER`, `RESEND_API_KEY`, `EMAIL_FROM` | `resend` |
 
 ## 13. Phases and gates
@@ -402,6 +404,7 @@ Each phase ships and is verified in production before the next starts.
 | 28 | Only a full refund revokes a license |
 | 29 | Stripe Tax on, tax exclusive, billing address required; tax code set with an accountant before launch |
 | 30 | Stems delivered in test (`SYNC_DELIVER_STEMS=true`). The live value is a launch decision tied to OQ-3. Phase 6a file exception: `server.py` (endpoints), `backend/requirements.txt` (`stripe`, `reportlab`), new `backend/sync_orders.py`, `backend/license_pdf.py` and tests |
+| 31 | Test-mode orders never change `sales_count`, so sandbox purchases do not affect Popular sort or the switch from Newest to Popular |
 
 Open items depend on the Phase 0 report only.
 

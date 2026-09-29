@@ -8,6 +8,7 @@ import base64
 import hashlib
 import hmac
 import os
+import re
 import secrets
 import uuid
 from datetime import datetime, timedelta
@@ -332,3 +333,173 @@ def checkout_session_params(order: dict, *, now: datetime) -> dict:
         "success_url": f"{base}/sync/success?session_id={{CHECKOUT_SESSION_ID}}",
         "cancel_url": f"{base}/sync/track/{order['track_id']}?checkout=cancelled",
     }
+
+
+# ---------------------------------------------------------------------------
+# Payment events and fulfilment (PRD-03 7.2 steps 5-6, 7.5; decisions 26 and 28)
+# ---------------------------------------------------------------------------
+
+def license_pdf_key(order: dict) -> str:
+    return f"licenses/{order['order_id']}/{order['license_id']}.pdf"
+
+
+async def apply_session_paid(db, session: dict, *, now: datetime) -> str | None:
+    """pending -> paid from a Checkout Session. Returns the order_id to fulfil, or None.
+
+    Used by the webhook and by the success-page fallback. Does nothing unless Stripe
+    says the payment is complete (delayed methods arrive later as async_payment_succeeded).
+    """
+    order_id = (session.get("metadata") or {}).get("order_id")
+    if not order_id:
+        return None
+    order = await db.orders.find_one({"order_id": order_id})
+    if not order:
+        return None
+    if order.get("stripe_session_id") and order["stripe_session_id"] != session.get("id"):
+        return None  # metadata points at an order that belongs to a different session
+    if session.get("payment_status") != "paid":
+        return None
+    tax = (session.get("total_details") or {}).get("amount_tax")
+    subtotal = session.get("amount_subtotal")
+    if subtotal is not None and subtotal != order["price_cents"]:
+        await db.orders.update_one({"order_id": order_id}, {"$set": {"amount_mismatch": True}})
+    await mark_paid(db, order_id, payment_intent=session.get("payment_intent"), tax_cents=tax,
+                    amount_total_cents=session.get("amount_total"), now=now)
+    if not order.get("stripe_session_id"):
+        await db.orders.update_one({"order_id": order_id, "stripe_session_id": None},
+                                   {"$set": {"stripe_session_id": session.get("id")}})
+    return order_id
+
+
+async def apply_session_expired(db, session: dict, *, now: datetime) -> None:
+    order_id = (session.get("metadata") or {}).get("order_id")
+    if order_id:
+        await mark_failed(db, order_id, now=now)
+
+
+async def apply_refund(db, charge: dict, *, now: datetime) -> str | None:
+    """Record a refund. Only a full refund revokes the license (decision 28). Returns the order_id."""
+    pi = charge.get("payment_intent")
+    if not pi:
+        return None
+    order = await db.orders.find_one({"stripe_payment_intent": pi})
+    if not order:
+        return None
+    refunded = int(charge.get("amount_refunded") or 0)
+    full = charge.get("refunded") is True or refunded >= int(charge.get("amount") or 0) > 0
+    await db.orders.update_one({"order_id": order["order_id"]},
+                               {"$push": {"refunds": {"amount_refunded_cents": refunded, "full": full,
+                                                      "at": now.isoformat()}}})
+    if not full:
+        return order["order_id"]
+    res = await db.orders.update_one(
+        {"order_id": order["order_id"], "status": {"$in": ["paid", "fulfilled"]}},
+        {"$set": {"status": "refunded", "refunded_at": now.isoformat()}})
+    if res.modified_count == 1 and order.get("status") == "fulfilled" and not order.get("test_mode"):
+        await db.sync_profiles.update_one({"user_id": order["artist_user_id"], "sales_count": {"$gt": 0}},
+                                          {"$inc": {"sales_count": -1}})
+    return order["order_id"]
+
+
+async def fulfil_order(db, order_id: str, *, render_pdf, put_object, now: datetime) -> str:
+    """paid -> fulfilled: license PDF to R2, download token, popularity count. Safe to repeat.
+
+    render_pdf(order, track_title, artist_name) -> bytes and put_object(key, data, content_type)
+    are passed in so this module has no R2 or ReportLab dependency. Returns the resulting status.
+    """
+    order = await db.orders.find_one({"order_id": order_id})
+    if not order:
+        return "missing"
+    if order["status"] != "paid":
+        return order["status"]
+    track = await db.track_submissions.find_one({"id": order["track_id"]}) or {}
+    key = license_pdf_key(order)
+    delivery_files(dict(order, license_pdf_key=key), track)  # DeliveryError before any upload
+    pdf = await render_pdf(order, order.get("track_title") or track.get("track_name") or "",
+                           order.get("artist_display_name") or track.get("artist_name") or "")
+    await put_object(key, pdf, "application/pdf")
+    if await mark_fulfilled(db, order_id, license_pdf_key=key, now=now):
+        await db.orders.update_one({"order_id": order_id}, {"$set": {"email_status": "skipped"}})
+        if not order.get("test_mode"):
+            await db.sync_profiles.update_one({"user_id": order["artist_user_id"]}, {"$inc": {"sales_count": 1}})
+    return "fulfilled"
+
+
+async def event_seen(db, event_id: str) -> bool:
+    return await db.stripe_events.find_one({"event_id": event_id}) is not None
+
+
+async def record_event(db, event_id: str, event_type: str, *, now: datetime) -> None:
+    try:
+        await db.stripe_events.insert_one({"event_id": event_id, "type": event_type,
+                                           "processed_at": now.isoformat()})
+    except Exception as exc:  # duplicate from a concurrent delivery of the same event
+        if "duplicate" not in str(exc).lower() and "E11000" not in str(exc):
+            raise
+
+
+# ---------------------------------------------------------------------------
+# Success page and download page (PRD-03 7.2 step 6, 7.3)
+# ---------------------------------------------------------------------------
+SESSION_ID_RE = re.compile(r"^cs_(test|live)_[A-Za-z0-9]{10,250}$")
+STRIPE_RECHECK_SECONDS = 5
+DOWNLOAD_URL_TTL_SECONDS = 300
+FILE_LABELS = {"license": "License certificate (PDF)", "master": "Master (24-bit WAV)",
+               "vocals": "Stem: vocals", "instrumental": "Stem: instrumental", "drums": "Stem: drums",
+               "bass": "Stem: bass", "other": "Stem: other"}
+PUBLIC_STATUS = {"pending": "processing", "paid": "processing", "fulfilled": "ready",
+                 "failed": "failed", "refunded": "refunded"}
+
+
+def success_view(order: dict) -> dict:
+    """What the success page may see: no buyer name, email or company."""
+    view = {"status": PUBLIC_STATUS.get(order.get("status"), "processing"),
+            "license_id": order.get("license_id"), "track_title": order.get("track_title"),
+            "artist_display_name": order.get("artist_display_name"), "tier": order.get("tier"),
+            "include_stems": bool(order.get("include_stems")), "download_token": None}
+    if view["status"] == "ready":
+        view["download_token"] = current_token(order)
+    return view
+
+
+async def claim_stripe_recheck(db, order_id: str, *, now: datetime) -> bool:
+    """At most one Stripe lookup per order every few seconds, however often the page polls."""
+    cutoff = (now - timedelta(seconds=STRIPE_RECHECK_SECONDS)).isoformat()
+    res = await db.orders.update_one(
+        {"order_id": order_id, "status": "pending",
+         "$or": [{"stripe_checked_at": None}, {"stripe_checked_at": {"$lt": cutoff}}]},
+        {"$set": {"stripe_checked_at": now.isoformat()}})
+    return res.modified_count == 1
+
+
+def download_listing(order: dict, files: dict) -> dict:
+    limit = download_max_per_file()
+    counts = order.get("download_counts") or {}
+    return {
+        "license_id": order["license_id"], "track_title": order.get("track_title"),
+        "artist_display_name": order.get("artist_display_name"), "tier": order["tier"],
+        "include_stems": bool(order.get("include_stems")), "expires_at": order.get("token_expires_at"),
+        "test_mode": bool(order.get("test_mode")),
+        "files": [{"name": name, "label": FILE_LABELS.get(name, name),
+                   "remaining": max(0, limit - int(counts.get(name, 0)))} for name in files],
+    }
+
+
+async def claim_download(db, order: dict, name: str) -> bool:
+    """Atomically count one download of `name`; False when the per-file limit is reached."""
+    field = f"download_counts.{name}"
+    res = await db.orders.update_one(
+        {"order_id": order["order_id"], "status": "fulfilled",
+         "download_token_hash": order["download_token_hash"],
+         "$or": [{field: {"$exists": False}}, {field: {"$lt": download_max_per_file()}}]},
+        {"$inc": {field: 1}})
+    return res.modified_count == 1
+
+
+def download_filename(order: dict, name: str, key: str) -> str:
+    """ASCII-safe attachment name, e.g. 'Kay Lune - Night Drive (OVX-7K2M9Q4XRT) master.wav'."""
+    ext = key.rsplit(".", 1)[-1].lower() if "." in key else "bin"
+    raw = f"{order.get('artist_display_name', '')} - {order.get('track_title', '')} ({order['license_id']}) {name}"
+    safe = re.sub(r"[^A-Za-z0-9 ._()-]", "", raw)
+    safe = re.sub(r"\s+", " ", safe).strip()[:150] or order["license_id"]
+    return f"{safe}.{ext}"

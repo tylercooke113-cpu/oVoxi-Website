@@ -22,7 +22,7 @@ from botocore.exceptions import ClientError
 from dotenv import load_dotenv
 import jwt
 from jwt import PyJWKClient
-from fastapi import Depends, FastAPI, APIRouter, HTTPException, Header, Request
+from fastapi import BackgroundTasks, Depends, FastAPI, APIRouter, HTTPException, Header, Request
 from fastapi.responses import JSONResponse
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo import ReturnDocument
@@ -40,6 +40,7 @@ from sync_public import (
     LISTING_FILTER, is_listed, photo_visible, public_profile_view, public_track_view,
 )
 import sync_orders
+from license_pdf import render_license_pdf
 from sync_search import PAGE_SIZE, SearchParamError, build_filter, build_pipeline, encode_cursor, parse_params
 from sync_vault import (
     INSTAGRAM_URL, SPOTIFY_ARTIST_URL, is_legacy, metadata_patch_fields,
@@ -2194,6 +2195,136 @@ async def sync_checkout(request: Request, payload: CheckoutRequest,
     logger.info("checkout order=%s track=%s tier=%s stems=%s test=%s",
                 order["order_id"], order["track_id"], order["tier"], order["include_stems"], test_mode)
     return {"checkout_url": session.url, "order_id": order["order_id"]}
+
+
+async def _render_license(order: dict, track_title: str, artist_name: str) -> bytes:
+    return await asyncio.to_thread(render_license_pdf, order, track_title=track_title, artist_name=artist_name)
+
+
+async def _fulfil_order(order_id: str) -> None:
+    """Background delivery. Failures are logged; the order stays `paid` and is retried
+    by a repeated webhook or by the success-page fallback."""
+    try:
+        status = await sync_orders.fulfil_order(db, order_id, render_pdf=_render_license, put_object=_r2_put,
+                                                now=datetime.now(timezone.utc))
+        logger.info("fulfil order=%s status=%s", order_id, status)
+    except Exception as exc:
+        logger.error("fulfil failed order=%s error=%s", order_id, exc)
+
+
+STRIPE_HANDLED_EVENTS = {"checkout.session.completed", "checkout.session.async_payment_succeeded",
+                         "checkout.session.expired", "charge.refunded"}
+
+
+@api_router.post("/stripe/webhook")
+async def stripe_webhook(request: Request, background: BackgroundTasks):
+    """Stripe events. Signature verified on the raw body. An event is recorded only after it
+    was handled, so a failure returns 500 and Stripe retries it."""
+    import stripe
+    payload = await request.body()
+    try:
+        event = stripe.Webhook.construct_event(payload, request.headers.get("stripe-signature"),
+                                               sync_orders.stripe_webhook_secret())
+    except sync_orders.ConfigError as exc:
+        logger.error("stripe webhook config error: %s", exc)
+        raise HTTPException(status_code=503, detail="Not configured")
+    except (ValueError, stripe.SignatureVerificationError):
+        raise HTTPException(status_code=400, detail="Invalid signature")
+
+    if event.type not in STRIPE_HANDLED_EVENTS:
+        return {"ok": True, "ignored": event.type}
+    if await sync_orders.event_seen(db, event.id):
+        return {"ok": True, "duplicate": True}
+
+    obj = event.data.object.to_dict()
+    now = datetime.now(timezone.utc)
+    if event.type in ("checkout.session.completed", "checkout.session.async_payment_succeeded"):
+        order_id = await sync_orders.apply_session_paid(db, obj, now=now)
+        if order_id:
+            background.add_task(_fulfil_order, order_id)
+    elif event.type == "checkout.session.expired":
+        await sync_orders.apply_session_expired(db, obj, now=now)
+    elif event.type == "charge.refunded":
+        order_id = await sync_orders.apply_refund(db, obj, now=now)
+        logger.info("refund event order=%s full=%s", order_id, obj.get("refunded"))
+
+    await sync_orders.record_event(db, event.id, event.type, now=now)
+    return {"ok": True}
+
+
+@api_router.get("/sync/orders/by-session/{session_id}")
+@limiter.limit("30/minute")
+async def sync_order_by_session(request: Request, session_id: str):
+    """Success page polling. If the webhook has not arrived yet, ask Stripe directly
+    (at most every few seconds per order) and deliver when the payment is complete."""
+    if not sync_orders.SESSION_ID_RE.match(session_id):
+        raise _not_found()
+    order = await db.orders.find_one({"stripe_session_id": session_id}, {"_id": 0})
+    if not order:
+        raise _not_found()
+    now = datetime.now(timezone.utc)
+    if order["status"] == "pending" and await sync_orders.claim_stripe_recheck(db, order["order_id"], now=now):
+        try:
+            client = sync_orders.stripe_client()
+            session = await asyncio.to_thread(client.v1.checkout.sessions.retrieve, session_id)
+            await sync_orders.apply_session_paid(db, session.to_dict(), now=now)
+        except Exception as exc:
+            logger.warning("stripe recheck failed order=%s error=%s", order["order_id"], exc)
+    if order["status"] in ("pending", "paid"):
+        await _fulfil_order(order["order_id"])  # no-op unless the order is now paid
+        order = await db.orders.find_one({"order_id": order["order_id"]}, {"_id": 0})
+    return sync_orders.success_view(order)
+
+
+async def _order_for_token(token: str) -> dict:
+    order = await sync_orders.find_by_token(db, token, now=datetime.now(timezone.utc))
+    if not order:
+        raise HTTPException(status_code=404, detail="This download link is invalid or has expired.")
+    return order
+
+
+async def _files_for(order: dict) -> dict:
+    track = await db.track_submissions.find_one({"id": order["track_id"]}, {"_id": 0}) or {}
+    try:
+        return sync_orders.delivery_files(order, track)
+    except sync_orders.DeliveryError as exc:
+        logger.error("download files missing: %s", exc)
+        raise HTTPException(status_code=409,
+                            detail="Your files are temporarily unavailable. Contact tyler@ovoxi.net with your License ID.")
+
+
+@api_router.get("/sync/downloads/{token}")
+@limiter.limit("30/minute")
+async def sync_download_listing(request: Request, token: str):
+    order = await _order_for_token(token)
+    return sync_orders.download_listing(order, await _files_for(order))
+
+
+@api_router.post("/sync/downloads/{token}/{file_name}")
+@limiter.limit("20/minute")
+async def sync_download_file(request: Request, token: str, file_name: str):
+    """Count one download and return a 5-minute signed link that saves the file."""
+    order = await _order_for_token(token)
+    files = await _files_for(order)
+    if file_name not in files:
+        raise _not_found()
+    if not await sync_orders.claim_download(db, order, file_name):
+        raise HTTPException(status_code=429, detail="Download limit reached for this file.")
+    key = files[file_name]
+    filename = sync_orders.download_filename(order, file_name, key)
+    try:
+        url = await asyncio.to_thread(
+            r2_client.generate_presigned_url, "get_object",
+            Params={"Bucket": R2_BUCKET, "Key": key,
+                    "ResponseContentDisposition": f'attachment; filename="{filename}"'},
+            ExpiresIn=sync_orders.DOWNLOAD_URL_TTL_SECONDS,
+        )
+    except Exception as exc:
+        logger.error("download sign failed order=%s file=%s error=%s", order["order_id"], file_name, exc)
+        await db.orders.update_one({"order_id": order["order_id"]}, {"$inc": {f"download_counts.{file_name}": -1}})
+        raise HTTPException(status_code=503, detail="Download unavailable. Please try again.")
+    logger.info("download order=%s file=%s", order["order_id"], file_name)
+    return {"url": url, "filename": filename, "expires_in": sync_orders.DOWNLOAD_URL_TTL_SECONDS}
 
 
 # ---------------------------------------------------------------------------
