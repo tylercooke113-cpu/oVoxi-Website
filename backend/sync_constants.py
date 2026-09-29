@@ -40,3 +40,9 @@ PUBLISHER_ROLES = ("E", "AM", "SE", "PA")
 PITCHES = ("C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B")
 MUSICAL_KEYS = tuple(f"{p} {m}" for m in ("major", "minor") for p in PITCHES)
 BPM_MIN, BPM_MAX = 20, 300
+
+# Upload genres. Must match VALID_GENRES in server.py (test_sync_search checks).
+GENRES = (
+    "Hip-Hop", "R&B", "Afrobeats", "Trap", "Soul", "Pop",
+    "Electronic", "Latin", "Reggaeton", "Afropop", "Other",
+)

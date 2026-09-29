@@ -39,6 +39,7 @@ from profile_photo import (
 from sync_public import (
     LISTING_FILTER, is_listed, photo_visible, public_profile_view, public_track_view,
 )
+from sync_search import PAGE_SIZE, SearchParamError, build_filter, build_pipeline, encode_cursor, parse_params
 from sync_vault import (
     INSTAGRAM_URL, SPOTIFY_ARTIST_URL, is_legacy, metadata_patch_fields,
     slugify_profile, vault_track_view,
@@ -1585,6 +1586,44 @@ async def get_public_artist(request: Request, slug: str, viewer: Optional[dict] 
     }
 
 
+def _library_enabled() -> bool:
+    return os.environ.get("SYNC_LIBRARY_ENABLED", "false") == "true"
+
+
+@api_router.get("/sync/tracks")
+@limiter.limit("60/minute")
+async def search_library(request: Request, viewer: Optional[dict] = Depends(optional_clerk)):
+    """The sync library (PRD-03 6.1). Admins always; everyone else only when
+    SYNC_LIBRARY_ENABLED is exactly "true" (decision 21)."""
+    _, is_admin = _viewer(viewer)
+    if not (is_admin or _library_enabled()):
+        raise _not_found()
+    try:
+        q = parse_params(request.query_params)
+    except SearchParamError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    # Decision 22: Newest until the first paid sale exists, then Popular.
+    sort = q.sort
+    if sort is None:
+        any_sale = await db.sync_profiles.find_one({"sales_count": {"$gt": 0}}, {"_id": 1})
+        sort = "popular" if any_sale else "newest"
+
+    rows = await db.track_submissions.aggregate(build_pipeline(q, sort)).to_list(PAGE_SIZE + 1)
+    has_more = len(rows) > PAGE_SIZE
+    rows = rows[:PAGE_SIZE]
+    total = None
+    if not q.cursor:
+        total = await db.track_submissions.count_documents(build_filter(q))
+    return {
+        "tracks": [public_track_view(r, (r.get("_profiles") or [None])[0]) for r in rows],
+        "next_cursor": encode_cursor(sort, rows[-1]) if has_more and rows else None,
+        "sort": sort,
+        "total": total,
+        "viewer": {"is_admin": is_admin, "public": _library_enabled()},
+    }
+
+
 @api_router.get("/sync/tracks/{track_id}")
 @limiter.limit("60/minute")
 async def get_public_track(request: Request, track_id: str, viewer: Optional[dict] = Depends(optional_clerk)):
@@ -2108,6 +2147,9 @@ async def create_indexes():
         await db.consent_events.create_index([("user_id", 1), ("created_at", 1)])
         await db.sync_profiles.create_index([("user_id", 1)], unique=True)
         await db.sync_profiles.create_index([("slug", 1)], unique=True)
+        await db.track_submissions.create_index(
+            [("sync_status", 1), ("on_sync_profile", 1), ("sync_listed_at", -1), ("id", -1)])
+        await db.sync_profiles.create_index([("sales_count", -1)])
     except Exception as exc:
         logger.warning("Index creation failed (non-fatal): %s", exc)
     if RUN_WORKER:
