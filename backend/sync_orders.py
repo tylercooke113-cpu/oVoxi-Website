@@ -21,6 +21,9 @@ TIERS = {
 }
 CURRENCY = "usd"
 
+# Buyer-facing one-liners for the license modal. Placeholders until counsel defines each tier's scope.
+TIER_DESCRIPTIONS = {"creator": "Test", "creator_pro": "Test", "business_social": "Test"}
+
 
 class ConfigError(RuntimeError):
     """Server misconfiguration. Endpoints map this to 503 and log the message."""
@@ -503,3 +506,27 @@ def download_filename(order: dict, name: str, key: str) -> str:
     safe = re.sub(r"[^A-Za-z0-9 ._()-]", "", raw)
     safe = re.sub(r"\s+", " ", safe).strip()[:150] or order["license_id"]
     return f"{safe}.{ext}"
+
+
+# ---------------------------------------------------------------------------
+# Public checkout configuration for the license modal (PRD-03 6b)
+# ---------------------------------------------------------------------------
+
+def checkout_config(*, is_admin: bool, terms_text: dict) -> dict:
+    """What the License button and modal need. Only `can_checkout: False` when the viewer
+    cannot buy, so nothing else is exposed before launch. Never raises ConfigError."""
+    try:
+        if not can_checkout(is_admin):
+            return {"can_checkout": False}
+        token_secret()
+        version = terms_version()
+        stems = deliver_stems()
+        tiers = [{"id": tid, "label": label, "description": TIER_DESCRIPTIONS.get(tid, ""),
+                  "price_cents": price_cents(tid, False),
+                  "price_with_stems_cents": price_cents(tid, True) if stems else None}
+                 for tid, (label, _, _) in TIERS.items()]
+        return {"can_checkout": True, "test_mode": is_test_key(), "currency": CURRENCY,
+                "stems_available": stems, "terms_version": version,
+                "terms": list(terms_text[version]), "tiers": tiers}
+    except (ConfigError, KeyError):
+        return {"can_checkout": False}

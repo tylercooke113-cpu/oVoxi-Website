@@ -3,16 +3,9 @@ import { Link } from 'react-router-dom';
 import { Loader2, Pause, Play } from 'lucide-react';
 import Waveform from './Waveform';
 import { fmtTime, usePlayer } from './PlayerContext';
+import LicenseButton from './LicenseButton';
 
-// One listed track (PRD-03 6.1 row). Checkout arrives in Phase 6.
-
-export const LicenseButton = () => (
-  <button type="button" disabled title="Licensing opens soon"
-    className="cursor-not-allowed whitespace-nowrap rounded-full border border-white/10 px-3 py-2 text-xs text-slate-500 sm:px-4">
-    <span className="sm:hidden">License</span>
-    <span className="hidden sm:inline">License · coming soon</span>
-  </button>
-);
+// One listed track (PRD-03 6.1 row).
 
 export const PlayButton = ({ track, size = 40 }) => {
   const { track: current, playing, loading, toggle } = usePlayer();
@@ -63,7 +56,7 @@ const TrackRow = ({ track, showArtist = true }) => {
         {track.bpm != null && <>{track.bpm} BPM</>}{track.key && <> · {track.key}</>}<br />
         {fmtTime(track.duration_s)}{track.vocals && <> · {track.vocals === 'vocal' ? 'Vocal' : 'Instrumental'}</>}
       </div>
-      <LicenseButton />
+      <LicenseButton track={track} />
     </div>
   );
 };

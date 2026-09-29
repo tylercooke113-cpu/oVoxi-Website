@@ -18,7 +18,7 @@ export const errorMessage = (err, fallback = 'Something went wrong. Please try a
 };
 
 // Public pages send a token only when someone is signed in (owner / admin preview).
-const maybeAuthed = async (getToken, isSignedIn) => {
+export const maybeAuthed = async (getToken, isSignedIn) => {
   if (!isSignedIn) return {};
   try { return await authed(getToken); } catch { return {}; }
 };

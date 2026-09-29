@@ -18,6 +18,8 @@ import TermsPage from './pages/TermsPage';
 import ArtistPage from './sync/ArtistPage';
 import TrackSharePage from './sync/TrackSharePage';
 import LibraryPage from './sync/LibraryPage';
+import SuccessPage from './sync/SuccessPage';
+import DownloadPage from './sync/DownloadPage';
 
 const NEW_MARKETING = process.env.REACT_APP_NEW_MARKETING === 'true';
 const MarketingPage = lazy(() => import('./marketing/MarketingPage'));
@@ -62,6 +64,9 @@ function AppContent() {
           <Route path='/sync' element={<LibraryPage />} />
           <Route path='/artist/:slug' element={<ArtistPage />} />
           <Route path='/sync/track/:id' element={<TrackSharePage />} />
+          {/* PRD-03 phase 6b: public checkout result and download pages (no sign-in). */}
+          <Route path='/sync/success' element={<SuccessPage />} />
+          <Route path='/license/:token' element={<DownloadPage />} />
         </Routes>
       </main>
       {!isMarketingHome && <Footer />}

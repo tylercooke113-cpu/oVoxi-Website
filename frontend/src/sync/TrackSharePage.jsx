@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@clerk/clerk-react';
 import { Loader2 } from 'lucide-react';
 import { publicApi } from './api';
 import { PlayerProvider, fmtTime, usePlayer } from './PlayerContext';
 import PlayerBar from './PlayerBar';
 import Waveform from './Waveform';
-import { LicenseButton, PlayButton, Tags } from './TrackRow';
+import { PlayButton, Tags } from './TrackRow';
+import LicenseButton from './LicenseButton';
 import { Avatar, NotFound, VisibilityBanner } from './PublicPageParts';
 
 // Track share page /sync/track/:id (PRD-03 6; the artist's link to send buyers).
@@ -20,6 +21,8 @@ const Fact = ({ label, value }) => (
 
 const TrackSharePageInner = () => {
   const { id } = useParams();
+  const [params] = useSearchParams();
+  const cancelled = params.get('checkout') === 'cancelled';
   const { getToken, isSignedIn, isLoaded } = useAuth();
   const { track: current, time, duration, seek } = usePlayer();
   const [state, setState] = useState({ loading: true, data: null, missing: false });
@@ -43,6 +46,11 @@ const TrackSharePageInner = () => {
     <div className="min-h-screen bg-ink pb-28 pt-20" data-testid="track-page">
       <VisibilityBanner viewer={viewer} />
       <div className="mx-auto max-w-3xl px-4 pt-6">
+        {cancelled && (
+          <p className="mb-4 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2.5 text-[13px] text-slate-300" data-testid="checkout-cancelled">
+            Checkout cancelled. You weren't charged.
+          </p>
+        )}
         {!listed && (
           <p className="mb-4 rounded-xl border border-amber-400/30 bg-amber-400/[0.06] px-4 py-2.5 text-[13px] text-amber-100">
             This track isn't live yet. Check its status in your Vault.
@@ -62,7 +70,7 @@ const TrackSharePageInner = () => {
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <PlayButton track={track} size={52} />
-            <LicenseButton />
+            <LicenseButton track={track} />
           </div>
           <div className="my-4 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
             <Fact label="BPM" value={track.bpm} />

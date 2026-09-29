@@ -40,7 +40,7 @@ from sync_public import (
     LISTING_FILTER, is_listed, photo_visible, public_profile_view, public_track_view,
 )
 import sync_orders
-from license_pdf import render_license_pdf
+from license_pdf import TERMS as LICENSE_TERMS, render_license_pdf
 from sync_search import PAGE_SIZE, SearchParamError, build_filter, build_pipeline, encode_cursor, parse_params
 from sync_vault import (
     INSTAGRAM_URL, SPOTIFY_ARTIST_URL, is_legacy, metadata_patch_fields,
@@ -2139,6 +2139,14 @@ async def stems_callback(request: Request):
 # ---------------------------------------------------------------------------
 # Sync checkout (PRD-03 Phase 6)
 # ---------------------------------------------------------------------------
+
+@api_router.get("/sync/checkout/config")
+@limiter.limit("60/minute")
+async def sync_checkout_config(request: Request, viewer: Optional[dict] = Depends(optional_clerk)):
+    """Prices, stems and terms for the license modal; {"can_checkout": false} otherwise."""
+    _, is_admin = _viewer(viewer)
+    return sync_orders.checkout_config(is_admin=is_admin, terms_text=LICENSE_TERMS)
+
 
 @api_router.post("/sync/checkout")
 @limiter.limit("10/minute")
