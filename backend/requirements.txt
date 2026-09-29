@@ -16,3 +16,5 @@ Pillow>=11,<12
 matchering
 pyacrcloud
 modal==1.5.4
+stripe==15.6.1
+reportlab==5.0.1

@@ -12,7 +12,7 @@ import uuid
 from datetime import datetime, timezone, timedelta
 from io import BytesIO
 from pathlib import Path, PurePosixPath
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 import boto3
 import httpx
@@ -39,6 +39,7 @@ from profile_photo import (
 from sync_public import (
     LISTING_FILTER, is_listed, photo_visible, public_profile_view, public_track_view,
 )
+import sync_orders
 from sync_search import PAGE_SIZE, SearchParamError, build_filter, build_pipeline, encode_cursor, parse_params
 from sync_vault import (
     INSTAGRAM_URL, SPOTIFY_ARTIST_URL, is_legacy, metadata_patch_fields,
@@ -974,6 +975,24 @@ class PhotoPresignRequest(BaseModel):
 class PhotoCompleteRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     upload_id: str = Field(..., min_length=1, max_length=64)
+
+
+class CheckoutRequest(BaseModel):
+    """PRD-03 7.2 step 2. No price field: the server computes it (decision 27)."""
+    model_config = ConfigDict(extra="forbid")
+    track_id: str = Field(min_length=1, max_length=64)
+    tier: Literal["creator", "creator_pro", "business_social"]
+    include_stems: bool = False
+    buyer_name: str = Field(min_length=1, max_length=120)
+    buyer_company: str = Field(default="", max_length=120)
+    buyer_email: EmailStr
+    accept_terms: bool
+    terms_version: str = Field(min_length=1, max_length=32)
+
+    @field_validator("buyer_name", "buyer_company")
+    @classmethod
+    def _strip(cls, v: str) -> str:
+        return " ".join(v.split())
 
 
 class AdminDelist(BaseModel):
@@ -2117,6 +2136,67 @@ async def stems_callback(request: Request):
 
 
 # ---------------------------------------------------------------------------
+# Sync checkout (PRD-03 Phase 6)
+# ---------------------------------------------------------------------------
+
+@api_router.post("/sync/checkout")
+@limiter.limit("10/minute")
+async def sync_checkout(request: Request, payload: CheckoutRequest,
+                        viewer: Optional[dict] = Depends(optional_clerk)):
+    """Create a pending order and a Stripe Checkout Session; return the Stripe URL."""
+    _, is_admin = _viewer(viewer)
+    try:
+        if not sync_orders.can_checkout(is_admin):
+            raise HTTPException(status_code=403, detail="Licensing is not available yet")
+        sync_orders.token_secret()  # fail before charging anyone if delivery could not work
+        test_mode = sync_orders.is_test_key()
+        current_terms = sync_orders.terms_version()
+    except sync_orders.ConfigError as exc:
+        logger.error("checkout config error: %s", exc)
+        raise HTTPException(status_code=503, detail="Licensing is temporarily unavailable")
+
+    if not payload.accept_terms:
+        raise HTTPException(status_code=422, detail="You must accept the license terms")
+    if payload.terms_version != current_terms:
+        raise HTTPException(status_code=409, detail="The license terms have changed. Reload and review them.")
+
+    track = await db.track_submissions.find_one(
+        {"id": payload.track_id}, {"_id": 0, **{f: 0 for f in MATCH_DETAIL_FIELDS}})
+    if not track or not is_listed(track):
+        raise _not_found()
+    profile = await db.sync_profiles.find_one({"user_id": track.get("clerk_user_id")}, {"_id": 0})
+    now = datetime.now(timezone.utc)
+    try:
+        order = sync_orders.build_order(
+            track=track, tier=payload.tier, include_stems=payload.include_stems,
+            buyer_name=payload.buyer_name, buyer_company=payload.buyer_company,
+            buyer_email=str(payload.buyer_email), test_mode=test_mode, now=now,
+            track_title=track.get("track_name") or "",
+            artist_display_name=(profile or {}).get("display_name") or track.get("artist_name") or "")
+        params = sync_orders.checkout_session_params(order, now=now)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except sync_orders.ConfigError as exc:
+        logger.error("checkout config error: %s", exc)
+        raise HTTPException(status_code=503, detail="Licensing is temporarily unavailable")
+
+    await db.orders.insert_one(dict(order))
+    try:
+        client = sync_orders.stripe_client()
+        session = await asyncio.to_thread(
+            client.v1.checkout.sessions.create, params, {"idempotency_key": f"checkout-{order['order_id']}"})
+    except Exception as exc:
+        logger.error("stripe session create failed order=%s error=%s", order["order_id"], exc)
+        await sync_orders.mark_failed(db, order["order_id"], now=now)
+        raise HTTPException(status_code=502, detail="Could not start checkout. Please try again.")
+
+    await db.orders.update_one({"order_id": order["order_id"]}, {"$set": {"stripe_session_id": session.id}})
+    logger.info("checkout order=%s track=%s tier=%s stems=%s test=%s",
+                order["order_id"], order["track_id"], order["tier"], order["include_stems"], test_mode)
+    return {"checkout_url": session.url, "order_id": order["order_id"]}
+
+
+# ---------------------------------------------------------------------------
 # App wiring
 # ---------------------------------------------------------------------------
 
@@ -2150,6 +2230,7 @@ async def create_indexes():
         await db.track_submissions.create_index(
             [("sync_status", 1), ("on_sync_profile", 1), ("sync_listed_at", -1), ("id", -1)])
         await db.sync_profiles.create_index([("sales_count", -1)])
+        await sync_orders.ensure_indexes(db)
     except Exception as exc:
         logger.warning("Index creation failed (non-fatal): %s", exc)
     if RUN_WORKER:

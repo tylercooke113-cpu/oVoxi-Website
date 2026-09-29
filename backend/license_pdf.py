@@ -1,0 +1,138 @@
+"""License PDF for a sync order (PRD-03 7.4). ReportLab, built-in Helvetica only (no font files).
+
+User-supplied text (buyer name, company, track and artist names) is escaped before it
+reaches ReportLab's Paragraph markup parser. Test-mode orders carry a watermark so a
+sandbox PDF can never be mistaken for a real license.
+"""
+from datetime import datetime
+from io import BytesIO
+from xml.sax.saxutils import escape
+
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_LEFT
+from reportlab.lib.pagesizes import LETTER
+from reportlab.lib.styles import ParagraphStyle
+from reportlab.lib.units import inch
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
+PURPLE = colors.HexColor("#7B5EA7")
+INK = colors.HexColor("#111111")
+MUTED = colors.HexColor("#666666")
+RULE = colors.HexColor("#DDDDDD")
+
+# Keyed by terms_version. Replace with counsel's text and bump SYNC_TERMS_VERSION.
+TERMS = {
+    "draft-0": [
+        "PLACEHOLDER TERMS. This text is a draft pending legal review and is not the final license.",
+        "1. Grant. oVoxi grants the Licensee a non-exclusive, non-transferable license to synchronize "
+        "the Track with the Licensee's audiovisual content within the scope of the Tier named above.",
+        "2. Restrictions. The Licensee may not resell, sublicense or redistribute the Track or its stems "
+        "as standalone audio, register the Track with any content identification system, or use the Track "
+        "to train, fine-tune or evaluate any machine learning model.",
+        "3. Term. The license is perpetual for content published during the license period, subject to "
+        "the Tier's scope.",
+        "4. Refunds. If the purchase is refunded, this license is void from the refund date.",
+    ],
+}
+
+_BASE = ParagraphStyle("base", fontName="Helvetica", fontSize=10, leading=14, textColor=INK, alignment=TA_LEFT)
+_TITLE = ParagraphStyle("title", parent=_BASE, fontName="Helvetica-Bold", fontSize=20, leading=24)
+_SUB = ParagraphStyle("sub", parent=_BASE, textColor=MUTED)
+_H2 = ParagraphStyle("h2", parent=_BASE, fontName="Helvetica-Bold", fontSize=11, spaceBefore=6, spaceAfter=4)
+_LABEL = ParagraphStyle("label", parent=_BASE, textColor=MUTED, fontSize=9)
+_SMALL = ParagraphStyle("small", parent=_BASE, fontSize=8.5, leading=12, textColor=MUTED)
+
+TIER_LABELS = {"creator": "Creator", "creator_pro": "Creator Pro", "business_social": "Business Social"}
+
+
+def _money(cents, currency: str) -> str:
+    if cents is None:
+        return "n/a"
+    return f"${cents / 100:,.2f} {currency.upper()}"
+
+
+def _p(text, style=_BASE) -> Paragraph:
+    return Paragraph(escape(str(text or "")), style)
+
+
+def _watermark(canvas, doc):
+    canvas.saveState()
+    canvas.setFont("Helvetica-Bold", 44)
+    canvas.setFillColor(colors.Color(0.85, 0.1, 0.1, alpha=0.18))
+    canvas.translate(LETTER[0] / 2, LETTER[1] / 2)
+    canvas.rotate(35)
+    canvas.drawCentredString(0, 0, "TEST ORDER")
+    canvas.setFont("Helvetica-Bold", 18)
+    canvas.drawCentredString(0, -30, "NOT A VALID LICENSE")
+    canvas.restoreState()
+
+
+def _header_bar(canvas, doc):
+    canvas.saveState()
+    canvas.setFillColor(PURPLE)
+    canvas.rect(0, LETTER[1] - 0.18 * inch, LETTER[0], 0.18 * inch, stroke=0, fill=1)
+    canvas.setFont("Helvetica", 8)
+    canvas.setFillColor(MUTED)
+    canvas.drawString(0.8 * inch, 0.5 * inch, "oVoxi  |  ovoxi.net")
+    canvas.drawRightString(LETTER[0] - 0.8 * inch, 0.5 * inch, f"Page {doc.page}")
+    canvas.restoreState()
+
+
+def render_license_pdf(order: dict, *, track_title: str, artist_name: str) -> bytes:
+    """PDF bytes for a paid order. Raises KeyError if the order's terms_version has no text."""
+    terms = TERMS[order["terms_version"]]
+    issued = datetime.fromisoformat(order.get("paid_at") or order["created_at"]).strftime("%B %d, %Y")
+    currency = order.get("currency", "usd")
+
+    rows = [
+        ("License ID", order["license_id"]),
+        ("Date issued", issued),
+        ("Licensee", order["buyer_name"]),
+        ("Company", order.get("buyer_company") or "None"),
+        ("Email", order["buyer_email"]),
+        ("Track", track_title),
+        ("Artist", artist_name),
+        ("Tier", TIER_LABELS.get(order["tier"], order["tier"])),
+        ("Stems included", "Yes" if order.get("include_stems") else "No"),
+        ("License fee", _money(order.get("price_cents"), currency)),
+        ("Tax", _money(order.get("tax_cents"), currency)),
+        ("Total paid", _money(order.get("amount_total_cents"), currency)),
+        ("Terms version", order["terms_version"]),
+    ]
+    table = Table([[_p(k, _LABEL), _p(v)] for k, v in rows], colWidths=[1.7 * inch, 5.0 * inch])
+    table.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LINEBELOW", (0, 0), (-1, -1), 0.5, RULE),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+    ]))
+
+    story = [
+        _p("Sync License Certificate", _TITLE),
+        Spacer(1, 4),
+        _p("Issued by oVoxi for the track and tier below.", _SUB),
+        Spacer(1, 16),
+        table,
+        Spacer(1, 18),
+        _p("License terms", _H2),
+    ]
+    for para in terms:
+        story += [_p(para), Spacer(1, 6)]
+    story += [Spacer(1, 10), _p(
+        f"This certificate is evidence of the license identified by {order['license_id']}. "
+        "Keep it with your project files. Contact tyler@ovoxi.net with the License ID for any question.",
+        _SMALL)]
+
+    buf = BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=LETTER, leftMargin=0.8 * inch, rightMargin=0.8 * inch,
+                            topMargin=0.8 * inch, bottomMargin=0.8 * inch,
+                            title=f"oVoxi license {order['license_id']}", author="oVoxi")
+
+    def on_page(canvas, d):
+        _header_bar(canvas, d)
+        if order.get("test_mode"):
+            _watermark(canvas, d)
+
+    doc.build(story, onFirstPage=on_page, onLaterPages=on_page)
+    return buf.getvalue()
