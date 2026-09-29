@@ -141,6 +141,10 @@ The evaluator runs only for tracks with `consent.sync == true`. AI-only tracks k
 - **Row:** play button, title, artist display name from the sync profile (falling back to the track's `artist_name`) linking to the profile, waveform, genre and mood tags, BPM, duration, License button.
 - **Player:** one persistent player bar at the bottom of the page.
 - **Search backend:** plain Mongo queries on compound indexes behind a small search-service module, so a move to Atlas Search or Typesense later changes one file.
+- **Who can see it:** admins always. Everyone else only when `SYNC_LIBRARY_ENABLED=true`; otherwise "Page not found". This switch is separate from `SYNC_PUBLIC_PAGES_ENABLED`.
+- **Filter logic:** options within genre, or within mood, match **any**. Different filters (genre, mood, BPM, vocals, length) must **all** match.
+- **Default sort:** Newest until the first paid sync sale is recorded, then Popular. Popular = the artist's paid sync sales, then newest.
+- **Filters live in the address bar** (e.g. `/sync?genre=R%26B&mood=Chill&bpm=80-100&sort=newest`), so a filtered view can be shared. Results load 25 at a time with Load more.
 
 ### 6.2 Artist page
 
@@ -321,6 +325,7 @@ Used for webhook idempotency.
 | `SYNC_GRANT_VERSION` | `draft-0` |
 | `SYNC_TERMS_VERSION` | `draft-0` |
 | `SYNC_PUBLIC_PAGES_ENABLED` | `false` until counsel confirms the grant text covers public profiles |
+| `SYNC_LIBRARY_ENABLED` | `false` until Tyler approves the library |
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | test mode keys first |
 | `EMAIL_PROVIDER`, `RESEND_API_KEY`, `EMAIL_FROM` | `resend` |
 
@@ -374,6 +379,9 @@ Each phase ships and is verified in production before the next starts.
 | 18 | An artist page with no listed tracks is visible only to its owner and admins |
 | 19 | Profile photos processed with Pillow on Railway (rule 3 exception) |
 | 20 | Phase 4b file exception: `App.js` (two routes), `AdminPage.jsx` (sync controls), `backend/requirements.txt` (Pillow), plus new files in `frontend/src/sync/` and `backend/` |
+| 21 | Library gated by its own switch, `SYNC_LIBRARY_ENABLED`; admins always see it |
+| 22 | Default sort is Newest until the first sale, then Popular |
+| 23 | Phase 5 file exception: `App.js` (one route), new `backend/sync_search.py`, the library endpoint in `server.py`, new files in `frontend/src/sync/` |
 
 Open items depend on the Phase 0 report only.
 
