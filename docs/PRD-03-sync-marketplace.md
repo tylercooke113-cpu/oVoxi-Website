@@ -297,8 +297,9 @@ Used for webhook idempotency.
 - `POST /api/stripe/webhook`
 
 **Admin (Clerk admin role)**
-- Order list and CSV export by artist and date range
-- Resend license email, reissue download token
+- `GET /api/admin/sync/orders`: filters `status`, `artist`, `date_from`, `date_to` (YYYY-MM-DD, UTC, end inclusive), `include_test` (default false); newest 500; never returns the token hash
+- `GET /api/admin/sync/orders.csv`: same filters, payout export, formula-escaped cells
+- `POST /api/admin/sync/orders/{id}/resend-email`, `POST /api/admin/sync/orders/{id}/reissue-link` (`send_email`): fulfilled orders only; logged in `admin_actions`
 - Hide a profile's photo and bio
 - Delist a track
 
@@ -308,6 +309,7 @@ Used for webhook idempotency.
 - v1 provider: Resend free plan (3,000 emails per month, 100 per day, one domain) for testing. Move to a paid plan or another provider before real volume.
 - Sending domain must be verified with SPF and DKIM records on the DNS host for ovoxi.net.
 - v1 emails: license delivery to the buyer, and a "your track is live in the sync library" notice to the artist (optional).
+- As built (6c): sender `oVoxi Licenses <licenses@mail.ovoxi.net>` on the `mail.ovoxi.net` subdomain (verified in Resend; DNS at Squarespace), so the root domain's mailbox records are untouched. Send-only; Reply-To `tyler@ovoxi.net`. The license email attaches the certificate PDF and links to the download page; test orders are prefixed "[TEST]". Email failure never undoes delivery; the order records `email_status`, `email_id`, `email_error`. The artist notice is deferred.
 
 ## 11. Security requirements
 
@@ -342,7 +344,7 @@ Used for webhook idempotency.
 | `SYNC_TOKEN_SECRET` | required for checkout; never change once orders exist (breaks issued links) |
 | `SYNC_STRIPE_TAX_CODE` | unset (account default) until chosen with an accountant |
 | `SYNC_SITE_URL` | `https://ovoxi.net`; base for Stripe success and cancel URLs, must be https |
-| `EMAIL_PROVIDER`, `RESEND_API_KEY`, `EMAIL_FROM` | `resend` |
+| `RESEND_API_KEY`, `EMAIL_FROM`, `EMAIL_REPLY_TO` | unset means emails are skipped (delivery still works on the success page). Set: `oVoxi Licenses <licenses@mail.ovoxi.net>`, `tyler@ovoxi.net` |
 
 ## 13. Phases and gates
 
@@ -405,6 +407,11 @@ Each phase ships and is verified in production before the next starts.
 | 29 | Stripe Tax on, tax exclusive, billing address required; tax code set with an accountant before launch |
 | 30 | Stems delivered in test (`SYNC_DELIVER_STEMS=true`). The live value is a launch decision tied to OQ-3. Phase 6a file exception: `server.py` (endpoints), `backend/requirements.txt` (`stripe`, `reportlab`), new `backend/sync_orders.py`, `backend/license_pdf.py` and tests |
 | 31 | Test-mode orders never change `sales_count`, so sandbox purchases do not affect Popular sort or the switch from Newest to Popular |
+| 32 | License email sent from the `mail.ovoxi.net` subdomain, send-only, Reply-To tyler@ovoxi.net |
+| 33 | The license email attaches the certificate PDF so the buyer keeps it after the download link expires |
+| 34 | Admin order list and CSV hide test orders by default. CSV cells starting with = + - @ are prefixed with an apostrophe (formula injection). No artist share column until the sync revenue split is defined |
+| 35 | Delivery emails use idempotency key `license-{order}-v{version}`; an admin resend uses a unique key per click (a reused key made Resend silently skip resends, fixed in 1a264ac) |
+| 36 | Phase 6c file exception: new `backend/email_sender.py`, `backend/sync_emails.py`, admin order endpoints in `server.py`, new `frontend/src/sync/AdminOrdersSection.jsx`; `AdminPage.jsx` unchanged |
 
 Open items depend on the Phase 0 report only.
 
