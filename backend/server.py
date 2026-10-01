@@ -13,6 +13,7 @@ from datetime import datetime, timezone, timedelta
 from io import BytesIO
 from pathlib import Path, PurePosixPath
 from typing import List, Literal, Optional
+from urllib.parse import quote
 
 import boto3
 import httpx
@@ -33,6 +34,7 @@ from sync_constants import (
     DISTRIBUTORS, PRO_ORGS, IPI_PATTERN, MUSICAL_KEYS, BPM_MIN, BPM_MAX,
 )
 from consent_ledger import record_grants, record_withdrawals, GRANT_VERSION
+import artist_agreement
 from profile_photo import (
     MAX_PHOTO_BYTES, PHOTO_CONTENT_TYPES, PHOTO_SIZES, PhotoRejected, REJECT_MESSAGE, process_photo,
 )
@@ -915,6 +917,68 @@ class ConsentChange(BaseModel):
         return self
 
 
+_BAD_TEXT = re.compile(r"[\x00-\x1f\x7f]|\{\{|\}\}")
+
+
+class AgreementFields(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    entity_type: Literal["individual", "company"]
+    legal_name: str = Field(..., max_length=120)
+    artist_name: str = Field(default="", max_length=80)
+    company_name: str = Field(default="", max_length=120)
+    signer_title: str = Field(default="", max_length=80)
+    address_line1: str = Field(..., max_length=120)
+    address_line2: str = Field(default="", max_length=120)
+    city: str = Field(..., max_length=80)
+    region: str = Field(default="", max_length=80)
+    postal_code: str = Field(default="", max_length=20)
+    country: str = Field(..., max_length=80)
+    adult_confirmed: bool
+
+    @field_validator("legal_name", "artist_name", "company_name", "signer_title", "address_line1",
+                     "address_line2", "city", "region", "postal_code", "country")
+    @classmethod
+    def _clean(cls, v):
+        # Check the raw value for control characters and braces before collapsing
+        # whitespace, otherwise a newline would be folded into a space and slip past.
+        if _BAD_TEXT.search(v):
+            raise ValueError("Remove special characters from this field.")
+        return " ".join(v.split())
+
+    @model_validator(mode="after")
+    def _rules(self):
+        for name in ("legal_name", "address_line1", "city", "country"):
+            if not getattr(self, name):
+                raise ValueError("Fill in your legal name, street address, city and country.")
+        if not self.adult_confirmed:
+            raise ValueError("You must be 18 or older to sign.")
+        if self.entity_type == "company":
+            if not (self.company_name and self.signer_title):
+                raise ValueError("Enter the company name and your title.")
+        elif self.company_name or self.signer_title:
+            raise ValueError("Company name and title are only for company signers.")
+        return self
+
+
+class AgreementSignRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    fields: AgreementFields
+    text_sha256: str = Field(..., pattern=r"^[0-9a-f]{64}$")
+    typed_signature: str = Field(..., max_length=120)
+    consent_electronic: bool
+    agreed: bool
+
+    @model_validator(mode="after")
+    def _checks(self):
+        if not self.consent_electronic:
+            raise ValueError("Agree to sign electronically to continue.")
+        if not self.agreed:
+            raise ValueError("Confirm you have read and agree to the agreement.")
+        return self
+
+
 class SyncProfileUpdate(BaseModel):
     """PRD-03 4.3 / 11. Photo arrives in Phase 4b."""
     model_config = ConfigDict(extra="forbid")
@@ -1170,6 +1234,197 @@ async def get_artists(
 
 
 # ---------------------------------------------------------------------------
+# Artist Agreement
+# ---------------------------------------------------------------------------
+
+async def fetch_clerk_user(user_id: str) -> dict:
+    """Primary email and name from Clerk's Backend API. Raises 503 on any failure."""
+    if not CLERK_SECRET_KEY:
+        raise HTTPException(status_code=503, detail="Account lookup is not configured.")
+    try:
+        async with httpx.AsyncClient(timeout=10) as c:
+            r = await c.get(f"https://api.clerk.com/v1/users/{quote(user_id, safe='')}",
+                            headers={"Authorization": f"Bearer {CLERK_SECRET_KEY}"})
+    except Exception as exc:
+        logger.warning("Clerk user lookup failed: %s", type(exc).__name__)
+        raise HTTPException(status_code=503, detail="Could not load your account. Please try again.")
+    if r.status_code != 200:
+        logger.warning("Clerk user lookup returned %s", r.status_code)
+        raise HTTPException(status_code=503, detail="Could not load your account. Please try again.")
+    u = r.json()
+    email = next((e.get("email_address") for e in u.get("email_addresses", [])
+                  if e.get("id") == u.get("primary_email_address_id")), None)
+    if not email:
+        raise HTTPException(status_code=422, detail="Add an email address to your account first.")
+    return {"email": email, "first_name": u.get("first_name") or "", "last_name": u.get("last_name") or ""}
+
+
+async def _current_agreement(uid: str) -> Optional[dict]:
+    return await db.artist_agreements.find_one(
+        {"user_id": uid, "version": artist_agreement.current_version()},
+        {"_id": 0, "id": 1, "version": 1, "signed_at": 1})
+
+
+async def _require_signed_agreement(clerk_payload: dict) -> Optional[dict]:
+    """Agreement for the consent ledger, or None when not enforced or for admins."""
+    if _role(clerk_payload) == "admin":
+        return None
+    a = await _current_agreement(clerk_payload["sub"])
+    if a is None and artist_agreement.enforced():
+        raise HTTPException(status_code=403, detail="Sign the Artist Agreement before uploading.")
+    return a
+
+
+def _agreement_values(fields: dict, *, email: str, uid: str, now: datetime) -> dict:
+    return {
+        "agreement_date": artist_agreement.agreement_date(now),
+        "licensor_party": artist_agreement.licensor_party(fields),
+        "licensor_email": email,
+        "platform_account_id": uid,
+    }
+
+
+@api_router.get("/agreement/status")
+@limiter.limit("30/minute")
+async def agreement_status(request: Request, clerk_payload: dict = Depends(require_artist)):
+    uid = clerk_payload["sub"]
+    version = artist_agreement.current_version()
+    signed = await _current_agreement(uid)
+    resp = {
+        "current_version": version,
+        "enforced": artist_agreement.enforced(),
+        "required": _role(clerk_payload) != "admin",
+        "signed": signed is not None,
+        "agreement": signed,
+        "prefill": None,
+    }
+    if signed is None:
+        resp["prefill"] = await _agreement_prefill(uid)
+    return resp
+
+
+async def _agreement_prefill(uid: str) -> dict:
+    """Best effort. Never fails the status call."""
+    saved = await db.artist_legal_profiles.find_one({"user_id": uid}, {"_id": 0, "user_id": 0, "updated_at": 0})
+    if saved:
+        return saved
+    prefill = {"entity_type": "individual"}
+    profile = await db.sync_profiles.find_one({"user_id": uid}, {"_id": 0, "display_name": 1})
+    if profile and profile.get("display_name"):
+        prefill["artist_name"] = profile["display_name"]
+    try:
+        u = await fetch_clerk_user(uid)
+        full = f"{u['first_name']} {u['last_name']}".strip()
+        if full:
+            prefill["legal_name"] = full
+        prefill["email"] = u["email"]
+    except HTTPException:
+        pass
+    return prefill
+
+
+@api_router.post("/agreement/preview")
+@limiter.limit("20/minute")
+async def agreement_preview(request: Request, payload: AgreementFields,
+                            clerk_payload: dict = Depends(require_artist)):
+    uid = clerk_payload["sub"]
+    version = artist_agreement.current_version()
+    user = await fetch_clerk_user(uid)
+    values = _agreement_values(payload.model_dump(), email=user["email"], uid=uid,
+                               now=datetime.now(timezone.utc))
+    text = artist_agreement.render_text(version, values)
+    return {"version": version, "email": user["email"], "blocks": artist_agreement.blocks(text),
+            "text_sha256": artist_agreement.text_sha256(text)}
+
+
+@api_router.post("/agreement/sign")
+@limiter.limit("5/minute")
+async def agreement_sign(request: Request, payload: AgreementSignRequest,
+                         clerk_payload: dict = Depends(require_artist)):
+    uid = clerk_payload["sub"]
+    version = artist_agreement.current_version()
+    if await _current_agreement(uid):
+        raise HTTPException(status_code=409, detail="You have already signed this agreement.")
+
+    fields = payload.fields.model_dump()
+    norm = lambda s: " ".join(s.split()).casefold()
+    if norm(payload.typed_signature) != norm(fields["legal_name"]):
+        raise HTTPException(status_code=422, detail="Type your full legal name exactly as entered above.")
+
+    user = await fetch_clerk_user(uid)
+    now = datetime.now(timezone.utc)
+    text = artist_agreement.render_text(version, _agreement_values(fields, email=user["email"], uid=uid, now=now))
+    text_hash = artist_agreement.text_sha256(text)
+    if text_hash != payload.text_sha256:
+        # Fields or the date changed since preview (e.g. preview before midnight UTC, sign after).
+        raise HTTPException(status_code=409, detail="The agreement changed. Please review it again.")
+
+    agreement_id = str(uuid.uuid4())
+    signed_at = now.isoformat()
+    ip = get_real_client_ip(request)
+    sig = {"agreement_id": agreement_id, "version": version, "text_sha256": text_hash,
+           "signed_at": signed_at, "typed_signature": " ".join(payload.typed_signature.split()),
+           "licensor_email": user["email"], "platform_account_id": uid, "ip": ip, "fields": fields}
+    pdf = await asyncio.to_thread(artist_agreement.render_pdf, text, sig)
+    pdf_key = f"agreements/{uid}/{agreement_id}.pdf"
+    try:
+        await asyncio.to_thread(r2_client.put_object, Bucket=R2_BUCKET, Key=pdf_key, Body=pdf,
+                                ContentType="application/pdf")
+    except Exception as exc:
+        logger.error("Agreement PDF upload failed for %s: %s", agreement_id, exc)
+        raise HTTPException(status_code=503, detail="Could not save your agreement. Please try again.")
+
+    doc = {
+        "id": agreement_id, "user_id": uid, "version": version,
+        "text_sha256": text_hash, "pdf_sha256": hashlib.sha256(pdf).hexdigest(), "pdf_key": pdf_key,
+        "fields": fields, "licensor_email": user["email"],
+        "licensor_party": artist_agreement.licensor_party(fields),
+        "typed_signature": sig["typed_signature"], "consent_electronic": True, "agreed": True,
+        "signed_at": signed_at, "ip": ip,
+        "user_agent": (request.headers.get("user-agent") or "")[:300],
+    }
+    try:
+        await db.artist_agreements.insert_one(doc)
+    except DuplicateKeyError:
+        # Double submit: the unique (user_id, version) index kept the first one.
+        raise HTTPException(status_code=409, detail="You have already signed this agreement.")
+    except Exception as exc:
+        # The PDF in R2 is now an orphan. Harmless, and the key is logged for cleanup.
+        logger.error("Agreement record insert failed for %s (orphan %s): %s", agreement_id, pdf_key, exc)
+        raise HTTPException(status_code=503, detail="Could not save your agreement. Please try again.")
+
+    try:
+        await db.artist_legal_profiles.update_one(
+            {"user_id": uid}, {"$set": {**fields, "updated_at": signed_at}}, upsert=True)
+    except Exception as exc:
+        logger.warning("Legal profile save failed for %s: %s", uid, exc)
+
+    subject, html, body = artist_agreement.agreement_email(
+        name=fields["legal_name"], signed_date=now.strftime("%B %d, %Y"))
+    result = await send_email(to=user["email"], subject=subject, html=html, text=body,
+                              attachments=[("oVoxi-Artist-Agreement.pdf", pdf)],
+                              idempotency_key=f"agreement-{agreement_id}")
+    logger.info("Agreement %s email: %s", agreement_id, result["status"])
+
+    return {"agreement": {"id": agreement_id, "version": version, "signed_at": signed_at}}
+
+
+@api_router.get("/agreement/pdf")
+@limiter.limit("20/minute")
+async def agreement_pdf(request: Request, clerk_payload: dict = Depends(require_artist)):
+    doc = await db.artist_agreements.find_one(
+        {"user_id": clerk_payload["sub"]}, {"_id": 0, "pdf_key": 1}, sort=[("signed_at", -1)])
+    if not doc:
+        raise HTTPException(status_code=404, detail="No signed agreement found.")
+    url = await asyncio.to_thread(
+        r2_client.generate_presigned_url, "get_object",
+        Params={"Bucket": R2_BUCKET, "Key": doc["pdf_key"],
+                "ResponseContentDisposition": 'attachment; filename="oVoxi-Artist-Agreement.pdf"'},
+        ExpiresIn=300)
+    return {"url": url}
+
+
+# ---------------------------------------------------------------------------
 # Upload pipeline routes
 # ---------------------------------------------------------------------------
 
@@ -1178,6 +1433,7 @@ async def get_artists(
 async def presign_upload(request: Request, payload: PresignRequest, clerk_payload: dict = Depends(require_artist)):
     if os.environ.get("UPLOADS_ENABLED", "true") != "true":
         raise HTTPException(status_code=503, detail="Uploads are temporarily paused")
+    agreement = await _require_signed_agreement(clerk_payload)
     if payload.genre not in VALID_GENRES:
         raise HTTPException(status_code=400, detail=f"Invalid genre")
 
@@ -1246,7 +1502,7 @@ async def presign_upload(request: Request, payload: PresignRequest, clerk_payloa
     try:
         await record_grants(
             db, user_id=clerk_user_id, track_id=submission_id, scopes=scopes,
-            source="upload", ip=get_real_client_ip(request),
+            source="upload", ip=get_real_client_ip(request), agreement=agreement,
         )
     except Exception as exc:
         logger.error("Consent ledger write failed for %s: %s", submission_id, exc)
@@ -1269,6 +1525,7 @@ async def presign_upload(request: Request, payload: PresignRequest, clerk_payloa
     doc['expected_size'] = payload.file_size
     doc['consent'] = {"ai_training": payload.consent_ai_training, "sync": payload.consent_sync}
     doc['consent_grant_version'] = GRANT_VERSION
+    doc['agreement_id'] = agreement["id"] if agreement else None
     doc['metadata'] = {
         "moods": payload.moods,
         "vocals": payload.vocals,
@@ -1437,11 +1694,18 @@ async def change_vault_consent(request: Request, track_id: str, payload: Consent
         label = "AI training" if payload.scope == "ai_training" else "Sync"
         raise HTTPException(status_code=409, detail=f"{label} is already {'on' if want else 'off'}.")
 
-    # PRD-03 3.4: every change is a new consent event, written first.
-    record = record_grants if want else record_withdrawals
+    # PRD-03 3.4: every change is a new consent event, written first. A grant is
+    # gated on a signed agreement; a withdrawal never is, so an artist can always opt out.
+    agreement = await _require_signed_agreement(clerk_payload) if want else None
     try:
-        await record(db, user_id=clerk_payload["sub"], track_id=track_id, scopes=[payload.scope],
-                     source="vault", ip=get_real_client_ip(request))
+        if want:
+            await record_grants(db, user_id=clerk_payload["sub"], track_id=track_id,
+                                 scopes=[payload.scope], source="vault",
+                                 ip=get_real_client_ip(request), agreement=agreement)
+        else:
+            await record_withdrawals(db, user_id=clerk_payload["sub"], track_id=track_id,
+                                     scopes=[payload.scope], source="vault",
+                                     ip=get_real_client_ip(request))
     except Exception as exc:
         logger.error("Consent ledger write failed for %s: %s", track_id, exc)
         raise HTTPException(status_code=503, detail="Could not record consent. Please try again.")
@@ -2489,6 +2753,10 @@ async def create_indexes():
         await db.track_submissions.create_index(
             [("sync_status", 1), ("on_sync_profile", 1), ("sync_listed_at", -1), ("id", -1)])
         await db.sync_profiles.create_index([("sales_count", -1)])
+        await db.artist_agreements.create_index([("user_id", 1), ("version", 1)], unique=True)
+        await db.artist_agreements.create_index([("id", 1)], unique=True)
+        await db.artist_agreements.create_index([("user_id", 1), ("signed_at", -1)])
+        await db.artist_legal_profiles.create_index([("user_id", 1)], unique=True)
         await sync_orders.ensure_indexes(db)
     except Exception as exc:
         logger.warning("Index creation failed (non-fatal): %s", exc)

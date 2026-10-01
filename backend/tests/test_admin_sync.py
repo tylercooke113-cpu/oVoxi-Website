@@ -2,7 +2,7 @@
 PRD-03 Phase 4b: admin delist / relist, hide / unhide, audit log, and that an
 admin delist survives clearance and artist consent changes.
 """
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -25,6 +25,8 @@ def env(monkeypatch):
     db.sync_profiles = QueryCollection([profile()])
     db.admin_actions = QueryCollection()
     db.consent_events = QueryCollection()
+    # presign/vault consent now read the artist agreement (Stage A gate); unsigned by default.
+    db.artist_agreements.find_one = AsyncMock(return_value=None)
     monkeypatch.setattr(server, "db", db)
     monkeypatch.setattr(server.limiter, "enabled", False)
     server.app.dependency_overrides[server.require_admin] = lambda: ADMIN

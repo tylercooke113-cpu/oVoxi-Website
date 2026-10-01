@@ -23,6 +23,8 @@ def fake_db(monkeypatch):
     db.track_submissions.count_documents = AsyncMock(return_value=0)
     db.track_submissions.insert_one = AsyncMock()
     db.consent_events.insert_many = AsyncMock()
+    # presign now reads the artist agreement (Stage A gate); unsigned by default.
+    db.artist_agreements.find_one = AsyncMock(return_value=None)
     monkeypatch.setattr(server, "db", db)
     return db
 

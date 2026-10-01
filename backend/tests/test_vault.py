@@ -104,6 +104,8 @@ def db(monkeypatch):
     fake.track_submissions = FakeCollection([track()])
     fake.consent_events = FakeCollection()
     fake.sync_profiles = FakeCollection()
+    # vault consent grant now reads the artist agreement (Stage A gate); unsigned by default.
+    fake.artist_agreements.find_one = AsyncMock(return_value=None)
     monkeypatch.setattr(server, "db", fake)
     return fake
 
