@@ -464,3 +464,40 @@ Present in the presign model, never sent by the frontend, meaning unknown. Left 
 PRD-03, which never reads or writes it.
 
 **Owner:** unassigned.
+
+---
+
+## OQ-14: Two `test_profile_photo` memory assertions fail in the local test environment
+
+**Found:** 2026-10-01, running the full backend suite during Artist Agreement Stage A.
+
+`tests/test_profile_photo.py::test_12mp_phone_photo_memory_stays_small` (line 160) and
+`::test_large_png_memory_stays_bounded` (line 170) fail. Both use `tracemalloc` to assert
+that the allocation delta across a resize stays under a tight threshold (150 KB and 350 KB
+respectively). Observed on this machine:
+
+```
+test_12mp_phone_photo_memory_stays_small:  (172444 - 123320) < 150   -> False (delta ~48 MB)
+test_large_png_memory_stays_bounded:       (446588 - 265976) < 350   -> False (delta ~176 MB)
+```
+
+**Pre-existing, not caused by Stage A.** Confirmed by stashing the Stage A changes
+(`backend/server.py`, `backend/consent_ledger.py`) and re-running: these same two tests fail
+identically on the clean baseline, and no other test fails. The rest of the suite is green
+(458 passed, 1 skipped).
+
+**Most likely an environment/version artifact, not a product regression.** The local
+interpreter (Python 3.13.5) has `Pillow 12.3.0` and `numpy 2.5.3` installed, both newer than
+the project pins. `requirements.txt` pins `Pillow>=11,<12`, so the Railway/Docker image runs
+Pillow 11.x, not 12.x. Pillow 12 is outside the pinned range and was installed locally only to
+make the suite runnable on this machine. The memory-ceiling thresholds in these tests were
+calibrated against the pinned Pillow 11.x; a newer Pillow with different internal buffering can
+blow past a 150 KB delta without any real leak.
+
+**To resolve:** run the suite under the pinned `Pillow>=11,<12` (a clean venv from
+`requirements.txt` + `requirements-dev.txt`, or inside the Docker image) and confirm the two
+tests pass there. If they pass under the pin, close this as a local-environment-only artifact.
+If they fail under Pillow 11.x too, investigate whether the resize path in `profile_photo.py`
+holds an extra copy, or loosen the thresholds to a realistic bound.
+
+**Owner:** unassigned.
