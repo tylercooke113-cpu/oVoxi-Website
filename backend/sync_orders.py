@@ -404,11 +404,13 @@ async def apply_refund(db, charge: dict, *, now: datetime) -> str | None:
     return order["order_id"]
 
 
-async def fulfil_order(db, order_id: str, *, render_pdf, put_object, now: datetime) -> str:
-    """paid -> fulfilled: license PDF to R2, download token, popularity count. Safe to repeat.
+async def fulfil_order(db, order_id: str, *, render_pdf, put_object, now: datetime, send_license=None) -> str:
+    """paid -> fulfilled: license PDF to R2, download token, popularity count, license email.
+    Safe to repeat; only the call that fulfils the order sends the email.
 
-    render_pdf(order, track_title, artist_name) -> bytes and put_object(key, data, content_type)
-    are passed in so this module has no R2 or ReportLab dependency. Returns the resulting status.
+    render_pdf(order, track_title, artist_name) -> bytes, put_object(key, data, content_type) and
+    send_license(order, pdf) -> {"status", "id", "error"} are passed in so this module has no R2,
+    ReportLab or email dependency. Returns the resulting status.
     """
     order = await db.orders.find_one({"order_id": order_id})
     if not order:
@@ -422,10 +424,23 @@ async def fulfil_order(db, order_id: str, *, render_pdf, put_object, now: dateti
                            order.get("artist_display_name") or track.get("artist_name") or "")
     await put_object(key, pdf, "application/pdf")
     if await mark_fulfilled(db, order_id, license_pdf_key=key, now=now):
-        await db.orders.update_one({"order_id": order_id}, {"$set": {"email_status": "skipped"}})
         if not order.get("test_mode"):
             await db.sync_profiles.update_one({"user_id": order["artist_user_id"]}, {"$inc": {"sales_count": 1}})
+        result = {"status": "skipped", "id": None, "error": "no sender"}
+        if send_license:
+            fresh = await db.orders.find_one({"order_id": order_id})
+            try:
+                result = await send_license(fresh, pdf)
+            except Exception as exc:  # email never undoes delivery
+                result = {"status": "failed", "id": None, "error": f"{type(exc).__name__}: {exc}"[:300]}
+        await record_email(db, order_id, result, now=now)
     return "fulfilled"
+
+
+async def record_email(db, order_id: str, result: dict, *, now: datetime) -> None:
+    await db.orders.update_one({"order_id": order_id}, {"$set": {
+        "email_status": result.get("status"), "email_id": result.get("id"),
+        "email_error": result.get("error"), "email_attempted_at": now.isoformat()}})
 
 
 async def event_seen(db, event_id: str) -> bool:

@@ -41,6 +41,8 @@ from sync_public import (
 )
 import sync_orders
 from license_pdf import TERMS as LICENSE_TERMS, render_license_pdf
+from email_sender import send_email
+from sync_emails import license_email
 from sync_search import PAGE_SIZE, SearchParamError, build_filter, build_pipeline, encode_cursor, parse_params
 from sync_vault import (
     INSTAGRAM_URL, SPOTIFY_ARTIST_URL, is_legacy, metadata_patch_fields,
@@ -2209,12 +2211,29 @@ async def _render_license(order: dict, track_title: str, artist_name: str) -> by
     return await asyncio.to_thread(render_license_pdf, order, track_title=track_title, artist_name=artist_name)
 
 
+async def _send_license_email(order: dict, pdf: bytes | None = None, *, reissued: bool = False) -> dict:
+    """License email with the certificate attached. Test orders get a [TEST] subject."""
+    token = sync_orders.current_token(order)
+    if not token:
+        return {"status": "failed", "id": None, "error": "order has no live download link"}
+    if pdf is None:
+        pdf = await _r2_get(order["license_pdf_key"])
+    subject, html, text = license_email(order, download_url=f"{sync_orders.site_url()}/license/{token}",
+                                        reissued=reissued)
+    result = await send_email(
+        to=order["buyer_email"], subject=subject, html=html, text=text,
+        attachments=[(f"oVoxi-license-{order['license_id']}.pdf", pdf)],
+        idempotency_key=f"license-{order['order_id']}-v{order.get('token_version')}" + ("-reissue" if reissued else ""))
+    logger.info("license email order=%s status=%s error=%s", order["order_id"], result["status"], result.get("error"))
+    return result
+
+
 async def _fulfil_order(order_id: str) -> None:
     """Background delivery. Failures are logged; the order stays `paid` and is retried
     by a repeated webhook or by the success-page fallback."""
     try:
         status = await sync_orders.fulfil_order(db, order_id, render_pdf=_render_license, put_object=_r2_put,
-                                                now=datetime.now(timezone.utc))
+                                                now=datetime.now(timezone.utc), send_license=_send_license_email)
         logger.info("fulfil order=%s status=%s", order_id, status)
     except Exception as exc:
         logger.error("fulfil failed order=%s error=%s", order_id, exc)
