@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { api, errorMessage } from './api';
+import AdminOrdersSection from './AdminOrdersSection';
 
 // Admin: hide profiles, delist tracks (PRD-03 9). Every action is logged server-side.
 
@@ -40,6 +41,7 @@ const AdminSyncSection = ({ getToken, submissions, onChanged }) => {
 
   return (
     <div className="flex flex-col gap-8" data-testid="admin-sync">
+      <AdminOrdersSection getToken={getToken} />
       <section>
         <h3 className="mb-3 font-heading text-lg font-semibold text-white">Sync profiles</h3>
         {!profiles ? <p className="text-sm text-slate-500">Loading…</p> : profiles.length === 0 ? (

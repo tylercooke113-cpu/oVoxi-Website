@@ -59,4 +59,12 @@ export const api = {
     (await axios.post(`${API}/admin/sync/tracks/${id}/delist`, { delisted }, await authed(getToken))).data,
   adminHide: async (getToken, slug, hidden) =>
     (await axios.post(`${API}/admin/sync/profiles/${slug}/hide`, { hidden }, await authed(getToken))).data,
+  adminOrders: async (getToken, params) =>
+    (await axios.get(`${API}/admin/sync/orders`, { params, ...(await authed(getToken)) })).data,
+  adminOrdersCsv: async (getToken, params) =>
+    (await axios.get(`${API}/admin/sync/orders.csv`, { params, responseType: 'blob', ...(await authed(getToken)) })).data,
+  adminResendEmail: async (getToken, orderId) =>
+    (await axios.post(`${API}/admin/sync/orders/${encodeURIComponent(orderId)}/resend-email`, null, await authed(getToken))).data,
+  adminReissueLink: async (getToken, orderId, sendEmail) =>
+    (await axios.post(`${API}/admin/sync/orders/${encodeURIComponent(orderId)}/reissue-link`, { send_email: sendEmail }, await authed(getToken))).data,
 };

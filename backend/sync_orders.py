@@ -5,8 +5,10 @@ Configuration is read from the environment at call time, so a Railway variable c
 takes effect on the next request without a code change.
 """
 import base64
+import csv
 import hashlib
 import hmac
+import io
 import os
 import re
 import secrets
@@ -545,3 +547,92 @@ def checkout_config(*, is_admin: bool, terms_text: dict) -> dict:
                 "terms": list(terms_text[version]), "tiers": tiers}
     except (ConfigError, KeyError):
         return {"can_checkout": False}
+
+
+# ---------------------------------------------------------------------------
+# Admin orders: list, CSV for manual payouts (PRD-03 8.4, 9)
+# ---------------------------------------------------------------------------
+ADMIN_STATUSES = ("pending", "paid", "fulfilled", "failed", "refunded")
+ADMIN_LIST_MAX = 500
+CSV_MAX_ROWS = 10000
+_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+CSV_COLUMNS = [
+    ("created_at", "Order date (UTC)"), ("license_id", "License ID"), ("status", "Status"),
+    ("test_mode", "Test order"), ("artist_display_name", "Artist"), ("artist_user_id", "Artist user ID"),
+    ("track_title", "Track"), ("track_id", "Track ID"), ("tier", "Tier"), ("include_stems", "Stems"),
+    ("price", "License price"), ("tax", "Tax"), ("total", "Total paid"), ("currency", "Currency"),
+    ("buyer_name", "Buyer name"), ("buyer_company", "Buyer company"), ("buyer_email", "Buyer email"),
+    ("refunded_at", "Refunded at"), ("email_status", "Email status"), ("amount_mismatch", "Amount mismatch"),
+]
+
+
+class AdminFilterError(ValueError):
+    pass
+
+
+def admin_order_filter(*, status: str | None = None, artist: str | None = None, date_from: str | None = None,
+                       date_to: str | None = None, include_test: bool = False) -> dict:
+    """Mongo filter for the admin list and CSV. Dates are YYYY-MM-DD in UTC; `date_to` is inclusive."""
+    f: dict = {}
+    if status:
+        if status not in ADMIN_STATUSES:
+            raise AdminFilterError(f"Unknown status {status!r}")
+        f["status"] = status
+    if artist:
+        f["artist_user_id"] = artist
+    created: dict = {}
+    if date_from:
+        if not _DATE_RE.match(date_from):
+            raise AdminFilterError("from must be YYYY-MM-DD")
+        created["$gte"] = f"{date_from}T00:00:00"
+    if date_to:
+        if not _DATE_RE.match(date_to):
+            raise AdminFilterError("to must be YYYY-MM-DD")
+        nxt = (datetime.fromisoformat(date_to) + timedelta(days=1)).date().isoformat()
+        created["$lt"] = f"{nxt}T00:00:00"
+    if created:
+        f["created_at"] = created
+    if not include_test:
+        f["test_mode"] = {"$ne": True}
+    return f
+
+
+def admin_order_view(order: dict) -> dict:
+    """Everything an admin needs; never the download token hash."""
+    keys = ("order_id", "license_id", "status", "test_mode", "created_at", "paid_at", "fulfilled_at", "refunded_at",
+            "track_id", "track_title", "artist_user_id", "artist_display_name", "tier", "include_stems",
+            "price_cents", "tax_cents", "amount_total_cents", "currency", "buyer_name", "buyer_company",
+            "buyer_email", "email_status", "email_error", "amount_mismatch", "refunds", "token_expires_at")
+    view = {k: order.get(k) for k in keys}
+    view["test_mode"] = bool(view["test_mode"])
+    view["amount_mismatch"] = bool(view["amount_mismatch"])
+    view["download_counts"] = dict(order.get("download_counts") or {})
+    return view
+
+
+def _money(cents) -> str:
+    return "" if cents is None else f"{cents / 100:.2f}"
+
+
+def _csv_safe(value) -> str:
+    """Stop spreadsheet formula injection: a buyer named '=HYPERLINK(...)' must stay text."""
+    s = "" if value is None else str(value)
+    return "'" + s if s[:1] in ("=", "+", "-", "@", "\t", "\r") else s
+
+
+def orders_csv(orders) -> str:
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow([label for _, label in CSV_COLUMNS])
+    for o in orders:
+        row = {
+            **o, "test_mode": "yes" if o.get("test_mode") else "no",
+            "include_stems": "yes" if o.get("include_stems") else "no",
+            "tier": TIERS.get(o.get("tier"), (o.get("tier"),))[0],
+            "price": _money(o.get("price_cents")), "tax": _money(o.get("tax_cents")),
+            "total": _money(o.get("amount_total_cents")), "currency": (o.get("currency") or "").upper(),
+            "amount_mismatch": "yes" if o.get("amount_mismatch") else "",
+        }
+        w.writerow([_csv_safe(row.get(key)) for key, _ in CSV_COLUMNS])
+    return buf.getvalue()

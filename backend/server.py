@@ -23,7 +23,7 @@ from dotenv import load_dotenv
 import jwt
 from jwt import PyJWKClient
 from fastapi import BackgroundTasks, Depends, FastAPI, APIRouter, HTTPException, Header, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
@@ -996,6 +996,11 @@ class CheckoutRequest(BaseModel):
     @classmethod
     def _strip(cls, v: str) -> str:
         return " ".join(v.split())
+
+
+class AdminReissue(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    send_email: bool = True
 
 
 class AdminDelist(BaseModel):
@@ -2352,6 +2357,95 @@ async def sync_download_file(request: Request, token: str, file_name: str):
         raise HTTPException(status_code=503, detail="Download unavailable. Please try again.")
     logger.info("download order=%s file=%s", order["order_id"], file_name)
     return {"url": url, "filename": filename, "expires_in": sync_orders.DOWNLOAD_URL_TTL_SECONDS}
+
+
+# ---------------------------------------------------------------------------
+# Admin orders (PRD-03 9): list, CSV for manual payouts, resend email, reissue link
+# ---------------------------------------------------------------------------
+
+def _admin_filter(status, artist, date_from, date_to, include_test) -> dict:
+    try:
+        return sync_orders.admin_order_filter(status=status, artist=artist, date_from=date_from,
+                                              date_to=date_to, include_test=include_test)
+    except sync_orders.AdminFilterError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@api_router.get("/admin/sync/orders")
+@limiter.limit("30/minute")
+async def admin_list_orders(request: Request, status: Optional[str] = None, artist: Optional[str] = None,
+                            date_from: Optional[str] = None, date_to: Optional[str] = None,
+                            include_test: bool = False, admin: dict = Depends(require_admin)):
+    f = _admin_filter(status, artist, date_from, date_to, include_test)
+    cap = sync_orders.ADMIN_LIST_MAX
+    docs = await db.orders.find(f, {"_id": 0}).sort("created_at", -1).to_list(cap + 1)
+    artists = await db.orders.aggregate([
+        {"$group": {"_id": "$artist_user_id", "name": {"$last": "$artist_display_name"}}},
+        {"$sort": {"name": 1}},
+    ]).to_list(1000)
+    return {"orders": [sync_orders.admin_order_view(o) for o in docs[:cap]], "truncated": len(docs) > cap,
+            "artists": [{"artist_user_id": a["_id"], "artist_display_name": a.get("name") or a["_id"]}
+                        for a in artists if a.get("_id")]}
+
+
+@api_router.get("/admin/sync/orders.csv")
+@limiter.limit("10/minute")
+async def admin_orders_csv(request: Request, status: Optional[str] = None, artist: Optional[str] = None,
+                           date_from: Optional[str] = None, date_to: Optional[str] = None,
+                           include_test: bool = False, admin: dict = Depends(require_admin)):
+    f = _admin_filter(status, artist, date_from, date_to, include_test)
+    docs = await db.orders.find(f, {"_id": 0}).sort("created_at", 1).to_list(sync_orders.CSV_MAX_ROWS)
+    name = f"ovoxi-orders-{date_from or 'all'}-to-{date_to or 'now'}.csv"
+    await _log_admin_action(admin, "export_orders_csv", name, f"{len(docs)} rows")
+    return Response(content=sync_orders.orders_csv(docs), media_type="text/csv",
+                    headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+
+async def _fulfilled_order_or_409(order_id: str) -> dict:
+    order = await db.orders.find_one({"order_id": order_id}, {"_id": 0})
+    if not order:
+        raise _not_found()
+    if order["status"] != "fulfilled":
+        raise HTTPException(status_code=409,
+                            detail=f"Only fulfilled orders can be changed (this one is {order['status']}).")
+    return order
+
+
+@api_router.post("/admin/sync/orders/{order_id}/resend-email")
+@limiter.limit("10/minute")
+async def admin_resend_email(request: Request, order_id: str, admin: dict = Depends(require_admin)):
+    order = await _fulfilled_order_or_409(order_id)
+    try:
+        result = await _send_license_email(order)
+    except Exception as exc:
+        result = {"status": "failed", "id": None, "error": f"{type(exc).__name__}: {exc}"[:300]}
+    await sync_orders.record_email(db, order_id, result, now=datetime.now(timezone.utc))
+    await _log_admin_action(admin, "resend_license_email", order["license_id"], result["status"])
+    return {"email_status": result["status"], "email_error": result.get("error")}
+
+
+@api_router.post("/admin/sync/orders/{order_id}/reissue-link")
+@limiter.limit("10/minute")
+async def admin_reissue_link(request: Request, order_id: str, payload: AdminReissue,
+                             admin: dict = Depends(require_admin)):
+    await _fulfilled_order_or_409(order_id)
+    now = datetime.now(timezone.utc)
+    token = await sync_orders.reissue_token(db, order_id, now=now)
+    if not token:
+        raise HTTPException(status_code=409, detail="The order changed while reissuing. Reload and try again.")
+    order = await db.orders.find_one({"order_id": order_id}, {"_id": 0})
+    result = {"status": "skipped", "id": None, "error": "not requested"}
+    if payload.send_email:
+        try:
+            result = await _send_license_email(order, reissued=True)
+        except Exception as exc:
+            result = {"status": "failed", "id": None, "error": f"{type(exc).__name__}: {exc}"[:300]}
+        await sync_orders.record_email(db, order_id, result, now=now)
+    await _log_admin_action(admin, "reissue_download_link", order["license_id"],
+                            f"email={result['status']}")
+    return {"download_url": f"{sync_orders.site_url()}/license/{token}",
+            "token_expires_at": order.get("token_expires_at"), "email_status": result["status"],
+            "email_error": result.get("error")}
 
 
 # ---------------------------------------------------------------------------
