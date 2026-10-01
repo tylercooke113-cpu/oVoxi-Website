@@ -2216,8 +2216,13 @@ async def _render_license(order: dict, track_title: str, artist_name: str) -> by
     return await asyncio.to_thread(render_license_pdf, order, track_title=track_title, artist_name=artist_name)
 
 
-async def _send_license_email(order: dict, pdf: bytes | None = None, *, reissued: bool = False) -> dict:
-    """License email with the certificate attached. Test orders get a [TEST] subject."""
+async def _send_license_email(order: dict, pdf: bytes | None = None, *, reissued: bool = False,
+                              idempotency_key: str | None = None) -> dict:
+    """License email with the certificate attached. Test orders get a [TEST] subject.
+
+    The default idempotency key blocks duplicate delivery emails for the same link version.
+    A deliberate admin resend must pass its own unique key, or Resend treats it as a
+    duplicate of the original and silently sends nothing (it keeps keys for 24 hours)."""
     token = sync_orders.current_token(order)
     if not token:
         return {"status": "failed", "id": None, "error": "order has no live download link"}
@@ -2228,7 +2233,8 @@ async def _send_license_email(order: dict, pdf: bytes | None = None, *, reissued
     result = await send_email(
         to=order["buyer_email"], subject=subject, html=html, text=text,
         attachments=[(f"oVoxi-license-{order['license_id']}.pdf", pdf)],
-        idempotency_key=f"license-{order['order_id']}-v{order.get('token_version')}" + ("-reissue" if reissued else ""))
+        idempotency_key=idempotency_key or (
+            f"license-{order['order_id']}-v{order.get('token_version')}" + ("-reissue" if reissued else "")))
     logger.info("license email order=%s status=%s error=%s", order["order_id"], result["status"], result.get("error"))
     return result
 
@@ -2416,7 +2422,8 @@ async def _fulfilled_order_or_409(order_id: str) -> dict:
 async def admin_resend_email(request: Request, order_id: str, admin: dict = Depends(require_admin)):
     order = await _fulfilled_order_or_409(order_id)
     try:
-        result = await _send_license_email(order)
+        result = await _send_license_email(
+            order, idempotency_key=f"license-{order['order_id']}-resend-{uuid.uuid4().hex}")
     except Exception as exc:
         result = {"status": "failed", "id": None, "error": f"{type(exc).__name__}: {exc}"[:300]}
     await sync_orders.record_email(db, order_id, result, now=datetime.now(timezone.utc))

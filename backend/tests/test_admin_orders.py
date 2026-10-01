@@ -63,7 +63,7 @@ def env(monkeypatch):
     db = FullDB()
     sent = []
 
-    async def fake_send(order, pdf=None, *, reissued=False):
+    async def fake_send(order, pdf=None, *, reissued=False, idempotency_key=None):
         sent.append((order["order_id"], order.get("token_version"), reissued))
         return {"status": "sent", "id": "email_x", "error": None}
 
@@ -153,3 +153,68 @@ def test_admin_only(env):
     server.app.dependency_overrides.clear()
     assert env.client.get("/api/admin/sync/orders").status_code in (401, 403)
     assert env.client.get("/api/admin/sync/orders.csv").status_code in (401, 403)
+
+
+# --- Resend's idempotency, simulated: a repeated key is accepted but nothing is sent ---
+
+class DedupingResend:
+    """Behaves like Resend: an Idempotency-Key it has seen returns the first result and sends nothing."""
+
+    def __init__(self):
+        self.seen, self.delivered = {}, []
+
+    async def send(self, *, to, subject, html, text, attachments=None, idempotency_key=None, transport=None):
+        if idempotency_key in self.seen:
+            return self.seen[idempotency_key]
+        self.delivered.append((idempotency_key, subject))
+        result = {"status": "sent", "id": f"email_{len(self.delivered)}", "error": None}
+        self.seen[idempotency_key] = result
+        return result
+
+
+@pytest.fixture
+def real_email(monkeypatch):
+    monkeypatch.setenv("SYNC_TOKEN_SECRET", "s" * 64)
+    db = FullDB()
+    resend = DedupingResend()
+
+    async def fake_r2_get(key):
+        return b"%PDF-x"
+
+    monkeypatch.setattr(server, "db", db)
+    monkeypatch.setattr(server, "send_email", resend.send)
+    monkeypatch.setattr(server, "_r2_get", fake_r2_get)
+    monkeypatch.setattr(server.limiter, "enabled", False)
+    server.app.dependency_overrides[server.require_admin] = lambda: ADMIN
+    yield SimpleNamespace(client=TestClient(server.app), db=db, resend=resend)
+    server.app.dependency_overrides.clear()
+
+
+def test_resend_really_sends_after_delivery_email(real_email):
+    o = make_order(real_email.db, created=NOW)
+    saved = real_email.db._db.orders.find_one({"order_id": o["order_id"]}, {"_id": 0})
+    asyncio.run(server._send_license_email(saved, b"%PDF-x"))  # the original delivery email
+    for _ in range(2):
+        r = real_email.client.post(f"/api/admin/sync/orders/{o['order_id']}/resend-email")
+        assert r.json()["email_status"] == "sent"
+    keys = [k for k, _ in real_email.resend.delivered]
+    assert len(keys) == 3 and len(set(keys)) == 3
+    assert keys[0] == f"license-{o['order_id']}-v1"
+
+
+def test_delivery_email_is_still_deduplicated(real_email):
+    o = make_order(real_email.db, created=NOW)
+    saved = real_email.db._db.orders.find_one({"order_id": o["order_id"]}, {"_id": 0})
+    asyncio.run(server._send_license_email(saved, b"%PDF-x"))
+    asyncio.run(server._send_license_email(saved, b"%PDF-x"))
+    assert len(real_email.resend.delivered) == 1
+
+
+def test_reissue_email_is_a_new_send(real_email):
+    o = make_order(real_email.db, created=NOW)
+    saved = real_email.db._db.orders.find_one({"order_id": o["order_id"]}, {"_id": 0})
+    asyncio.run(server._send_license_email(saved, b"%PDF-x"))
+    body = real_email.client.post(f"/api/admin/sync/orders/{o['order_id']}/reissue-link",
+                                  json={"send_email": True}).json()
+    assert body["email_status"] == "sent" and len(real_email.resend.delivered) == 2
+    assert real_email.resend.delivered[1][1].endswith("(new download link)")
