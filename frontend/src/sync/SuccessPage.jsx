@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import { useUser } from '@clerk/clerk-react';
 import { CheckCircle2, Loader2 } from 'lucide-react';
 import { checkoutApi } from './checkout';
 import { TIER_LABELS } from './DownloadPage';
@@ -20,6 +21,7 @@ const Shell = ({ children }) => (
 
 const SuccessPage = () => {
   const [params] = useSearchParams();
+  const { isSignedIn } = useUser();
   const sessionId = params.get('session_id') || '';
   const [state, setState] = useState({ phase: 'processing', order: null });
 
@@ -61,6 +63,15 @@ const SuccessPage = () => {
           Download your files
         </Link>
         <p className="mt-3 text-xs text-slate-500">Bookmark the download page. The link works for 30 days, with 10 downloads per file.</p>
+        {!isSignedIn && order.buyer_email_masked && (
+          <p className="mt-4 border-t border-white/10 pt-4 text-xs text-slate-400">
+            Keep all your licenses in one place.{' '}
+            <Link to="/signup?next=/account" className="text-cyan hover:underline">
+              Create an account with {order.buyer_email_masked}
+            </Link>{' '}
+            to see this license, its certificate and downloads any time.
+          </p>
+        )}
       </Shell>
     );
   }

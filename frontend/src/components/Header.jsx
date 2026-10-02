@@ -61,13 +61,22 @@ export const Header = () => {
               {dropdownOpen && (
                 <div className="absolute top-full left-0 mt-2 w-48 rounded-xl border border-white/10 bg-black/95 backdrop-blur-xl py-2 shadow-xl">
                   {isSignedIn && (
-                    <NavLink
-                      to='/vault'
-                      onClick={() => setDropdownOpen(false)}
-                      className='block px-4 py-2.5 text-sm text-slate-300 hover:text-white hover-text-gradient transition-colors'
-                    >
-                      My Vault
-                    </NavLink>
+                    <>
+                      <NavLink
+                        to='/vault'
+                        onClick={() => setDropdownOpen(false)}
+                        className='block px-4 py-2.5 text-sm text-slate-300 hover:text-white hover-text-gradient transition-colors'
+                      >
+                        My Vault
+                      </NavLink>
+                      <NavLink
+                        to='/account'
+                        onClick={() => setDropdownOpen(false)}
+                        className='block px-4 py-2.5 text-sm text-slate-300 hover:text-white hover-text-gradient transition-colors'
+                      >
+                        My account
+                      </NavLink>
+                    </>
                   )}
                   {NAV_LINKS.map((l) => (
                     <NavLink
@@ -116,6 +125,12 @@ export const Header = () => {
       {open && (
         <div data-testid="mobile-menu" className="md:hidden bg-black/95 backdrop-blur-xl border-b border-white/10">
           <div className="px-6 py-4 flex flex-col gap-4">
+            {isSignedIn && (
+              <>
+                <Link to="/vault" onClick={closeMenu} className="text-base font-medium text-slate-300 hover-text-gradient">My Vault</Link>
+                <Link to="/account" onClick={closeMenu} className="text-base font-medium text-slate-300 hover-text-gradient">My account</Link>
+              </>
+            )}
             {NAV_LINKS.map((l) => (
               <Link
                 key={l.to}

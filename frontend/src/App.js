@@ -20,6 +20,8 @@ import TrackSharePage from './sync/TrackSharePage';
 import LibraryPage from './sync/LibraryPage';
 import SuccessPage from './sync/SuccessPage';
 import DownloadPage from './sync/DownloadPage';
+import AccountPage from './account/AccountPage';
+import VerifyPage from './verify/VerifyPage';
 
 const NEW_MARKETING = process.env.REACT_APP_NEW_MARKETING === 'true';
 const MarketingPage = lazy(() => import('./marketing/MarketingPage'));
@@ -57,6 +59,9 @@ function AppContent() {
           <Route path='/signup/*' element={<SignUpPage />} />
           <Route path='/login/*' element={<LoginPage />} />
           <Route path='/vault' element={<VaultPage />} />
+          <Route path='/account' element={<AccountPage />} />
+          <Route path='/verify' element={<VerifyPage />} />
+          <Route path='/verify/:licenseId' element={<VerifyPage />} />
           <Route path='/appeal/:submissionId' element={<AppealPage />} />
           <Route path='/privacy' element={<PrivacyPage />} />
           <Route path='/terms' element={<TermsPage />} />

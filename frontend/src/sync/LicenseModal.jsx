@@ -13,7 +13,7 @@ const input = 'h-10 w-full rounded-xl border border-white/10 bg-white/[0.04] px-
 const LicenseModal = ({ track, config, onClose, refreshConfig, getToken, isSignedIn }) => {
   const [tier, setTier] = useState(config.tiers[0].id);
   const [stems, setStems] = useState(false);
-  const [form, setForm] = useState({ name: '', company: '', email: '' });
+  const [form, setForm] = useState({ project: '', client: '', name: '', company: '', email: '' });
   const [agreed, setAgreed] = useState(false);
   const [errors, setErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
@@ -27,6 +27,7 @@ const LicenseModal = ({ track, config, onClose, refreshConfig, getToken, isSigne
   const submit = async (e) => {
     e.preventDefault();
     const next = {};
+    if (!form.project.trim()) next.project = 'Name the project this license is for.';
     if (!form.name.trim()) next.name = 'Enter your name.';
     if (!EMAIL_RE.test(form.email.trim())) next.email = 'Enter a valid email.';
     if (!agreed) next.terms = 'Agree to the license terms to continue.';
@@ -35,7 +36,8 @@ const LicenseModal = ({ track, config, onClose, refreshConfig, getToken, isSigne
     try {
       const { checkout_url: url } = await checkoutApi.start({
         track_id: track.id, tier, include_stems: withStems, buyer_name: form.name.trim(),
-        buyer_company: form.company.trim(), buyer_email: form.email.trim(), accept_terms: true,
+        buyer_company: form.company.trim(), buyer_email: form.email.trim(),
+        project_name: form.project.trim(), project_client: form.client.trim(), accept_terms: true,
         terms_version: cfg.terms_version,
       }, getToken, isSignedIn);
       window.location.assign(url);
@@ -88,6 +90,15 @@ const LicenseModal = ({ track, config, onClose, refreshConfig, getToken, isSigne
         )}
 
         <div className="mt-4 space-y-3">
+          <div>
+            <label htmlFor="lic-project" className="mb-1 block text-xs text-slate-300">Project name</label>
+            <input id="lic-project" className={input} value={form.project} onChange={set('project')} maxLength={120} placeholder="Summer campaign teaser" />
+            {errors.project && <p className="mt-1 text-xs text-red-300">{errors.project}</p>}
+          </div>
+          <div>
+            <label htmlFor="lic-client" className="mb-1 block text-xs text-slate-300">Client (optional)</label>
+            <input id="lic-client" className={input} value={form.client} onChange={set('client')} maxLength={120} placeholder="Acme Inc." />
+          </div>
           <div>
             <label htmlFor="lic-name" className="mb-1 block text-xs text-slate-300">Your name</label>
             <input id="lic-name" className={input} value={form.name} onChange={set('name')} maxLength={120} placeholder="Dana Rivera" autoComplete="name" />

@@ -68,3 +68,17 @@ export const api = {
   adminReissueLink: async (getToken, orderId, sendEmail) =>
     (await axios.post(`${API}/admin/sync/orders/${encodeURIComponent(orderId)}/reissue-link`, { send_email: sendEmail }, await authed(getToken))).data,
 };
+
+// Brief 17: buyer account (any signed-in user) and the public verification page.
+export const accountApi = {
+  licenses: async (getToken) =>
+    (await axios.get(`${API}/account/licenses`, await authed(getToken))).data,
+  certificate: async (getToken, id) =>
+    (await axios.get(`${API}/account/licenses/${encodeURIComponent(id)}/certificate`, await authed(getToken))).data.url,
+  file: async (getToken, id, name) =>
+    (await axios.post(`${API}/account/licenses/${encodeURIComponent(id)}/files/${encodeURIComponent(name)}`, null, await authed(getToken))).data.url,
+};
+
+export const verifyApi = {
+  get: async (id) => (await axios.get(`${API}/verify/${encodeURIComponent(id)}`)).data,
+};

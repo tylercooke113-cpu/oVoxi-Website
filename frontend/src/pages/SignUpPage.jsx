@@ -1,7 +1,14 @@
 import React from 'react';
 import { SignUp } from '@clerk/clerk-react';
+import { useSearchParams } from 'react-router-dom';
 
-const SignUpPage = () => (
+// Only our own paths; never an external URL, so this can't become an open redirect.
+const safeNext = (next) => (next === '/account' || next === '/vault' ? next : '/vault');
+
+const SignUpPage = () => {
+  const [params] = useSearchParams();
+  const redirect = safeNext(params.get('next'));
+  return (
   <div className="min-h-screen bg-ink flex items-center justify-center px-4">
     <div className="w-full max-w-md">
       <div className="mb-8 text-center">
@@ -11,7 +18,7 @@ const SignUpPage = () => (
       <SignUp
         routing="path"
         path="/signup"
-        forceRedirectUrl="/vault"
+        forceRedirectUrl={redirect}
         signInUrl="/login"
         appearance={{
           variables: {
@@ -31,6 +38,7 @@ const SignUpPage = () => (
       />
     </div>
   </div>
-);
+  );
+};
 
 export default SignUpPage;
