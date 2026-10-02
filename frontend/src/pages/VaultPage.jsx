@@ -1,11 +1,14 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useUser, useAuth, SignOutButton } from '@clerk/clerk-react';
-import { Navigate, useSearchParams } from 'react-router-dom';
+import { Navigate, useSearchParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { Loader2, Music2, ExternalLink, RefreshCw, CheckCircle2, XCircle } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import TrackSyncPanel from '../sync/TrackSyncPanel';
 import SyncProfileTab from '../sync/SyncProfileTab';
+import { useAgreementStatus } from '../agreement/useAgreementStatus';
+import { openAgreementPdf, formatSignedDate } from '../agreement/agreementApi';
+import AgreementModal from '../agreement/AgreementModal';
 
 const API = 'https://ovoxi-website-production.up.railway.app/api';
 
@@ -77,6 +80,11 @@ const VaultPage = () => {
   const [searchParams] = useSearchParams();
   const [tab, setTab] = useState(searchParams.get('tab') === 'profile' ? 'profile' : 'tracks');
   const updateTrack = useCallback((t) => setTracks((all) => all.map((x) => (x.id === t.id ? t : x))), []);
+  const navigate = useNavigate();
+  const { status, refresh: refreshAgreement, needsSignature } =
+    useAgreementStatus(getToken, isLoaded && isSignedIn);
+  const [agreementOpen, setAgreementOpen] = useState(false);
+  const onUpload = () => (needsSignature ? setAgreementOpen(true) : navigate('/upload'));
 
   const fetchTracks = useCallback(async () => {
     if (!isLoaded || !isSignedIn) return;
@@ -110,6 +118,14 @@ const VaultPage = () => {
               My Vault
             </h1>
             <p className="text-slate-400 text-sm mt-1">{user?.firstName} {user?.lastName}</p>
+            {status?.signed && status.agreement && (
+              <p className="mt-1.5 text-xs text-slate-500">
+                Artist Agreement signed {formatSignedDate(status.agreement.signed_at)} ·{' '}
+                <button type="button" onClick={() => openAgreementPdf(getToken)} className="text-[#4FC3F7] hover:underline">
+                  Download PDF
+                </button>
+              </p>
+            )}
           </div>
           <div className="flex items-center gap-3">
             <button
@@ -119,12 +135,13 @@ const VaultPage = () => {
               <RefreshCw size={14} />
               Refresh
             </button>
-            <Link
-              to="/upload"
+            <button
+              type="button"
+              onClick={onUpload}
               className="rounded-full bg-gradient-brand px-5 py-2 text-sm font-semibold text-white transition-all hover:shadow-[0_0_24px_rgba(180,79,212,0.6)]"
             >
               + Upload Track
-            </Link>
+            </button>
             <SignOutButton>
               <button className="text-sm text-slate-400 hover:text-white transition-colors">
                 Sign Out
@@ -153,9 +170,9 @@ const VaultPage = () => {
           <div className="text-center py-20">
             <Music2 size={48} className="text-slate-600 mx-auto mb-4" />
             <p className="text-slate-400">No tracks yet. Upload your first track to get started.</p>
-            <Link to="/upload" className="mt-6 inline-block rounded-full bg-gradient-brand px-6 py-2.5 text-sm font-semibold text-white">
+            <button type="button" onClick={onUpload} className="mt-6 inline-block rounded-full bg-gradient-brand px-6 py-2.5 text-sm font-semibold text-white">
               Upload Your First Track
-            </Link>
+            </button>
           </div>
         ) : (
           <div className="flex flex-col gap-4">
@@ -196,6 +213,13 @@ const VaultPage = () => {
           </div>
         )}
       </div>
+      <AgreementModal
+        open={agreementOpen}
+        onClose={() => setAgreementOpen(false)}
+        onSigned={() => refreshAgreement()}
+        getToken={getToken}
+        prefill={status?.prefill}
+      />
     </div>
   );
 };

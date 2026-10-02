@@ -1,10 +1,13 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { Loader2, Upload, CheckCircle2, Music2 } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { Link, Navigate } from 'react-router-dom';
+import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '@clerk/clerk-react';
+import { useAgreementStatus } from '../agreement/useAgreementStatus';
+import { openAgreementPdf, formatSignedDate } from '../agreement/agreementApi';
+import AgreementModal from '../agreement/AgreementModal';
 import { PageHero } from '../components/PageHero';
 import { Reveal } from '../components/Reveal';
 import { Input } from '../components/ui/input';
@@ -93,6 +96,12 @@ const RADIO_CLASS =
 const UploadPage = () => {
   const fileRef = useRef(null);
   const { getToken, isSignedIn, isLoaded } = useAuth();
+  const navigate = useNavigate();
+  const { status, refresh: refreshAgreement, needsSignature } =
+    useAgreementStatus(getToken, isLoaded && isSignedIn);
+  const [agreementOpen, setAgreementOpen] = useState(false);
+  const signedRef = useRef(false);
+  useEffect(() => { if (needsSignature) setAgreementOpen(true); }, [needsSignature]);
 
   const [form, setForm] = useState({ artist_name: '', track_name: '', genre: '' });
   const [file, setFile] = useState(null);
@@ -258,6 +267,13 @@ const UploadPage = () => {
       setStage('done');
     } catch (err) {
       console.error(err);
+      if (err.response?.status === 403
+          && err.response?.data?.detail === 'Sign the Artist Agreement before uploading.') {
+        await refreshAgreement();
+        setAgreementOpen(true);
+        setStage('idle');
+        return;
+      }
       let detail;
       if (err.response?.status === 403) {
         const serverDetail = err.response?.data?.detail;
@@ -569,6 +585,15 @@ const UploadPage = () => {
                 {!consentAi && !consentSync && (
                   <p className="text-xs text-red-400">Choose at least one.</p>
                 )}
+                {status?.signed && status.agreement && (
+                  <div className="mt-2.5 border-t border-white/10 pt-2.5 text-xs text-slate-500">
+                    These uses are licensed under your Artist Agreement signed{' '}
+                    {formatSignedDate(status.agreement.signed_at)}.{' '}
+                    <button type="button" onClick={() => openAgreementPdf(getToken)} className="text-cyan hover:underline">
+                      View agreement
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* Splits (every upload) */}
@@ -807,6 +832,13 @@ const UploadPage = () => {
           </Reveal>
         </div>
       </section>
+      <AgreementModal
+        open={agreementOpen}
+        onClose={() => { setAgreementOpen(false); if (!signedRef.current) navigate('/vault'); }}
+        onSigned={() => { signedRef.current = true; refreshAgreement(); }}
+        getToken={getToken}
+        prefill={status?.prefill}
+      />
     </div>
   );
 };
