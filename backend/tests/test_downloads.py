@@ -82,9 +82,12 @@ def test_fallback_delivers_when_webhook_is_late(env):
 
 
 def test_success_view_hides_buyer_details(env):
-    text = poll(env).text
+    r = poll(env)
+    text = r.text
     for secret in ("Dana Secret", "Secret Co", "dana@secret.example", "pi_9", "order_id"):
         assert secret not in text
+    # Brief 17: only a masked email is exposed, enough for the signed-out account nudge.
+    assert r.json()["buyer_email_masked"] == "d****@secret.example"
 
 
 def test_unpaid_session_stays_processing_and_stripe_is_throttled(env):

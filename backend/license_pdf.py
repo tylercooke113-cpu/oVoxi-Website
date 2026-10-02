@@ -14,6 +14,8 @@ from reportlab.lib.pagesizes import LETTER
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.graphics.barcode.qr import QrCodeWidget
+from reportlab.graphics.shapes import Drawing
 
 PURPLE = colors.HexColor("#7B5EA7")
 INK = colors.HexColor("#111111")
@@ -55,6 +57,15 @@ def _p(text, style=_BASE) -> Paragraph:
     return Paragraph(escape(str(text or "")), style)
 
 
+def _qr(url: str, size: float = 72.0) -> Drawing:
+    """About a 1 inch QR of the verification URL."""
+    widget = QrCodeWidget(url)
+    x0, y0, x1, y1 = widget.getBounds()
+    d = Drawing(size, size, transform=[size / (x1 - x0), 0, 0, size / (y1 - y0), 0, 0])
+    d.add(widget)
+    return d
+
+
 def _watermark(canvas, doc):
     canvas.saveState()
     canvas.setFont("Helvetica-Bold", 44)
@@ -78,11 +89,15 @@ def _header_bar(canvas, doc):
     canvas.restoreState()
 
 
-def render_license_pdf(order: dict, *, track_title: str, artist_name: str) -> bytes:
+def render_license_pdf(order: dict, *, track_title: str, artist_name: str,
+                       license: dict = None, verify_url: str = None) -> bytes:
     """PDF bytes for a paid order. Raises KeyError if the order's terms_version has no text."""
     terms = TERMS[order["terms_version"]]
     issued = datetime.fromisoformat(order.get("paid_at") or order["created_at"]).strftime("%B %d, %Y")
     currency = order.get("currency", "usd")
+    lic = license or {}
+    scope = lic.get("scope") or {}
+    project = lic.get("project") or {}
 
     rows = [
         ("License ID", order["license_id"]),
@@ -93,6 +108,12 @@ def render_license_pdf(order: dict, *, track_title: str, artist_name: str) -> by
         ("Track", track_title),
         ("Artist", artist_name),
         ("Tier", TIER_LABELS.get(order["tier"], order["tier"])),
+        *([("Project", project.get("name"))] if project.get("name") else []),
+        *([("Client", project.get("client"))] if project.get("client") else []),
+        *([("Territory", scope.get("territory"))] if scope.get("territory") else []),
+        *([("Term", scope.get("term_label"))] if scope.get("term_label") else []),
+        *([("Paid media", _money(scope.get("media_spend_cap_cents"), currency))]
+          if scope.get("media_spend_cap_cents") else []),
         ("Stems included", "Yes" if order.get("include_stems") else "No"),
         ("License fee", _money(order.get("price_cents"), currency)),
         ("Tax", _money(order.get("tax_cents"), currency)),
@@ -119,6 +140,26 @@ def render_license_pdf(order: dict, *, track_title: str, artist_name: str) -> by
     ]
     for para in terms:
         story += [_p(para), Spacer(1, 6)]
+
+    if verify_url:
+        story += [Spacer(1, 14), _p("Verification", _H2),
+                  _p(f"Verify this license at {verify_url}", _SMALL), Spacer(1, 6), _qr(verify_url)]
+
+    cue = lic.get("cue_sheet") or []
+    story += [Spacer(1, 14), _p("Cue sheet information", _H2)]
+    if cue:
+        head = [_p(h, _LABEL) for h in ("Name", "Role", "PRO", "IPI")]
+        body = [[_p(c.get("name")), _p(c.get("role")), _p(c.get("society")), _p(c.get("ipi") or "None")]
+                for c in cue]
+        cue_table = Table([head, *body], colWidths=[2.3 * inch, 1.3 * inch, 1.6 * inch, 1.5 * inch])
+        cue_table.setStyle(TableStyle([
+            ("LINEBELOW", (0, 0), (-1, -1), 0.5, RULE), ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ("LEFTPADDING", (0, 0), (-1, -1), 0)]))
+        story.append(cue_table)
+    else:
+        story.append(_p("No writer or publisher information on file.", _SMALL))
+
     story += [Spacer(1, 10), _p(
         f"This certificate is evidence of the license identified by {order['license_id']}. "
         "Keep it with your project files. Contact tyler@ovoxi.net with the License ID for any question.",

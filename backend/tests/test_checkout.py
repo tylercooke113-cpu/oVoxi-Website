@@ -39,7 +39,8 @@ class FakeSessions:
 
 def body(**over):
     b = {"track_id": "t1", "tier": "creator_pro", "include_stems": True, "buyer_name": "  Dana   Buyer ",
-         "buyer_company": "", "buyer_email": "dana@example.com", "accept_terms": True, "terms_version": "draft-0"}
+         "buyer_company": "", "buyer_email": "dana@example.com", "project_name": "Summer campaign teaser",
+         "accept_terms": True, "terms_version": "draft-0"}
     b.update(over)
     return b
 

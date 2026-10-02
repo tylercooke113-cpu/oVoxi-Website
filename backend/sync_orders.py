@@ -16,6 +16,8 @@ import uuid
 from datetime import datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 
+from pymongo.errors import DuplicateKeyError
+
 TIERS = {
     "creator": ("Creator", "SYNC_PRICE_CREATOR", 1900),
     "creator_pro": ("Creator Pro", "SYNC_PRICE_CREATOR_PRO", 4900),
@@ -164,7 +166,8 @@ def new_license_id() -> str:
 
 def build_order(*, track: dict, tier: str, include_stems: bool, buyer_name: str,
                 buyer_company: str, buyer_email: str, test_mode: bool, now: datetime,
-                track_title: str = "", artist_display_name: str = "") -> dict:
+                track_title: str = "", artist_display_name: str = "",
+                project_name: str = "", project_client: str = "") -> dict:
     """A new `pending` order. The price is computed here, never taken from the request."""
     if include_stems and not deliver_stems():
         raise ValueError("Stems are not available")
@@ -184,6 +187,7 @@ def build_order(*, track: dict, tier: str, include_stems: bool, buyer_name: str,
         "buyer_name": buyer_name,
         "buyer_company": buyer_company or "",
         "buyer_email": buyer_email,
+        "project": {"name": project_name, "client": project_client},
         "terms_version": terms_version(),
         "stripe_session_id": None,
         "stripe_payment_intent": None,
@@ -400,13 +404,17 @@ async def apply_refund(db, charge: dict, *, now: datetime) -> str | None:
     res = await db.orders.update_one(
         {"order_id": order["order_id"], "status": {"$in": ["paid", "fulfilled"]}},
         {"$set": {"status": "refunded", "refunded_at": now.isoformat()}})
+    await db.licenses.update_one(
+        {"order_id": order["order_id"]},
+        {"$set": {"status": "refunded", "refunded_at": now.isoformat()}})
     if res.modified_count == 1 and order.get("status") == "fulfilled" and not order.get("test_mode"):
         await db.sync_profiles.update_one({"user_id": order["artist_user_id"], "sales_count": {"$gt": 0}},
                                           {"$inc": {"sales_count": -1}})
     return order["order_id"]
 
 
-async def fulfil_order(db, order_id: str, *, render_pdf, put_object, now: datetime, send_license=None) -> str:
+async def fulfil_order(db, order_id: str, *, render_pdf, put_object, now: datetime,
+                       send_license=None, build_license=None) -> str:
     """paid -> fulfilled: license PDF to R2, download token, popularity count, license email.
     Safe to repeat; only the call that fulfils the order sends the email.
 
@@ -422,9 +430,17 @@ async def fulfil_order(db, order_id: str, *, render_pdf, put_object, now: dateti
     track = await db.track_submissions.find_one({"id": order["track_id"]}) or {}
     key = license_pdf_key(order)
     delivery_files(dict(order, license_pdf_key=key), track)  # DeliveryError before any upload
+    lic = build_license(dict(order, license_pdf_key=key), track, now) if build_license else None
     pdf = await render_pdf(order, order.get("track_title") or track.get("track_name") or "",
-                           order.get("artist_display_name") or track.get("artist_name") or "")
+                           order.get("artist_display_name") or track.get("artist_name") or "", lic)
     await put_object(key, pdf, "application/pdf")
+    if lic is not None:
+        # Idempotent: the unique license_id index turns a repeat into a no-op. Any other
+        # error propagates, leaving the order "paid" for the next fulfilment attempt.
+        try:
+            await db.licenses.insert_one(dict(lic))
+        except DuplicateKeyError:
+            pass
     if await mark_fulfilled(db, order_id, license_pdf_key=key, now=now):
         if not order.get("test_mode"):
             await db.sync_profiles.update_one({"user_id": order["artist_user_id"]}, {"$inc": {"sales_count": 1}})
@@ -471,12 +487,24 @@ PUBLIC_STATUS = {"pending": "processing", "paid": "processing", "fulfilled": "re
                  "failed": "failed", "refunded": "refunded"}
 
 
+def mask_email(email: str) -> str:
+    """j****@riverastudio.com. Enough for the account nudge to name the address without
+    exposing it in full on the session-reachable success page (Brief 17 item 7)."""
+    email = (email or "").strip()
+    if "@" not in email:
+        return ""
+    local, _, domain = email.partition("@")
+    return f"{local[:1]}****@{domain}" if local else ""
+
+
 def success_view(order: dict) -> dict:
-    """What the success page may see: no buyer name, email or company."""
+    """What the success page may see: no buyer name, company or full email. A masked email
+    lets the signed-out account nudge name it without exposing the address (Brief 17 item 7)."""
     view = {"status": PUBLIC_STATUS.get(order.get("status"), "processing"),
             "license_id": order.get("license_id"), "track_title": order.get("track_title"),
             "artist_display_name": order.get("artist_display_name"), "tier": order.get("tier"),
-            "include_stems": bool(order.get("include_stems")), "download_token": None}
+            "include_stems": bool(order.get("include_stems")), "download_token": None,
+            "buyer_email_masked": mask_email(order.get("buyer_email"))}
     if view["status"] == "ready":
         view["download_token"] = current_token(order)
     return view

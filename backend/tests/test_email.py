@@ -117,7 +117,7 @@ def paid_order(db, monkeypatch):
     return o
 
 
-async def _pdf(order, title, artist):
+async def _pdf(order, title, artist, lic=None):
     return b"%PDF-x"
 
 

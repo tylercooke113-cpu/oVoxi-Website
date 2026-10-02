@@ -42,6 +42,7 @@ from sync_public import (
     LISTING_FILTER, is_listed, photo_visible, public_profile_view, public_track_view,
 )
 import sync_orders
+import licenses
 from license_pdf import TERMS as LICENSE_TERMS, render_license_pdf
 from email_sender import send_email
 from sync_emails import license_email
@@ -122,6 +123,10 @@ STALE_MODAL_MIN = int(os.environ.get("STALE_MODAL_MIN", "45"))
 # Modal timeout increases.
 SWEEPER_INTERVAL = int(os.environ.get("SWEEPER_INTERVAL", "120"))
 ABANDON_PENDING_HOURS = int(os.environ.get("ABANDON_PENDING_HOURS", "2"))
+# Fulfilment reconciler (Brief 17): retry paid-but-unfulfilled orders out of band.
+FULFIL_RECONCILE_INTERVAL = int(os.environ.get("FULFIL_RECONCILE_INTERVAL", "300"))
+FULFIL_MIN_AGE_MIN = int(os.environ.get("FULFIL_MIN_AGE_MIN", "2"))
+FULFIL_MAX_ATTEMPTS = int(os.environ.get("FULFIL_MAX_ATTEMPTS", "10"))
 CALLBACK_TIMESTAMP_TOLERANCE = int(os.environ.get("CALLBACK_TIMESTAMP_TOLERANCE", "300"))
 # seconds; must accommodate clock skew between Modal and Railway
 
@@ -1053,6 +1058,8 @@ class CheckoutRequest(BaseModel):
     buyer_name: str = Field(min_length=1, max_length=120)
     buyer_company: str = Field(default="", max_length=120)
     buyer_email: EmailStr
+    project_name: str = Field(min_length=1, max_length=120)
+    project_client: str = Field(default="", max_length=120)
     accept_terms: bool
     terms_version: str = Field(min_length=1, max_length=32)
 
@@ -1060,6 +1067,16 @@ class CheckoutRequest(BaseModel):
     @classmethod
     def _strip(cls, v: str) -> str:
         return " ".join(v.split())
+
+    @field_validator("project_name", "project_client")
+    @classmethod
+    def _clean_project(cls, v: str, info) -> str:
+        v = " ".join(v.split())
+        if _BAD_TEXT.search(v):
+            raise ValueError("Remove special characters from this field.")
+        if info.field_name == "project_name" and not v:
+            raise ValueError("Name the project this license is for.")
+        return v
 
 
 class AdminReissue(BaseModel):
@@ -1252,11 +1269,14 @@ async def fetch_clerk_user(user_id: str) -> dict:
         logger.warning("Clerk user lookup returned %s", r.status_code)
         raise HTTPException(status_code=503, detail="Could not load your account. Please try again.")
     u = r.json()
-    email = next((e.get("email_address") for e in u.get("email_addresses", [])
-                  if e.get("id") == u.get("primary_email_address_id")), None)
+    primary = next((e for e in u.get("email_addresses", [])
+                    if e.get("id") == u.get("primary_email_address_id")), None)
+    email = (primary or {}).get("email_address")
     if not email:
         raise HTTPException(status_code=422, detail="Add an email address to your account first.")
-    return {"email": email, "first_name": u.get("first_name") or "", "last_name": u.get("last_name") or ""}
+    verified = ((primary or {}).get("verification") or {}).get("status") == "verified"
+    return {"email": email, "first_name": u.get("first_name") or "", "last_name": u.get("last_name") or "",
+            "email_verified": verified}
 
 
 async def _current_agreement(uid: str) -> Optional[dict]:
@@ -2474,7 +2494,8 @@ async def sync_checkout(request: Request, payload: CheckoutRequest,
             buyer_name=payload.buyer_name, buyer_company=payload.buyer_company,
             buyer_email=str(payload.buyer_email), test_mode=test_mode, now=now,
             track_title=track.get("track_name") or "",
-            artist_display_name=(profile or {}).get("display_name") or track.get("artist_name") or "")
+            artist_display_name=(profile or {}).get("display_name") or track.get("artist_name") or "",
+            project_name=payload.project_name, project_client=payload.project_client)
         params = sync_orders.checkout_session_params(order, now=now)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
@@ -2498,8 +2519,10 @@ async def sync_checkout(request: Request, payload: CheckoutRequest,
     return {"checkout_url": session.url, "order_id": order["order_id"]}
 
 
-async def _render_license(order: dict, track_title: str, artist_name: str) -> bytes:
-    return await asyncio.to_thread(render_license_pdf, order, track_title=track_title, artist_name=artist_name)
+async def _render_license(order: dict, track_title: str, artist_name: str, lic: dict | None = None) -> bytes:
+    verify_url = f"{sync_orders.site_url()}/verify/{order['license_id']}"
+    return await asyncio.to_thread(render_license_pdf, order, track_title=track_title,
+                                   artist_name=artist_name, license=lic, verify_url=verify_url)
 
 
 async def _send_license_email(order: dict, pdf: bytes | None = None, *, reissued: bool = False,
@@ -2530,10 +2553,51 @@ async def _fulfil_order(order_id: str) -> None:
     by a repeated webhook or by the success-page fallback."""
     try:
         status = await sync_orders.fulfil_order(db, order_id, render_pdf=_render_license, put_object=_r2_put,
-                                                now=datetime.now(timezone.utc), send_license=_send_license_email)
+                                                now=datetime.now(timezone.utc), send_license=_send_license_email,
+                                                build_license=licenses.build_license_from_order)
         logger.info("fulfil order=%s status=%s", order_id, status)
     except Exception as exc:
         logger.error("fulfil failed order=%s error=%s", order_id, exc)
+
+
+async def _reconcile_fulfilment(now: datetime) -> None:
+    """One pass: re-run idempotent fulfilment for paid-but-unfulfilled orders. Delivery and
+    the buyer email only ever happen through fulfil_order's normal path."""
+    cutoff = (now - timedelta(minutes=FULFIL_MIN_AGE_MIN)).isoformat()
+    stuck = await db.orders.find({
+        "status": "paid",
+        "paid_at": {"$lt": cutoff},
+        "$or": [{"fulfil_attempts": {"$exists": False}}, {"fulfil_attempts": {"$lt": FULFIL_MAX_ATTEMPTS}}],
+    }, {"_id": 0, "order_id": 1, "fulfil_attempts": 1}).sort("paid_at", 1).to_list(100)
+    for doc in stuck:
+        oid = doc["order_id"]
+        attempts = (doc.get("fulfil_attempts") or 0) + 1
+        await db.orders.update_one({"order_id": oid},
+            {"$inc": {"fulfil_attempts": 1}, "$set": {"last_fulfil_attempt_at": now.isoformat()}})
+        try:
+            status = await sync_orders.fulfil_order(
+                db, oid, render_pdf=_render_license, put_object=_r2_put,
+                now=datetime.now(timezone.utc), send_license=_send_license_email,
+                build_license=licenses.build_license_from_order)
+            await db.orders.update_one({"order_id": oid}, {"$set": {"last_fulfil_error": None}})
+            logger.info("reconcile fulfil order=%s status=%s attempt=%d", oid, status, attempts)
+        except Exception as exc:
+            err = f"{type(exc).__name__}: {exc}"[:300]
+            await db.orders.update_one({"order_id": oid}, {"$set": {"last_fulfil_error": err}})
+            if attempts >= FULFIL_MAX_ATTEMPTS:
+                logger.error("fulfilment stuck order=%s attempts=%d error=%s", oid, attempts, err)
+            else:
+                logger.warning("reconcile fulfil failed order=%s attempt=%d error=%s", oid, attempts, err)
+
+
+async def _run_fulfilment_reconciler() -> None:
+    logger.info("Fulfilment reconciler started instance=%s", INSTANCE_ID)
+    while True:
+        await asyncio.sleep(FULFIL_RECONCILE_INTERVAL)
+        try:
+            await _reconcile_fulfilment(datetime.now(timezone.utc))
+        except Exception as exc:
+            logger.error("fulfilment reconciler error: %s", exc)
 
 
 STRIPE_HANDLED_EVENTS = {"checkout.session.completed", "checkout.session.async_payment_succeeded",
@@ -2649,6 +2713,96 @@ async def sync_download_file(request: Request, token: str, file_name: str):
         raise HTTPException(status_code=503, detail="Download unavailable. Please try again.")
     logger.info("download order=%s file=%s", order["order_id"], file_name)
     return {"url": url, "filename": filename, "expires_in": sync_orders.DOWNLOAD_URL_TTL_SECONDS}
+
+
+# ---------------------------------------------------------------------------
+# Buyer account and public verification (Brief 17). Any signed-in user; no buyer role.
+# ---------------------------------------------------------------------------
+
+async def _license_files(lic: dict) -> list:
+    """[{name, label}] the owner can download, from the backing order. Empty when unavailable."""
+    order = await db.orders.find_one({"order_id": lic.get("order_id")}) if lic.get("order_id") else None
+    if not order:
+        return []
+    track = await db.track_submissions.find_one({"id": order["track_id"]}, {"_id": 0}) or {}
+    try:
+        files = sync_orders.delivery_files(order, track)
+    except sync_orders.DeliveryError:
+        return []
+    return [{"name": n, "label": sync_orders.FILE_LABELS.get(n, n)} for n in files]
+
+
+@api_router.get("/account/licenses")
+@limiter.limit("30/minute")
+async def account_licenses(request: Request, clerk_payload: dict = Depends(verify_clerk_token)):
+    uid = clerk_payload["sub"]
+    now = datetime.now(timezone.utc)
+    linking = "ok"
+    try:
+        user = await fetch_clerk_user(uid)
+        if user.get("email_verified") and user.get("email"):
+            await db.licenses.update_many(
+                {"owner_user_id": None, "buyer_email": user["email"].lower()},
+                {"$set": {"owner_user_id": uid}})
+    except HTTPException:
+        linking = "unavailable"
+    docs = await db.licenses.find({"owner_user_id": uid}, {"_id": 0}).sort("issued_at", -1).to_list(500)
+    out = [licenses.owner_view(lic, now, files=await _license_files(lic)) for lic in docs]
+    return {"licenses": out, "linking": linking}
+
+
+@api_router.get("/account/licenses/{license_id}/certificate")
+@limiter.limit("30/minute")
+async def account_certificate(request: Request, license_id: str,
+                              clerk_payload: dict = Depends(verify_clerk_token)):
+    lic = await db.licenses.find_one({"license_id": license_id, "owner_user_id": clerk_payload["sub"]})
+    if not lic or not lic.get("pdf_key"):
+        raise _not_found()  # 404 for a non-owner too, so IDs cannot be probed
+    url = await asyncio.to_thread(
+        r2_client.generate_presigned_url, "get_object",
+        Params={"Bucket": R2_BUCKET, "Key": lic["pdf_key"],
+                "ResponseContentDisposition": f'attachment; filename="oVoxi-license-{license_id}.pdf"'},
+        ExpiresIn=300)
+    return {"url": url}
+
+
+@api_router.post("/account/licenses/{license_id}/files/{file_name}")
+@limiter.limit("20/minute")
+async def account_license_file(request: Request, license_id: str, file_name: str,
+                               clerk_payload: dict = Depends(verify_clerk_token)):
+    lic = await db.licenses.find_one({"license_id": license_id, "owner_user_id": clerk_payload["sub"]})
+    if not lic:
+        raise _not_found()
+    if lic.get("status") in ("refunded", "void"):
+        raise HTTPException(status_code=409, detail="This license is no longer valid.")
+    order = await db.orders.find_one({"order_id": lic.get("order_id")})
+    if not order:
+        raise _not_found()
+    files = await _files_for(order)
+    if file_name not in files:
+        raise _not_found()
+    if not await sync_orders.claim_download(db, order, file_name):
+        raise HTTPException(status_code=429, detail="Download limit reached for this file.")
+    key = files[file_name]
+    filename = sync_orders.download_filename(order, file_name, key)
+    url = await asyncio.to_thread(
+        r2_client.generate_presigned_url, "get_object",
+        Params={"Bucket": R2_BUCKET, "Key": key,
+                "ResponseContentDisposition": f'attachment; filename="{filename}"'},
+        ExpiresIn=sync_orders.DOWNLOAD_URL_TTL_SECONDS)
+    return {"url": url, "filename": filename, "expires_in": sync_orders.DOWNLOAD_URL_TTL_SECONDS}
+
+
+@api_router.get("/verify/{license_id}")
+@limiter.limit("30/minute")
+async def verify_license(request: Request, license_id: str):
+    # Always available, never behind SYNC_PUBLIC_PAGES_ENABLED.
+    if not licenses.LICENSE_ID_RE.match(license_id):
+        raise HTTPException(status_code=404, detail="No license found")
+    lic = await db.licenses.find_one({"license_id": license_id})
+    if not lic:
+        raise HTTPException(status_code=404, detail="No license found")
+    return licenses.public_view(lic, datetime.now(timezone.utc))
 
 
 # ---------------------------------------------------------------------------
@@ -2780,13 +2934,15 @@ async def create_indexes():
         await db.artist_agreements.create_index([("user_id", 1), ("signed_at", -1)])
         await db.artist_legal_profiles.create_index([("user_id", 1)], unique=True)
         await sync_orders.ensure_indexes(db)
+        await licenses.ensure_indexes(db)
     except Exception as exc:
         logger.warning("Index creation failed (non-fatal): %s", exc)
     if RUN_WORKER:
         for _ in range(WORKER_CONCURRENCY):
             asyncio.ensure_future(_worker_loop())
         asyncio.ensure_future(_run_sweeper())
-        logger.info("Started %d worker(s) and sweeper instance=%s", WORKER_CONCURRENCY, INSTANCE_ID)
+        asyncio.ensure_future(_run_fulfilment_reconciler())
+        logger.info("Started %d worker(s), sweeper and reconciler instance=%s", WORKER_CONCURRENCY, INSTANCE_ID)
 
 
 @app.on_event("shutdown")
