@@ -41,6 +41,7 @@ def public_track_view(doc: dict, profile: Optional[dict]) -> dict:
         "duration_s": meta.get("duration_s"),
         "has_preview": bool(doc.get("preview_key")),
         "has_waveform": bool(doc.get("waveform_key")),
+        "buyout_allowed": (doc.get("consent") or {}).get("exclusive_buyout") is True,
     }
 
 

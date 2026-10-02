@@ -6,6 +6,7 @@ Mongo where the projection itself is what is being tested.
 """
 import copy
 import json
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -13,6 +14,7 @@ import pytest
 from fastapi.testclient import TestClient
 from pymongo.errors import DuplicateKeyError
 
+import artist_agreement
 import server
 from metadata_reconcile import reconcile
 from sync_vault import slugify_profile, vault_track_view
@@ -167,7 +169,7 @@ def test_vault_edit_responses_never_return_match_detail(client):
 def test_vault_view_fields(client):
     t = client.get("/api/vault/tracks").json()[0]
     assert t["legacy"] is False
-    assert t["consent"] == {"ai_training": True, "sync": False}
+    assert t["consent"] == {"ai_training": True, "sync": False, "exclusive_buyout": False}
     assert t["metadata"]["key"] == "A minor" and t["metadata"]["key_needs_confirmation"] is True
     assert t["sync_status"] is None and t["sync_reasons"] == [] and t["on_sync_profile"] is False
 
@@ -391,3 +393,84 @@ def test_slugify(name, slug):
 
 def test_all_symbol_name_falls_back(client):
     assert client.put("/api/sync/profile", json={"display_name": "日本"}).json()["slug"] == "artist"
+
+
+# ---------------------------------------------------------------------------
+# Exclusive buyout consent (Brief 16)
+# ---------------------------------------------------------------------------
+
+REAL_AGREEMENTS = Path(server.__file__).parent / "agreements"
+
+
+def _use_v2(monkeypatch):
+    monkeypatch.setenv("ARTIST_AGREEMENT_VERSION", "v2")
+    monkeypatch.setattr(artist_agreement, "AGREEMENTS_DIR", REAL_AGREEMENTS)
+    artist_agreement.load_template.cache_clear()
+
+
+def _buyout(client, action, **extra):
+    return client.post(f"/api/vault/tracks/{TID}/consent",
+                       json={"scope": "exclusive_buyout", "action": action, **extra})
+
+
+def test_buyout_grant_sync_off_409(client, db, monkeypatch):
+    _use_v2(monkeypatch)
+    db.artist_agreements.find_one = AsyncMock(return_value={"id": "a", "version": "v2", "signed_at": "x"})
+    r = _buyout(client, "grant")  # default track sync is off
+    assert r.status_code == 409 and r.json()["detail"] == "Turn on sync placements first."
+
+
+def test_buyout_grant_no_agreement_403(client, db, monkeypatch):
+    _use_v2(monkeypatch)
+    db.track_submissions = FakeCollection([track(consent={"ai_training": True, "sync": True})])
+    db.artist_agreements.find_one = AsyncMock(return_value=None)
+    r = _buyout(client, "grant")
+    assert r.status_code == 403 and r.json()["detail"] == "Sign the latest Artist Agreement first."
+
+
+def test_buyout_grant_v1_not_available_409(client, db, monkeypatch):
+    monkeypatch.setenv("ARTIST_AGREEMENT_VERSION", "v1")
+    monkeypatch.setattr(artist_agreement, "AGREEMENTS_DIR", REAL_AGREEMENTS)
+    artist_agreement.load_template.cache_clear()
+    db.track_submissions = FakeCollection([track(consent={"ai_training": True, "sync": True})])
+    db.artist_agreements.find_one = AsyncMock(return_value={"id": "a1", "version": "v1", "signed_at": "x"})
+    r = _buyout(client, "grant")
+    assert r.status_code == 409 and r.json()["detail"] == "Exclusive buyouts are not available yet."
+
+
+def test_buyout_grant_v2_ok(client, db, monkeypatch):
+    _use_v2(monkeypatch)
+    db.track_submissions = FakeCollection([track(consent={"ai_training": True, "sync": True})])
+    db.artist_agreements.find_one = AsyncMock(return_value={"id": "agr-v2", "version": "v2", "signed_at": "x"})
+    r = _buyout(client, "grant")
+    assert r.status_code == 200 and r.json()["consent"]["exclusive_buyout"] is True
+    ev = db.consent_events.inserted
+    assert [e["scope"] for e in ev] == ["exclusive_buyout"]
+    assert ev[0]["action"] == "grant" and ev[0]["agreement_id"] == "agr-v2"
+
+
+def test_buyout_withdraw_never_gated(client, db, monkeypatch):
+    _use_v2(monkeypatch)
+    db.track_submissions = FakeCollection([track(consent={"ai_training": True, "sync": True, "exclusive_buyout": True})])
+    db.artist_agreements.find_one = AsyncMock(return_value=None)
+    r = _buyout(client, "withdraw")
+    assert r.status_code == 200 and r.json()["consent"]["exclusive_buyout"] is False
+    assert [e["scope"] for e in db.consent_events.inserted] == ["exclusive_buyout"]
+
+
+def test_sync_withdraw_cascades_buyout(client, db, monkeypatch):
+    _use_v2(monkeypatch)
+    db.track_submissions = FakeCollection([track(consent={"ai_training": True, "sync": True, "exclusive_buyout": True})])
+    r = client.post(f"/api/vault/tracks/{TID}/consent", json={"scope": "sync", "action": "withdraw"})
+    assert r.status_code == 200
+    assert db.consent_events.insert_many.await_count == 1
+    assert sorted(e["scope"] for e in db.consent_events.inserted) == ["exclusive_buyout", "sync"]
+    c = db.track_submissions.docs[0]["consent"]
+    assert c["sync"] is False and c["exclusive_buyout"] is False
+
+
+def test_buyout_with_sync_intake_422(client, db, monkeypatch):
+    _use_v2(monkeypatch)
+    db.track_submissions = FakeCollection([track(consent={"ai_training": True, "sync": True})])
+    db.artist_agreements.find_one = AsyncMock(return_value={"id": "a", "version": "v2", "signed_at": "x"})
+    assert _buyout(client, "grant", sync_intake={"samples": "original"}).status_code == 422

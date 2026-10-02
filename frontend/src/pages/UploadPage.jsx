@@ -838,6 +838,7 @@ const UploadPage = () => {
         onSigned={() => { signedRef.current = true; refreshAgreement(); }}
         getToken={getToken}
         prefill={status?.prefill}
+        previousSigned={status?.previous_signed}
       />
     </div>
   );

@@ -44,6 +44,11 @@ def load_template(version: str) -> str:
     return (AGREEMENTS_DIR / f"{version}.txt").read_text(encoding="utf-8")
 
 
+def supports_buyouts(version: str) -> bool:
+    """True when the agreement text contains the exclusive buyout clause (v2 and later)."""
+    return "3.4 Exclusive Buyouts." in load_template(version)
+
+
 def _ordinal(n: int) -> str:
     suffix = "th" if 10 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
     return f"{n}{suffix}"

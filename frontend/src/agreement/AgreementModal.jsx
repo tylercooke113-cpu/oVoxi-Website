@@ -17,7 +17,7 @@ const EMPTY_FIELDS = {
 
 const collapse = (s) => (s || '').trim().replace(/\s+/g, ' ');
 
-export default function AgreementModal({ open, onClose, onSigned, getToken, prefill }) {
+export default function AgreementModal({ open, onClose, onSigned, getToken, prefill, previousSigned }) {
   const navigate = useNavigate();
 
   const [step, setStep] = useState(1);
@@ -298,7 +298,9 @@ export default function AgreementModal({ open, onClose, onSigned, getToken, pref
           {step === 1 && (
             <>
               <p className="mb-[18px] text-[14.5px] leading-[1.5] text-slate-300">
-                Before your first upload, sign the oVoxi Artist Agreement. You only do this once, and it covers every track you upload. It takes about two minutes.
+                {previousSigned
+                  ? "We've updated the oVoxi Artist Agreement. Review and sign the new version to keep uploading. Your tracks and opt-ins stay as they are."
+                  : 'Before your first upload, sign the oVoxi Artist Agreement. You only do this once, and it covers every track you upload. It takes about two minutes.'}
               </p>
               <div className="mb-4 inline-flex overflow-hidden rounded-full border border-white/10">
                 {[['individual', "I'm signing as myself"], ['company', 'For a company']].map(([val, label]) => (

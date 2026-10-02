@@ -17,6 +17,8 @@ const CONFIRM_COPY = {
     'It will be left out of future AI deliveries. Deliveries already made are not recalled.'],
   'sync:withdraw': ['Remove from the sync library?',
     'It will no longer be listed for sale. Licenses already sold stay valid.'],
+  'exclusive_buyout:withdraw': ['Stop allowing exclusive buyouts?',
+    'Buyers will no longer be able to buy exclusive rights to this track. Buyouts already granted are not affected.'],
 };
 
 const Switch = ({ on, onClick, disabled, label }) => (
@@ -124,7 +126,7 @@ const SyncStatus = ({ track }) => {
   return <p className="text-sm font-medium text-cyan">● Processing</p>;
 };
 
-const TrackSyncPanel = ({ track, getToken, onUpdated }) => {
+const TrackSyncPanel = ({ track, getToken, onUpdated, status }) => {
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState(null);       // 'bpm' | 'key' | 'moods'
   const [moodDraft, setMoodDraft] = useState([]);
@@ -164,6 +166,10 @@ const TrackSyncPanel = ({ track, getToken, onUpdated }) => {
   const toggle = (scope) => setConfirm({ scope, action: track.consent[scope] ? 'withdraw' : 'grant' });
   const addingSync = confirm?.scope === 'sync' && confirm?.action === 'grant';
   const copy = confirm && !addingSync ? CONFIRM_COPY[`${confirm.scope}:${confirm.action}`] : null;
+  const isBuyoutGrant = confirm?.scope === 'exclusive_buyout' && confirm?.action === 'grant';
+  const showBuyout = !!status?.buyouts_supported && !track.legacy;
+  const modalTitle = addingSync ? 'Add to the sync library'
+    : isBuyoutGrant ? 'Allow exclusive buyout?' : copy?.[0];
 
   return (
     <div className="mt-4 grid grid-cols-1 gap-5 border-t border-white/10 pt-4 md:grid-cols-3" data-testid={`vault-panel-${track.id}`}>
@@ -175,6 +181,18 @@ const TrackSyncPanel = ({ track, getToken, onUpdated }) => {
             <Switch on={!!track.consent[scope]} label={label} disabled={busy} onClick={() => toggle(scope)} />
           </div>
         ))}
+        {showBuyout && (
+          <div className="mt-1 border-t border-white/10 pt-2">
+            <div className="flex items-center justify-between text-sm text-slate-300">
+              <span>Allow exclusive buyout</span>
+              <Switch on={!!track.consent.exclusive_buyout} label="Allow exclusive buyout"
+                disabled={busy || !track.consent.sync} onClick={() => toggle('exclusive_buyout')} />
+            </div>
+            <p className="mt-1 text-xs text-slate-500">
+              Buyers can request exclusive sync rights to this track. You get 50% of the buyout. During an exclusive term the track leaves the library and you can't license it for sync elsewhere. Turn off any time for future deals.
+            </p>
+          </div>
+        )}
       </div>
 
       <div>
@@ -247,8 +265,7 @@ const TrackSyncPanel = ({ track, getToken, onUpdated }) => {
         <SyncStatus track={track} />
       </div>
 
-      <Modal open={!!confirm} onClose={() => !busy && setConfirm(null)}
-        title={addingSync ? 'Add to the sync library' : copy?.[0]}>
+      <Modal open={!!confirm} onClose={() => !busy && setConfirm(null)} title={modalTitle}>
         {addingSync ? (
           <>
             <p className="mb-4 text-sm text-slate-400">
@@ -256,13 +273,17 @@ const TrackSyncPanel = ({ track, getToken, onUpdated }) => {
             </p>
             <SyncIntakeFields value={intake} onChange={setIntake} disabled={busy} />
           </>
+        ) : isBuyoutGrant ? (
+          <p className="text-sm text-slate-400">
+            Buyers will be able to buy exclusive sync rights to <b className="font-medium text-white">{track.track_name}</b> without asking you first. You'll get 50% of each buyout and a notice within 5 business days. During an exclusive term the track leaves the library, and you can't license it for sync anywhere else (Artist Agreement section 3.4).
+          </p>
         ) : (
           <p className="text-sm text-slate-400">{copy?.[1]}</p>
         )}
         <div className="mt-5 flex gap-2">
           <button type="button" onClick={applyConsent} disabled={busy || (addingSync && !isIntakeValid(intake))}
             className="rounded-full bg-gradient-brand px-5 py-2 text-sm font-semibold text-white disabled:opacity-50">
-            {busy ? 'Saving…' : 'Confirm'}
+            {busy ? 'Saving…' : isBuyoutGrant ? 'Allow buyouts' : 'Confirm'}
           </button>
           <button type="button" onClick={() => setConfirm(null)} disabled={busy}
             className="rounded-full border border-white/10 px-5 py-2 text-sm text-slate-300">Cancel</button>

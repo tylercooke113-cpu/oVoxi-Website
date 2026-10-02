@@ -245,7 +245,8 @@ def test_response_allowlist_total_and_paging(api):
     first = client.get("/api/sync/tracks?sort=newest").json()
     assert first["total"] == 30 and len(first["tracks"]) == 25 and first["next_cursor"]
     assert set(first["tracks"][0]) == {"id", "track_name", "artist_display_name", "artist_slug", "genre",
-                                       "moods", "vocals", "bpm", "key", "duration_s", "has_preview", "has_waveform"}
+                                       "moods", "vocals", "bpm", "key", "duration_s", "has_preview", "has_waveform",
+                                       "buyout_allowed"}
     text = str(first)
     for s in ("Famous Song", "00123456789", "clerk_user_id", "catalog/", "u1", "_profiles", "artist_sales"):
         assert s not in text, s

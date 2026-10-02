@@ -12,7 +12,7 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 import server
-from sync_public import is_listed
+from sync_public import is_listed, public_track_view
 from test_vault import FakeCollection, MATCH
 
 OWNER, OTHER, ADMIN = "user_owner", "user_other", "user_admin"
@@ -231,7 +231,7 @@ def test_public_page_content(env):
     assert t == {"id": TID, "track_name": "Night Drive", "artist_display_name": "Tyler Example",
                  "artist_slug": "tyler-example", "genre": "R&B", "moods": ["Chill"], "vocals": "vocal",
                  "bpm": 90.0, "key": "C major", "duration_s": 184.0,
-                 "has_preview": True, "has_waveform": True}
+                 "has_preview": True, "has_waveform": True, "buyout_allowed": False}
     assert body["viewer"] == {"is_owner": False, "is_admin": False, "public": True}
     assert_nothing_private(client.get(TRACK).json())
 
@@ -309,3 +309,12 @@ def test_gate_requires_exact_true(env):
     for value in ("True", "1", "yes", ""):
         mp.setenv("SYNC_PUBLIC_PAGES_ENABLED", value)
         assert client.get(PAGE).status_code == 404
+
+
+# Brief 16: buyout_allowed is true only when the artist has turned buyouts on.
+def test_public_view_buyout_allowed():
+    on = public_track_view(listed_track(consent={"sync": True, "exclusive_buyout": True}), None)
+    off = public_track_view(listed_track(consent={"sync": True, "exclusive_buyout": False}), None)
+    missing = public_track_view(listed_track(consent={"sync": True}), None)
+    assert on["buyout_allowed"] is True
+    assert off["buyout_allowed"] is False and missing["buyout_allowed"] is False

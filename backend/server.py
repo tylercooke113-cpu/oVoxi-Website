@@ -885,7 +885,7 @@ class VaultMetadataPatch(BaseModel):
         return self
 
 
-CONSENT_SCOPES = ("ai_training", "sync")
+CONSENT_SCOPES = ("ai_training", "sync", "exclusive_buyout")
 CONSENT_ACTIONS = ("grant", "withdraw")
 
 
@@ -1297,6 +1297,9 @@ async def agreement_status(request: Request, clerk_payload: dict = Depends(requi
         "signed": signed is not None,
         "agreement": signed,
         "prefill": None,
+        "previous_signed": await db.artist_agreements.find_one(
+            {"user_id": uid, "version": {"$ne": version}}, {"_id": 1}) is not None,
+        "buyouts_supported": artist_agreement.supports_buyouts(version),
     }
     if signed is None:
         resp["prefill"] = await _agreement_prefill(uid)
@@ -1691,20 +1694,37 @@ async def change_vault_consent(request: Request, track_id: str, payload: Consent
     doc = await _owned_track(track_id, clerk_payload)
     want = payload.action == "grant"
     if (doc["consent"].get(payload.scope) is True) == want:
-        label = "AI training" if payload.scope == "ai_training" else "Sync"
+        label = {"ai_training": "AI training", "sync": "Sync",
+                 "exclusive_buyout": "Exclusive buyout"}.get(payload.scope, payload.scope)
         raise HTTPException(status_code=409, detail=f"{label} is already {'on' if want else 'off'}.")
 
-    # PRD-03 3.4: every change is a new consent event, written first. A grant is
-    # gated on a signed agreement; a withdrawal never is, so an artist can always opt out.
-    agreement = await _require_signed_agreement(clerk_payload) if want else None
+    # PRD-03 3.4: every change is a new consent event, written first. Grants are gated;
+    # withdrawals never are, so an artist can always opt out.
+    if payload.scope == "exclusive_buyout" and want:
+        # Brief 16 section 4.2: three gates, in order. The signed-agreement check
+        # applies even when enforcement is off.
+        if doc["consent"].get("sync") is not True:
+            raise HTTPException(status_code=409, detail="Turn on sync placements first.")
+        agreement = await _current_agreement(clerk_payload["sub"])
+        if agreement is None:
+            raise HTTPException(status_code=403, detail="Sign the latest Artist Agreement first.")
+        if not artist_agreement.supports_buyouts(artist_agreement.current_version()):
+            raise HTTPException(status_code=409, detail="Exclusive buyouts are not available yet.")
+    else:
+        agreement = await _require_signed_agreement(clerk_payload) if want else None
+
+    # Withdrawing sync also withdraws buyouts (one ledger write) when buyouts were on.
+    cascade_buyout = (payload.scope == "sync" and not want
+                      and doc["consent"].get("exclusive_buyout") is True)
     try:
         if want:
             await record_grants(db, user_id=clerk_payload["sub"], track_id=track_id,
                                  scopes=[payload.scope], source="vault",
                                  ip=get_real_client_ip(request), agreement=agreement)
         else:
+            scopes = ["sync", "exclusive_buyout"] if cascade_buyout else [payload.scope]
             await record_withdrawals(db, user_id=clerk_payload["sub"], track_id=track_id,
-                                     scopes=[payload.scope], source="vault",
+                                     scopes=scopes, source="vault",
                                      ip=get_real_client_ip(request))
     except Exception as exc:
         logger.error("Consent ledger write failed for %s: %s", track_id, exc)
@@ -1723,6 +1743,8 @@ async def change_vault_consent(request: Request, track_id: str, payload: Consent
         # Delisted for future sales; licenses already sold stay valid.
         fields.update({"on_sync_profile": False, "sync_delisted_at": now_iso,
                        "sync_status": None, "checks": None})
+        if cascade_buyout:
+            fields["consent.exclusive_buyout"] = False
     await db.track_submissions.update_one(
         {"id": track_id, "clerk_user_id": clerk_payload["sub"]}, {"$set": fields})
     if payload.scope == "sync" and want:

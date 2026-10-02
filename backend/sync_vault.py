@@ -38,7 +38,8 @@ def vault_track_view(doc: dict) -> dict:
     sync_on = consent.get("sync") is True
     return {
         "legacy": False,
-        "consent": {"ai_training": consent.get("ai_training") is True, "sync": sync_on},
+        "consent": {"ai_training": consent.get("ai_training") is True, "sync": sync_on,
+                    "exclusive_buyout": consent.get("exclusive_buyout") is True},
         "metadata": {k: meta.get(k) for k in VAULT_METADATA_FIELDS},
         "sync_status": doc.get("sync_status") if sync_on else None,
         "sync_reasons": failed_reasons(doc) if sync_on else [],

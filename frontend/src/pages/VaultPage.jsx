@@ -206,7 +206,7 @@ const VaultPage = () => {
                     Uploaded before usage options. Re-upload to add it to AI training or sync.
                   </p>
                 ) : t.consent && (
-                  <TrackSyncPanel track={t} getToken={getToken} onUpdated={updateTrack} />
+                  <TrackSyncPanel track={t} getToken={getToken} onUpdated={updateTrack} status={status} />
                 )}
               </div>
             ))}
@@ -219,6 +219,7 @@ const VaultPage = () => {
         onSigned={() => refreshAgreement()}
         getToken={getToken}
         prefill={status?.prefill}
+        previousSigned={status?.previous_signed}
       />
     </div>
   );

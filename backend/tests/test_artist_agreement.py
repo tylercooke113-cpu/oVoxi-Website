@@ -445,3 +445,29 @@ def test_vault_withdraw_enforced_unsigned_passes(client, fake_db, monkeypatch):
                        json={"scope": "ai_training", "action": "withdraw"})
     assert resp.status_code == 200, resp.text
     assert fake_db.consent_events.insert_many.await_count == 1
+
+
+# ---------------------------------------------------------------------------
+# v2 buyouts (Brief 16)
+# ---------------------------------------------------------------------------
+
+def test_supports_buyouts_v1_v2(monkeypatch):
+    monkeypatch.setattr(artist_agreement, "AGREEMENTS_DIR", REAL_AGREEMENTS_DIR)
+    artist_agreement.load_template.cache_clear()
+    assert artist_agreement.supports_buyouts("v1") is False
+    assert artist_agreement.supports_buyouts("v2") is True
+
+
+def test_status_previous_signed(client, fake_db, clerk, monkeypatch):
+    monkeypatch.setenv("ARTIST_AGREEMENT_VERSION", "v2")
+    monkeypatch.setattr(artist_agreement, "AGREEMENTS_DIR", REAL_AGREEMENTS_DIR)
+    artist_agreement.load_template.cache_clear()
+
+    def find_one(q, *a, **k):
+        ver = q.get("version")
+        return {"_id": "x"} if isinstance(ver, dict) and "$ne" in ver else None
+    fake_db.artist_agreements.find_one = AsyncMock(side_effect=find_one)
+
+    body = client.get("/api/agreement/status").json()
+    assert body["signed"] is False and body["previous_signed"] is True
+    assert body["buyouts_supported"] is True and body["current_version"] == "v2"
