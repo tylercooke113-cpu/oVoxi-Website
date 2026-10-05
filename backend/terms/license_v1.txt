@@ -1,0 +1,90 @@
+# oVoxi Music License Terms
+
+Terms version v1. These terms apply to every license sold by OVOXI, Inc., a Delaware corporation ("oVoxi", "we"), to the person or entity buying it ("Licensee", "you"). Part A applies to all licenses. Part B sets the scope of each single-track license. Part C sets the terms and scope of each subscription plan. Part D covers licensing quote requests. If a schedule in Part B or Part C conflicts with Part A, the schedule controls for that license.
+
+## Part A. Standard Terms
+
+A1. Acceptance. You accept these terms when you complete checkout or start a subscription. Each license is governed by the terms version shown on its license certificate.
+
+A2. Definitions. "Track" means a sound recording and its underlying musical composition offered on the oVoxi platform. "Licensed Materials" means the Track files delivered to you, including the master recording in WAV and MP3 formats and, where available, stems or an instrumental version. "Project" means one specific production, such as a video, podcast episode, advertisement or campaign, including its cutdowns, edits, language versions and promotional trailers. "Designated Project" means the Project you name at checkout for a single-track license. "Registered Project" means a Project you register on the platform when downloading a Track under a subscription. "Media Spend" means the total amount paid to place the Project in paid media, including paid social, online advertising, out-of-home placements and broadcast airtime, excluding production costs. "Territory" means the countries in which the Project may be distributed.
+
+A3. Grant. Subject to these terms and payment, oVoxi grants you a non-exclusive, non-transferable license to synchronize the Licensed Materials with the Project, and to reproduce, distribute, publicly perform and make available the Project containing the Licensed Materials, within the scope of your license. The grant covers both the master recording and the musical composition.
+
+A4. Edits. You may edit, cut, loop, fade, shorten and mix the Licensed Materials to fit the Project. You may not change the lyrics or melody, create a new standalone musical work, or remix the Track for release as music.
+
+A5. Restrictions. You may not:
+- (a) use the Licensed Materials outside a licensed Project, or distribute, sell, sublicense or share them as standalone audio, in a music library, or as a sound effect, sample or loop;
+- (b) register the Track or any Project containing it with YouTube Content ID, Meta Rights Manager or any other content identification or fingerprinting service, or claim ownership of the Track;
+- (c) use the Licensed Materials, or any Project containing them, to train, fine-tune, test, evaluate or improve any artificial intelligence or machine-learning model, include them in any dataset, or use them as input to generate audio, music or voice;
+- (d) imitate, or attempt to imitate, the voice or likeness of the artist;
+- (e) use the Track as a trademark, sound logo or jingle identifying a brand;
+- (f) use the Track in content that is unlawful, defamatory, pornographic or hateful, or in political or issue campaigns, without oVoxi's prior written approval;
+- (g) download Tracks in bulk or by automated means, or exceed the download limits for your plan.
+
+A6. Ownership and credit. oVoxi and its artists keep all rights in the Tracks not expressly granted. Credit is appreciated but not required. Where credit is given, use the artist name followed by "licensed via oVoxi".
+
+A7. License certificate and verification. Each license has a License ID and a certificate listing the Track, the license type, the Project, the scope, the Territory and the term. Anyone can confirm a license is valid on oVoxi's verification page using its License ID.
+
+A8. Content claims. If a third party makes a claim against your Project, send us the License ID and the content link. We will make reasonable efforts to help resolve it.
+
+A9. Withdrawn Tracks. An artist may withdraw a Track from the platform. A withdrawn Track is no longer available for new licenses or new Registered Projects. Licenses and Registered Projects created before the withdrawal remain valid on their terms.
+
+A10. Cue sheets. For any use that requires a cue sheet, such as broadcast television, radio, streaming programs or film, you are responsible for filing the cue sheet with the broadcaster or distributor. The license certificate lists the writer, publisher, performing rights organization and IPI information we hold for the Track.
+
+A11. Payment and taxes. Prices are in US dollars. Applicable sales tax, VAT or similar taxes are added at checkout. A license takes effect only when payment is received.
+
+A12. Refunds. Single-track licenses: you may request a full refund within 14 days of purchase if you have not downloaded the Licensed Materials. After that, refunds are given only for a duplicate purchase or a failed delivery. Subscriptions: you may cancel at any time, and access continues until the end of the paid period, with no partial refunds. Annual plans may be refunded in full within 14 days of the start of the plan year if no Projects have been registered. A refund ends the license and any Registered Projects paid for by the refunded amount, and disables the related download links.
+
+A13. Chargebacks. If you dispute a payment with your bank or card issuer, your account is suspended and downloads are disabled while the dispute is open. If the dispute is decided against oVoxi, the licenses and Registered Projects paid for by the disputed amount end. oVoxi may contest any dispute using order, project and download records.
+
+A14. Warranty. oVoxi represents that it has the right to grant the licenses described in these terms. Except for that, the Licensed Materials are provided as is, and oVoxi disclaims all other warranties to the extent permitted by law.
+
+A15. Limitation of liability. oVoxi is not liable for indirect, incidental, special, consequential or punitive damages, or lost profits. oVoxi's total liability for any license is limited to the amount you paid for it or, for subscriptions, the fees you paid in the 12 months before the claim arose.
+
+A16. Breach. If you breach these terms, your license for the affected Project ends after 15 days' written notice if the breach is not cured, and you must stop using the Licensed Materials in it. Breach of A5(b), A5(c) or A5(d) ends the license immediately.
+
+A17. Governing law and disputes. These terms are governed by the laws of the State of Connecticut and, where applicable, the federal laws of the United States. Disputes are resolved by binding arbitration administered by the American Arbitration Association under its Commercial Arbitration Rules before a single arbitrator seated in New Haven County, Connecticut, which may be conducted remotely. Either party may bring an individual claim in small claims court, and either party may seek injunctive relief in any court of competent jurisdiction.
+
+A18. Changes and entire agreement. oVoxi may publish new versions of these terms. A new version applies to licenses bought and Projects registered after it is published. These terms, your license certificate and the plan details shown at checkout are the entire agreement for your license.
+
+## Part B. Single-Track Licenses
+
+B1. All single-track licenses cover one Track and one Designated Project, worldwide unless stated otherwise. Stems or an instrumental version are included at no extra charge where available, if you choose them before checkout.
+
+B2. Creator License ($49). Permitted: the Designated Project on your own channels, including YouTube, TikTok, Instagram, Facebook, podcasts and your personal or creator website, including monetized content. Term: perpetual for the Designated Project. Not included: client work, brand or sponsored content, paid advertising including boosted posts, television, radio, OTT or CTV, film distribution, out-of-home, events or broadcast.
+
+B3. Digital License ($299). Permitted: everything in the Creator License, plus client work, brand and sponsored content, commercial and corporate websites, corporate videos, business podcasts, and paid social and digital advertising. Term: organic and non-paid use is perpetual for the Designated Project. Paid placements may run for 12 months from the license date, with total Media Spend up to $25,000. Not included: out-of-home, retail, events, trade shows, television, radio, OTT or CTV, or film distribution.
+
+B4. Campaign License ($699). Permitted: everything in the Digital License, plus out-of-home and digital billboards, retail and in-store, events, trade shows, corporate installations and digital displays. Term: 1 year from the license date, with total Media Spend up to $100,000. Longer terms are available at checkout: 2 years ($1,049), 3 years ($1,329), 5 years ($1,819) or perpetual ($2,449). After the term ends, paid placements, out-of-home, event and installation use must stop. Content already published on your own organic channels may remain available. Not included: television, radio, OTT or CTV, or film distribution.
+
+B5. Broadcast License ($1,499). Permitted: everything in the Campaign License, plus television, radio, OTT, CTV, video on demand, streaming programs, broadcast advertising and film distribution, in one Territory chosen at checkout. Advertising use: 1 year from the license date, with total Media Spend up to $250,000. Longer advertising terms are available at checkout: 2 years ($2,249), 3 years ($2,849) or 5 years ($3,899). Programs and films: perpetual for the Designated Project in the Territory, with worldwide festival screening. Additional Territories, higher Media Spend or perpetual advertising use are available by quote.
+
+B6. Over the limits. If your use will exceed the Media Spend, term or Territory of your license, you must upgrade or request a quote before the limit is reached.
+
+## Part C. Subscription Plans
+
+C1. How subscriptions work. While your subscription is active, you may download eligible Tracks and register a Project for each use. Each Registered Project is licensed within the scope of your plan, worldwide. A Registered Project must be first published within 6 months after it is registered.
+
+C2. After cancellation. Registered Projects created while your subscription was active stay licensed on their terms. You may not register new Projects or download Tracks after the subscription ends.
+
+C3. Download limits. Creator: 100 downloads per month. Pro: 300 downloads per month. Business: 1,000 downloads per month. All plans: no more than 50 downloads per day.
+
+C4. Billing and loyalty pricing. Plans renew automatically each month or year until cancelled. Monthly plans receive 15% off the standard price from the third month and 20% off from the seventh month of continuous subscription. Switching plans keeps your loyalty discount. If you cancel and later subscribe again, pricing returns to the standard price. Annual plans are billed at the annual price and do not receive loyalty discounts. There are no free trials.
+
+C5. Users. Your plan includes the number of users shown on the pricing page.
+
+C6. Creator Plan ($19 per month or $190 per year). Permitted: Registered Projects on your own channels, including YouTube, TikTok, Instagram, Facebook, podcasts and your personal or creator website, including monetized content. Term: perpetual for each Registered Project. Not included: client work, brand or sponsored content, paid advertising including boosted posts, out-of-home, events, broadcast or film distribution.
+
+C7. Pro Plan ($49 per month or $490 per year). Permitted: everything in the Creator Plan, plus client work, brand and sponsored content, commercial and corporate websites, corporate videos, business podcasts, and paid social and digital advertising, on unlimited channels. Term: organic use is perpetual for each Registered Project. Paid placements may run for 12 months from the date the Project is registered, with Media Spend up to $25,000 per Registered Project. Not included: out-of-home, retail, events, broadcast or film distribution.
+
+C8. Business Plan ($149 per month or $1,490 per year). Permitted: everything in the Pro Plan, plus brand, influencer and digital campaigns, paid advertising, events, trade shows, retail and in-store, internal corporate use, digital displays and out-of-home, with unlimited client projects. Term: organic use is perpetual for each Registered Project. Paid placements, out-of-home, event and installation use may run for 1 year from the date the Project is registered, with Media Spend up to $100,000 per Registered Project. Not included: television, radio, OTT or CTV, or film distribution, which are available by quote.
+
+C9. Enterprise. Enterprise plans are offered by quote under a separate written agreement.
+
+## Part D. Licensing Quotes
+
+D1. Requests. You may request a quote for uses outside the standard licenses, including broadcast beyond one Territory, higher Media Spend, perpetual advertising, exclusivity, buyouts, feature films, major television and games.
+
+D2. No license until signed. A quote request does not grant any rights. A quote is valid for 30 days. A custom license takes effect only when both parties sign it and payment is received.
+
+D3. Exclusivity. Exclusive licenses and buyouts are available only for Tracks whose artists have enabled them on the platform.

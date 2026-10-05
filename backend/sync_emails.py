@@ -64,3 +64,19 @@ def license_email(order: dict, *, download_url: str, reissued: bool = False) -> 
 <p style="font-size:12px;color:#888;margin:24px 0 0">Questions? Reply to this email with your License ID.</p>
 </div></div></body></html>"""
     return subject, html, text
+
+
+def quote_email(q: dict) -> tuple[str, str, str]:
+    """Internal notification for a licensing quote request (Brief 18). Details keep line breaks."""
+    track = q.get("track_title") or "no track"
+    subject = f"Licensing quote request: {q['kind']}, {track}"
+    rows = [("Kind", q.get("kind")), ("Track", q.get("track_title") or "(none)"),
+            ("Artist", q.get("artist_display_name") or "(none)"), ("Name", q.get("name")),
+            ("Company", q.get("company") or "(none)"), ("Email", q.get("email")),
+            ("Use", q.get("use")), ("Territory", q.get("territory") or "(none)"),
+            ("Term", q.get("term") or "(none)"), ("Budget", q.get("budget"))]
+    details = q.get("details") or ""
+    html = "".join(f"<p style='margin:2px 0'><b>{escape(k)}:</b> {escape(str(v))}</p>" for k, v in rows)
+    html += f"<p style='margin:10px 0 0'><b>Details:</b><br>{escape(details).replace(chr(10), '<br>')}</p>"
+    text = "\n".join(f"{k}: {v}" for k, v in rows) + f"\n\nDetails:\n{details}"
+    return subject, html, text

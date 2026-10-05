@@ -28,10 +28,17 @@ def cfg(env):
 def test_admin_test_mode_gets_full_config(env):
     c = cfg(env)
     assert c["can_checkout"] is True and c["test_mode"] is True and c["stems_available"] is True
-    assert c["terms_version"] == "draft-0" and c["terms"][0].startswith("PLACEHOLDER TERMS")
-    assert [(t["id"], t["price_cents"], t["price_with_stems_cents"]) for t in c["tiers"]] == [
-        ("creator", 1900, 2300), ("creator_pro", 4900, 6000), ("business_social", 14900, 18200)]
-    assert all(t["description"] == "Test" for t in c["tiers"])
+    assert c["terms_version"] == "v1" and c["terms_url"] == "/license-terms"
+    assert c["subscriptions_enabled"] is False
+    assert [(t["id"], t["price_cents"]) for t in c["tiers"]] == [
+        ("creator", 4900), ("digital", 29900), ("campaign", 69900), ("broadcast", 149900)]
+    campaign = next(t for t in c["tiers"] if t["id"] == "campaign")
+    assert campaign["terms"][0] == {"id": "1y", "label": "1 year", "price_cents": 69900}
+    assert campaign["needs_territory"] is False
+    broadcast = next(t for t in c["tiers"] if t["id"] == "broadcast")
+    assert broadcast["needs_territory"] is True and len(broadcast["terms"]) == 4
+    assert next(t for t in c["tiers"] if t["id"] == "creator")["terms"] is None
+    assert any(x["code"] == "CA" and x["name"] == "Canada" for x in c["countries"])
 
 
 def test_public_gets_nothing_while_disabled(env):
@@ -45,10 +52,14 @@ def test_public_gets_config_when_enabled(env, monkeypatch):
     assert cfg(env)["can_checkout"] is True
 
 
-def test_stems_off_hides_stem_prices(env, monkeypatch):
+def test_stems_off(env, monkeypatch):
     monkeypatch.setenv("SYNC_DELIVER_STEMS", "false")
-    c = cfg(env)
-    assert c["stems_available"] is False and all(t["price_with_stems_cents"] is None for t in c["tiers"])
+    assert cfg(env)["stems_available"] is False
+
+
+def test_subscriptions_flag(env, monkeypatch):
+    monkeypatch.setenv("SUBSCRIPTIONS_ENABLED", "true")
+    assert cfg(env)["subscriptions_enabled"] is True
 
 
 def test_price_override_is_reflected(env, monkeypatch):
@@ -70,5 +81,5 @@ def test_missing_stripe_key_means_no_checkout(env, monkeypatch):
 
 def test_config_prices_match_checkout_prices(env):
     for t in cfg(env)["tiers"]:
-        assert t["price_cents"] == so.price_cents(t["id"], False)
-        assert t["price_with_stems_cents"] == so.price_cents(t["id"], True)
+        term = "1y" if t["terms"] else None
+        assert t["price_cents"] == so.price_cents(t["id"], term)

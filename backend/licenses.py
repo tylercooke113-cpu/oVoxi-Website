@@ -3,9 +3,11 @@
 
 Pure module: no DB or R2. Imports only pricing labels from sync_orders.
 """
+import calendar
 import re
 from datetime import datetime
 
+from sync_constants import COUNTRIES
 from sync_orders import TIER_DESCRIPTIONS, tier_label
 
 # Verification IDs: "OVX-" + 10 Crockford base32 chars (no I, L, O, U). Matches new_license_id.
@@ -19,17 +21,54 @@ def license_label(license_type: str) -> str:
         return "License"
 
 
-def license_scope(license_type: str, issued_at: str) -> dict:
-    """Scope for the current tiers. Brief 18 replaces this with real per-tier scopes."""
-    return {
-        "territory": "Worldwide",
-        "media_summary": TIER_DESCRIPTIONS.get(license_type, ""),
-        "term_label": "Perpetual for the project",
-        "term_start": None,
-        "term_end": None,
-        "paid_term_end": None,
-        "media_spend_cap_cents": None,
-    }
+def _add_months(dt: datetime, months: int) -> datetime:
+    """Calendar math. Adding months to Jan 31 lands on the last day of the target month."""
+    total = dt.month - 1 + months
+    year = dt.year + total // 12
+    month = total % 12 + 1
+    day = min(dt.day, calendar.monthrange(year, month)[1])
+    return dt.replace(year=year, month=month, day=day)
+
+
+_YEARS = {"1y": 1, "2y": 2, "3y": 3, "5y": 5}
+
+
+def _years_label(n: int) -> str:
+    return f"{n} year{'s' if n != 1 else ''} from the license date"
+
+
+def license_scope(license_type: str, issued_at: str, term: str = None, territory: str = None) -> dict:
+    """Real per-tier scope (Brief 18). Terms run from the license date."""
+    issued = datetime.fromisoformat(issued_at)
+    base = {"territory": "Worldwide", "media_summary": "", "term_label": "Perpetual for the project",
+            "term_start": issued_at, "term_end": None, "paid_term_end": None, "media_spend_cap_cents": None}
+    if license_type == "creator":
+        return {**base, "media_summary": "Your own channels, monetized. No client work, sponsored content or paid ads."}
+    if license_type == "digital":
+        return {**base, "media_summary": "Client and brand work, sponsored content, paid social and digital ads.",
+                "term_label": "Organic use perpetual. Paid ads 12 months from the license date.",
+                "paid_term_end": _add_months(issued, 12).isoformat(), "media_spend_cap_cents": 2500000}
+    if license_type == "campaign":
+        if term == "perpetual":
+            term_label, end = "Perpetual", None
+        else:
+            n = _YEARS.get(term)
+            if not n:
+                raise ValueError(f"bad campaign term {term!r}")
+            end, term_label = _add_months(issued, n * 12).isoformat(), _years_label(n)
+        return {**base, "media_summary": "Digital uses plus out-of-home, retail, events, trade shows and displays.",
+                "term_label": term_label, "term_end": end, "paid_term_end": end, "media_spend_cap_cents": 10000000}
+    if license_type == "broadcast":
+        n = _YEARS.get(term)
+        if not n:
+            raise ValueError(f"bad broadcast term {term!r}")
+        return {**base, "territory": COUNTRIES.get(territory, territory or "Worldwide"),
+                "media_summary": "Campaign uses plus TV, radio, OTT, CTV, VOD and film in one country.",
+                "term_label": f"Ads: {_years_label(n)}. Programs and films: perpetual.",
+                "term_end": None, "paid_term_end": _add_months(issued, n * 12).isoformat(),
+                "media_spend_cap_cents": 25000000}
+    # Legacy / unknown ids: perpetual, worldwide.
+    return {**base, "media_summary": TIER_DESCRIPTIONS.get(license_type, "")}
 
 
 def build_cue_sheet(track: dict) -> list:
@@ -68,7 +107,7 @@ def build_license_from_order(order: dict, track: dict, now: datetime) -> dict:
         "license_type": lic_type,
         "license_label": license_label(lic_type),
         "project": {"name": project.get("name") or "", "client": project.get("client") or ""},
-        "scope": license_scope(lic_type, issued_at),
+        "scope": license_scope(lic_type, issued_at, term=order.get("term"), territory=order.get("territory")),
         "include_stems": bool(order.get("include_stems")),
         "terms_version": order.get("terms_version"),
         "test_mode": bool(order.get("test_mode")),

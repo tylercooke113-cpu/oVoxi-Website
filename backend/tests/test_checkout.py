@@ -38,9 +38,9 @@ class FakeSessions:
 
 
 def body(**over):
-    b = {"track_id": "t1", "tier": "creator_pro", "include_stems": True, "buyer_name": "  Dana   Buyer ",
+    b = {"track_id": "t1", "tier": "digital", "include_stems": True, "buyer_name": "  Dana   Buyer ",
          "buyer_company": "", "buyer_email": "dana@example.com", "project_name": "Summer campaign teaser",
-         "accept_terms": True, "terms_version": "draft-0"}
+         "accept_terms": True, "terms_version": "v1"}
     b.update(over)
     return b
 
@@ -75,12 +75,12 @@ def test_admin_test_purchase_creates_order_and_session(env):
     assert r.status_code == 200, r.text
     assert r.json()["checkout_url"].startswith("https://checkout.stripe.com/")
     [o] = orders(env)
-    assert o["status"] == "pending" and o["price_cents"] == 6000 and o["test_mode"] is True
+    assert o["status"] == "pending" and o["price_cents"] == 29900 and o["test_mode"] is True
     assert o["stripe_session_id"] == "cs_test_123" and o["buyer_name"] == "Dana Buyer"
     assert o["track_title"] == "Night Drive" and o["artist_display_name"] == "Kay Lune"
     params, options = env.sessions.calls[0]
     assert options == {"idempotency_key": f"checkout-{o['order_id']}"}
-    assert params["line_items"][0]["price_data"]["unit_amount"] == 6000
+    assert params["line_items"][0]["price_data"]["unit_amount"] == 29900
     assert params["metadata"]["order_id"] == o["order_id"]
 
 
@@ -124,10 +124,12 @@ def test_unlisted_track_is_404(env, change):
     assert env.client.post("/api/sync/checkout", json=body()).status_code == 404
 
 
-def test_stems_refused_when_switched_off(env, monkeypatch):
+def test_stems_forced_off_when_disabled(env, monkeypatch):
     monkeypatch.setenv("SYNC_DELIVER_STEMS", "false")
-    assert env.client.post("/api/sync/checkout", json=body()).status_code == 422
-    assert env.client.post("/api/sync/checkout", json=body(include_stems=False)).status_code == 200
+    r = env.client.post("/api/sync/checkout", json=body())   # body asks for stems
+    assert r.status_code == 200
+    [o] = orders(env)
+    assert o["include_stems"] is False and o["price_cents"] == 29900
 
 
 def test_missing_token_secret_is_503_before_any_order(env, monkeypatch):
@@ -152,7 +154,7 @@ def test_session_params_tax_and_urls(monkeypatch):
                        buyer_email="b@example.com", test_mode=True, now=NOW, artist_display_name="Kay Lune")
     p = so.checkout_session_params(o, now=NOW)
     pd = p["line_items"][0]["price_data"]
-    assert pd["unit_amount"] == 1900 and pd["tax_behavior"] == "exclusive"
+    assert pd["unit_amount"] == 4900 and pd["tax_behavior"] == "exclusive"
     assert pd["product_data"]["tax_code"] == "txcd_test"
     assert pd["product_data"]["name"] == "Sync license: Night Drive by Kay Lune"
     assert p["automatic_tax"] == {"enabled": True} and p["billing_address_collection"] == "required"

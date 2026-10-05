@@ -14,19 +14,35 @@ import re
 import secrets
 import uuid
 from datetime import datetime, timedelta
-from decimal import ROUND_HALF_UP, Decimal
 
 from pymongo.errors import DuplicateKeyError
 
+from sync_constants import COUNTRIES
+
 TIERS = {
-    "creator": ("Creator", "SYNC_PRICE_CREATOR", 1900),
-    "creator_pro": ("Creator Pro", "SYNC_PRICE_CREATOR_PRO", 4900),
-    "business_social": ("Business Social", "SYNC_PRICE_BUSINESS_SOCIAL", 14900),
+    "creator":   ("Creator",   "SYNC_PRICE_CREATOR",   4900),
+    "digital":   ("Digital",   "SYNC_PRICE_DIGITAL",   29900),
+    "campaign":  ("Campaign",  "SYNC_PRICE_CAMPAIGN",  69900),
+    "broadcast": ("Broadcast", "SYNC_PRICE_BROADCAST", 149900),
 }
+# Old ids are not buyable but keep their labels for existing orders and licenses.
+LEGACY_TIER_LABELS = {"creator_pro": "Creator Pro", "business_social": "Business Social"}
 CURRENCY = "usd"
 
-# Buyer-facing one-liners for the license modal. Placeholders until counsel defines each tier's scope.
-TIER_DESCRIPTIONS = {"creator": "Test", "creator_pro": "Test", "business_social": "Test"}
+# Per-term pricing for tiers that need a term. The 1-year price honours the tier's env override.
+TERM_OPTIONS = {
+    "campaign":  [("1y", "1 year", 69900), ("2y", "2 years", 104900), ("3y", "3 years", 132900),
+                  ("5y", "5 years", 181900), ("perpetual", "Perpetual", 244900)],
+    "broadcast": [("1y", "1 year", 149900), ("2y", "2 years", 224900), ("3y", "3 years", 284900),
+                  ("5y", "5 years", 389900)],
+}
+
+TIER_DESCRIPTIONS = {
+    "creator":   "Your own channels",
+    "digital":   "Client work and paid digital ads",
+    "campaign":  "Adds out-of-home and events",
+    "broadcast": "Adds TV, radio, OTT and film",
+}
 
 
 class ConfigError(RuntimeError):
@@ -53,33 +69,32 @@ def _env_flag(name: str, default: bool) -> bool:
     return raw == "true"
 
 
-def stems_uplift() -> Decimal:
-    raw = os.environ.get("SYNC_STEMS_UPLIFT", "").strip() or "0.22"
-    try:
-        value = Decimal(raw)
-    except Exception:
-        raise ConfigError(f"SYNC_STEMS_UPLIFT must be a number, got {raw!r}")
-    if value < 0 or value > 5:
-        raise ConfigError(f"SYNC_STEMS_UPLIFT out of range: {value}")
-    return value
-
-
 def tier_label(tier: str) -> str:
-    if tier not in TIERS:
-        raise ValueError(f"Unknown tier {tier!r}")
-    return TIERS[tier][0]
+    if tier in TIERS:
+        return TIERS[tier][0]
+    if tier in LEGACY_TIER_LABELS:
+        return LEGACY_TIER_LABELS[tier]
+    raise ValueError(f"Unknown tier {tier!r}")
 
 
-def price_cents(tier: str, include_stems: bool) -> int:
-    """License price in cents, before tax. Stems add the uplift, rounded to the nearest dollar."""
+def term_label(tier: str, term: str) -> str | None:
+    for tid, label, _ in TERM_OPTIONS.get(tier, []):
+        if tid == term:
+            return label
+    return None
+
+
+def price_cents(tier: str, term: str | None = None) -> int:
+    """License price in cents, before tax. Stems are free (no uplift)."""
     if tier not in TIERS:
         raise ValueError(f"Unknown tier {tier!r}")
     _, env_name, default = TIERS[tier]
-    base = _env_int(env_name, default)
-    if not include_stems:
-        return base
-    dollars = (Decimal(base) * (1 + stems_uplift()) / 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
-    return int(dollars) * 100
+    if tier not in TERM_OPTIONS:
+        return _env_int(env_name, default)          # Creator, Digital: term ignored
+    opts = {tid: cents for tid, _, cents in TERM_OPTIONS[tier]}
+    if term not in opts:
+        raise ValueError(f"term {term!r} invalid for {tier}")
+    return _env_int(env_name, default) if term == "1y" else opts[term]   # 1y honours env override
 
 
 def checkout_enabled() -> bool:
@@ -99,7 +114,7 @@ def download_max_per_file() -> int:
 
 
 def terms_version() -> str:
-    return os.environ.get("SYNC_TERMS_VERSION", "").strip() or "draft-0"
+    return os.environ.get("SYNC_TERMS_VERSION", "").strip() or "v1"
 
 
 def stripe_tax_code() -> str | None:
@@ -167,7 +182,8 @@ def new_license_id() -> str:
 def build_order(*, track: dict, tier: str, include_stems: bool, buyer_name: str,
                 buyer_company: str, buyer_email: str, test_mode: bool, now: datetime,
                 track_title: str = "", artist_display_name: str = "",
-                project_name: str = "", project_client: str = "") -> dict:
+                project_name: str = "", project_client: str = "",
+                term: str = None, territory: str = None) -> dict:
     """A new `pending` order. The price is computed here, never taken from the request."""
     if include_stems and not deliver_stems():
         raise ValueError("Stems are not available")
@@ -179,8 +195,10 @@ def build_order(*, track: dict, tier: str, include_stems: bool, buyer_name: str,
         "artist_display_name": artist_display_name or track.get("artist_name") or "",
         "artist_user_id": track.get("clerk_user_id"),
         "tier": tier,
+        "term": term,
+        "territory": territory,
         "include_stems": bool(include_stems),
-        "price_cents": price_cents(tier, include_stems),
+        "price_cents": price_cents(tier, term),
         "tax_cents": None,
         "amount_total_cents": None,
         "currency": CURRENCY,
@@ -319,8 +337,13 @@ def stripe_client():
 def checkout_session_params(order: dict, *, now: datetime) -> dict:
     """Parameters for stripe checkout.sessions.create. Price is the order's, set by build_order."""
     name = f"Sync license: {order['track_title']} by {order['artist_display_name']}"
-    tier = tier_label(order["tier"]) + (" + stems" if order["include_stems"] else "")
-    product = {"name": name[:250], "description": f"{tier}. License {order['license_id']}.",
+    parts = [f"{tier_label(order['tier'])} license"]
+    tl = term_label(order["tier"], order.get("term"))
+    if tl:
+        parts.append(tl)
+    if order.get("territory"):
+        parts.append(COUNTRIES.get(order["territory"], order["territory"]))
+    product = {"name": name[:250], "description": f"{', '.join(parts)}. License {order['license_id']}.",
                "metadata": {"track_id": order["track_id"], "tier": order["tier"]}}
     code = stripe_tax_code()
     if code:
@@ -557,6 +580,14 @@ def download_filename(order: dict, name: str, key: str) -> str:
 # Public checkout configuration for the license modal (PRD-03 6b)
 # ---------------------------------------------------------------------------
 
+def subscriptions_enabled() -> bool:
+    return _env_flag("SUBSCRIPTIONS_ENABLED", False)
+
+
+def country_list() -> list:
+    return [{"code": c, "name": n} for c, n in COUNTRIES.items()]
+
+
 def checkout_config(*, is_admin: bool, terms_text: dict) -> dict:
     """What the License button and modal need. Only `can_checkout: False` when the viewer
     cannot buy, so nothing else is exposed before launch. Never raises ConfigError."""
@@ -565,14 +596,20 @@ def checkout_config(*, is_admin: bool, terms_text: dict) -> dict:
             return {"can_checkout": False}
         token_secret()
         version = terms_version()
+        if version not in terms_text:
+            return {"can_checkout": False}
         stems = deliver_stems()
-        tiers = [{"id": tid, "label": label, "description": TIER_DESCRIPTIONS.get(tid, ""),
-                  "price_cents": price_cents(tid, False),
-                  "price_with_stems_cents": price_cents(tid, True) if stems else None}
-                 for tid, (label, _, _) in TIERS.items()]
+        tiers = []
+        for tid, (label, _, _) in TIERS.items():
+            terms = ([{"id": t, "label": lbl, "price_cents": c} for t, lbl, c in TERM_OPTIONS[tid]]
+                     if tid in TERM_OPTIONS else None)
+            tiers.append({"id": tid, "label": label, "description": TIER_DESCRIPTIONS[tid],
+                          "price_cents": price_cents(tid, "1y" if tid in TERM_OPTIONS else None),
+                          "terms": terms, "needs_territory": tid == "broadcast"})
         return {"can_checkout": True, "test_mode": is_test_key(), "currency": CURRENCY,
-                "stems_available": stems, "terms_version": version,
-                "terms": list(terms_text[version]), "tiers": tiers}
+                "stems_available": stems, "subscriptions_enabled": subscriptions_enabled(),
+                "terms_version": version, "terms_url": "/license-terms",
+                "countries": country_list(), "tiers": tiers}
     except (ConfigError, KeyError):
         return {"can_checkout": False}
 

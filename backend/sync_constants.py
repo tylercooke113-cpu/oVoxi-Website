@@ -46,3 +46,14 @@ GENRES = (
     "Hip-Hop", "R&B", "Afrobeats", "Trap", "Soul", "Pop",
     "Electronic", "Latin", "Reggaeton", "Afropop", "Other",
 )
+
+# Broadcast single-country territories (Brief 18). ISO 3166-1 alpha-2 + English name.
+# Must stay in step with frontend/src/sync/constants.js.
+COUNTRIES = {
+    "US": "United States", "CA": "Canada", "GB": "United Kingdom", "AU": "Australia", "DE": "Germany",
+    "FR": "France", "IE": "Ireland", "NL": "Netherlands", "ES": "Spain", "IT": "Italy", "SE": "Sweden",
+    "NO": "Norway", "DK": "Denmark", "FI": "Finland", "BE": "Belgium", "AT": "Austria", "CH": "Switzerland",
+    "PT": "Portugal", "PL": "Poland", "NZ": "New Zealand", "JP": "Japan", "KR": "South Korea",
+    "SG": "Singapore", "BR": "Brazil", "MX": "Mexico", "AR": "Argentina", "ZA": "South Africa",
+    "IN": "India", "AE": "United Arab Emirates", "HK": "Hong Kong",
+}

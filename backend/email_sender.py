@@ -27,18 +27,21 @@ def email_configured() -> bool:
 
 
 async def send_email(*, to: str, subject: str, html: str, text: str, attachments=None,
-                     idempotency_key: str | None = None, transport: httpx.AsyncBaseTransport | None = None) -> dict:
+                     idempotency_key: str | None = None, transport: httpx.AsyncBaseTransport | None = None,
+                     reply_to: str | None = None) -> dict:
     """Send one email. Returns {"status": "sent"|"failed"|"skipped", "id", "error"}; never raises.
 
     attachments: list of (filename, bytes). idempotency_key stops a retried call from
-    sending the same email twice. transport is for tests.
+    sending the same email twice. reply_to overrides EMAIL_REPLY_TO for this message.
+    transport is for tests.
     """
-    key, sender, reply_to = _config()
+    key, sender, reply_to_cfg = _config()
     if not (key and sender):
         return {"status": "skipped", "id": None, "error": "email not configured"}
     body = {"from": sender, "to": [to], "subject": subject, "html": html, "text": text}
-    if reply_to:
-        body["reply_to"] = reply_to
+    effective_reply_to = reply_to or reply_to_cfg
+    if effective_reply_to:
+        body["reply_to"] = effective_reply_to
     if attachments:
         body["attachments"] = [{"filename": name, "content": base64.b64encode(data).decode()}
                                for name, data in attachments]

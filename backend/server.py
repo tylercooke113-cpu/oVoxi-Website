@@ -31,7 +31,7 @@ from pymongo.errors import DuplicateKeyError
 from pydantic import BaseModel, Field, ConfigDict, EmailStr, field_validator, model_validator
 from sync_constants import (
     MOODS, MAX_MOODS, VOCALS, SAMPLE_DECLARATIONS, CONTENT_ID_ANSWERS,
-    DISTRIBUTORS, PRO_ORGS, IPI_PATTERN, MUSICAL_KEYS, BPM_MIN, BPM_MAX,
+    DISTRIBUTORS, PRO_ORGS, IPI_PATTERN, MUSICAL_KEYS, BPM_MIN, BPM_MAX, COUNTRIES,
 )
 from consent_ledger import record_grants, record_withdrawals, GRANT_VERSION
 import artist_agreement
@@ -43,9 +43,10 @@ from sync_public import (
 )
 import sync_orders
 import licenses
+import quotes
 from license_pdf import TERMS as LICENSE_TERMS, render_license_pdf
 from email_sender import send_email
-from sync_emails import license_email
+from sync_emails import license_email, quote_email
 from sync_search import PAGE_SIZE, SearchParamError, build_filter, build_pipeline, encode_cursor, parse_params
 from sync_vault import (
     INSTAGRAM_URL, SPOTIFY_ARTIST_URL, is_legacy, metadata_patch_fields,
@@ -1053,7 +1054,9 @@ class CheckoutRequest(BaseModel):
     """PRD-03 7.2 step 2. No price field: the server computes it (decision 27)."""
     model_config = ConfigDict(extra="forbid")
     track_id: str = Field(min_length=1, max_length=64)
-    tier: Literal["creator", "creator_pro", "business_social"]
+    tier: Literal["creator", "digital", "campaign", "broadcast"]
+    term: Optional[Literal["1y", "2y", "3y", "5y", "perpetual"]] = None
+    territory: Optional[str] = None
     include_stems: bool = False
     buyer_name: str = Field(min_length=1, max_length=120)
     buyer_company: str = Field(default="", max_length=120)
@@ -1077,6 +1080,49 @@ class CheckoutRequest(BaseModel):
         if info.field_name == "project_name" and not v:
             raise ValueError("Name the project this license is for.")
         return v
+
+    @model_validator(mode="after")
+    def _scope_rules(self):
+        needs_term = self.tier in ("campaign", "broadcast")
+        if needs_term and self.term is None:
+            raise ValueError("Choose a term.")
+        if not needs_term and self.term is not None:
+            raise ValueError("Term is only for Campaign and Broadcast.")
+        if self.term == "perpetual" and self.tier != "campaign":
+            raise ValueError("Perpetual is available only for Campaign.")
+        if self.tier == "broadcast":
+            if not self.territory:
+                raise ValueError("Choose a territory.")
+            if self.territory not in COUNTRIES:
+                raise ValueError("Unknown territory.")
+        elif self.territory is not None:
+            raise ValueError("Territory is only for Broadcast.")
+        return self
+
+
+class QuoteRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    kind: Literal["enterprise", "buyout"]
+    track_id: Optional[str] = Field(default=None, max_length=64)
+    name: str = Field(min_length=1, max_length=120)
+    company: str = Field(default="", max_length=120)
+    email: EmailStr
+    use: Literal["Exclusive buyout", "National TV campaign", "Feature film", "Game", "Other"]
+    territory: str = Field(default="", max_length=120)
+    term: str = Field(default="", max_length=120)
+    budget: Literal["Under $5,000", "$5,000 to $25,000", "$25,000 to $100,000", "Over $100,000"]
+    details: str = Field(default="", max_length=2000)
+    website: str = Field(default="", max_length=200)   # honeypot; must stay empty
+
+    @field_validator("name", "company", "territory", "term")
+    @classmethod
+    def _clean_inline(cls, v: str) -> str:
+        return quotes.clean(v, 120)
+
+    @field_validator("details")
+    @classmethod
+    def _clean_details(cls, v: str) -> str:
+        return quotes.clean_multiline(v, 2000)
 
 
 class AdminReissue(BaseModel):
@@ -2461,6 +2507,46 @@ async def sync_checkout_config(request: Request, viewer: Optional[dict] = Depend
     return sync_orders.checkout_config(is_admin=is_admin, terms_text=LICENSE_TERMS)
 
 
+@api_router.get("/sync/terms/{version}")
+@limiter.limit("60/minute")
+async def sync_terms(request: Request, version: str):
+    """Public License Terms blocks for a version. Not behind the public-pages flag."""
+    blocks = LICENSE_TERMS.get(version)
+    if not blocks:
+        raise HTTPException(status_code=404, detail="Unknown terms version")
+    return {"version": version, "blocks": blocks}
+
+
+@api_router.post("/sync/quotes")
+@limiter.limit("5/hour")
+async def sync_quote(request: Request, payload: QuoteRequest):
+    """Enterprise and buyout quote requests. Stored, then emailed to QUOTE_INBOX."""
+    if payload.website:                      # honeypot filled: pretend success, discard
+        return {"ok": True}
+    now = datetime.now(timezone.utc)
+    track = None
+    if payload.track_id:
+        track = await db.track_submissions.find_one(
+            {"id": payload.track_id}, {"_id": 0, **{f: 0 for f in MATCH_DETAIL_FIELDS}})
+    if payload.kind == "buyout":
+        if (not track or not is_listed(track)
+                or (track.get("consent") or {}).get("exclusive_buyout") is not True):
+            raise HTTPException(status_code=409, detail="Exclusive buyout is not offered for this track.")
+    q = quotes.build_quote(payload.model_dump(), ip=get_real_client_ip(request),
+                           user_agent=request.headers.get("user-agent") or "", track=track, now=now)
+    try:
+        await db.quote_requests.insert_one(dict(q))
+    except Exception as exc:
+        logger.error("quote store failed: %s", exc)
+        raise HTTPException(status_code=503, detail="Could not send your request. Please try again.")
+    subject, html, text = quote_email(q)
+    result = await send_email(to=quotes.quote_inbox(), subject=subject, html=html, text=text,
+                              reply_to=payload.email)
+    if result["status"] == "failed":
+        logger.error("quote email failed id=%s: %s", q["id"], result.get("error"))
+    return {"ok": True}
+
+
 @api_router.post("/sync/checkout")
 @limiter.limit("10/minute")
 async def sync_checkout(request: Request, payload: CheckoutRequest,
@@ -2488,9 +2574,11 @@ async def sync_checkout(request: Request, payload: CheckoutRequest,
         raise _not_found()
     profile = await db.sync_profiles.find_one({"user_id": track.get("clerk_user_id")}, {"_id": 0})
     now = datetime.now(timezone.utc)
+    include_stems = payload.include_stems and sync_orders.deliver_stems()
     try:
         order = sync_orders.build_order(
-            track=track, tier=payload.tier, include_stems=payload.include_stems,
+            track=track, tier=payload.tier, term=payload.term, territory=payload.territory,
+            include_stems=include_stems,
             buyer_name=payload.buyer_name, buyer_company=payload.buyer_company,
             buyer_email=str(payload.buyer_email), test_mode=test_mode, now=now,
             track_title=track.get("track_name") or "",

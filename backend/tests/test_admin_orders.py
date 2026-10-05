@@ -109,7 +109,7 @@ def test_csv_columns_money_and_formula_injection(env):
     rows = list(csv.reader(io.StringIO(r.text)))
     header, row = rows[0], dict(zip(rows[0], rows[1]))
     assert header[:3] == ["Order date (UTC)", "License ID", "Status"]
-    assert row["License price"] == "19.00" and row["Tax"] == "1.33" and row["Total paid"] == "20.33"
+    assert row["License price"] == "49.00" and row["Tax"] == "1.33" and row["Total paid"] == "20.33"
     assert row["Currency"] == "USD" and row["Tier"] == "Creator" and row["Test order"] == "no"
     assert row["Buyer name"].startswith("'=")
     assert env.db._db.admin_actions.count_documents({"action": "export_orders_csv"}) == 1

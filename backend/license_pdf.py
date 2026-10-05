@@ -6,6 +6,7 @@ sandbox PDF can never be mistaken for a real license.
 """
 from datetime import datetime
 from io import BytesIO
+from pathlib import Path
 from xml.sax.saxutils import escape
 
 from reportlab.lib import colors
@@ -22,19 +23,43 @@ INK = colors.HexColor("#111111")
 MUTED = colors.HexColor("#666666")
 RULE = colors.HexColor("#DDDDDD")
 
-# Keyed by terms_version. Replace with counsel's text and bump SYNC_TERMS_VERSION.
+# Keyed by terms_version. Each value is a list of blocks {"type", "text"}; the file-backed
+# v1 terms and the kept draft-0 both render through the same block loop.
+TERMS_DIR = Path(__file__).parent / "terms"
+
+
+def _parse_terms(text: str) -> list:
+    blocks = []
+    for para in text.split("\n\n"):
+        p = para.strip()
+        if not p:
+            continue
+        if p.startswith("## "):
+            blocks.append({"type": "heading", "text": p[3:]})
+        elif p.startswith("# "):
+            blocks.append({"type": "title", "text": p[2:]})
+        elif p.startswith("- "):
+            blocks.append({"type": "item", "text": p[2:]})
+        else:
+            blocks.append({"type": "para", "text": p})
+    return blocks
+
+
+_DRAFT0 = [{"type": "para", "text": t} for t in (
+    "PLACEHOLDER TERMS. This text is a draft pending legal review and is not the final license.",
+    "1. Grant. oVoxi grants the Licensee a non-exclusive, non-transferable license to synchronize "
+    "the Track with the Licensee's audiovisual content within the scope of the Tier named above.",
+    "2. Restrictions. The Licensee may not resell, sublicense or redistribute the Track or its stems "
+    "as standalone audio, register the Track with any content identification system, or use the Track "
+    "to train, fine-tune or evaluate any machine learning model.",
+    "3. Term. The license is perpetual for content published during the license period, subject to "
+    "the Tier's scope.",
+    "4. Refunds. If the purchase is refunded, this license is void from the refund date.",
+)]
+
 TERMS = {
-    "draft-0": [
-        "PLACEHOLDER TERMS. This text is a draft pending legal review and is not the final license.",
-        "1. Grant. oVoxi grants the Licensee a non-exclusive, non-transferable license to synchronize "
-        "the Track with the Licensee's audiovisual content within the scope of the Tier named above.",
-        "2. Restrictions. The Licensee may not resell, sublicense or redistribute the Track or its stems "
-        "as standalone audio, register the Track with any content identification system, or use the Track "
-        "to train, fine-tune or evaluate any machine learning model.",
-        "3. Term. The license is perpetual for content published during the license period, subject to "
-        "the Tier's scope.",
-        "4. Refunds. If the purchase is refunded, this license is void from the refund date.",
-    ],
+    "draft-0": _DRAFT0,
+    "v1": _parse_terms((TERMS_DIR / "license_v1.txt").read_text(encoding="utf-8")),
 }
 
 _BASE = ParagraphStyle("base", fontName="Helvetica", fontSize=10, leading=14, textColor=INK, alignment=TA_LEFT)
@@ -43,6 +68,7 @@ _SUB = ParagraphStyle("sub", parent=_BASE, textColor=MUTED)
 _H2 = ParagraphStyle("h2", parent=_BASE, fontName="Helvetica-Bold", fontSize=11, spaceBefore=6, spaceAfter=4)
 _LABEL = ParagraphStyle("label", parent=_BASE, textColor=MUTED, fontSize=9)
 _SMALL = ParagraphStyle("small", parent=_BASE, fontSize=8.5, leading=12, textColor=MUTED)
+_ITEM = ParagraphStyle("item", parent=_BASE, leftIndent=14)
 
 TIER_LABELS = {"creator": "Creator", "creator_pro": "Creator Pro", "business_social": "Business Social"}
 
@@ -138,8 +164,13 @@ def render_license_pdf(order: dict, *, track_title: str, artist_name: str,
         Spacer(1, 18),
         _p("License terms", _H2),
     ]
-    for para in terms:
-        story += [_p(para), Spacer(1, 6)]
+    for b in terms:
+        if b["type"] in ("title", "heading"):
+            story += [_p(b["text"], _H2)]
+        elif b["type"] == "item":
+            story += [_p(b["text"], _ITEM), Spacer(1, 4)]
+        else:
+            story += [_p(b["text"]), Spacer(1, 6)]
 
     if verify_url:
         story += [Spacer(1, 14), _p("Verification", _H2),

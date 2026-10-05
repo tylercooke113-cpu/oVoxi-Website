@@ -67,15 +67,15 @@ def order(**over):
 
 def test_build_order_prices_server_side():
     o = order()
-    assert o["price_cents"] == 2300 and o["status"] == "pending" and o["artist_user_id"] == "user_artist"
-    assert o["terms_version"] == "draft-0" and o["license_id"].startswith("OVX-") and len(o["license_id"]) == 14
+    assert o["price_cents"] == 4900 and o["status"] == "pending" and o["artist_user_id"] == "user_artist"
+    assert o["terms_version"] == "v1" and o["license_id"].startswith("OVX-") and len(o["license_id"]) == 14
 
 
 def test_stems_refused_when_switched_off(monkeypatch):
     monkeypatch.setenv("SYNC_DELIVER_STEMS", "false")
     with pytest.raises(ValueError):
         order(include_stems=True)
-    assert order(include_stems=False)["price_cents"] == 1900
+    assert order(include_stems=False)["price_cents"] == 4900
 
 
 def test_token_is_deterministic_and_version_bound():
@@ -101,7 +101,7 @@ def test_full_lifecycle_and_idempotent_transitions():
     assert run(so.mark_fulfilled(db, oid, license_pdf_key="licenses/x.pdf", now=NOW))
     assert not run(so.mark_fulfilled(db, oid, license_pdf_key="licenses/x.pdf", now=NOW))
     saved = run(db.orders.find_one({"order_id": oid}))
-    assert saved["status"] == "fulfilled" and saved["tax_cents"] == 150 and saved["price_cents"] == 2300
+    assert saved["status"] == "fulfilled" and saved["tax_cents"] == 150 and saved["price_cents"] == 4900
     token = so.current_token(saved)
     assert saved["download_token_hash"] == so.hash_token(token)
     assert run(so.find_by_token(db, token, now=NOW))["order_id"] == oid
