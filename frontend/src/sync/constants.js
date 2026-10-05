@@ -64,3 +64,13 @@ export const BPM_MAX = 300;
 const PITCHES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 export const MAJOR_KEYS = PITCHES.map((p) => `${p} major`);
 export const MINOR_KEYS = PITCHES.map((p) => `${p} minor`);
+
+// Broadcast single-country territories (Brief 18). Must stay in step with backend/sync_constants.py.
+export const COUNTRIES = [
+  ['US', 'United States'], ['CA', 'Canada'], ['GB', 'United Kingdom'], ['AU', 'Australia'], ['DE', 'Germany'],
+  ['FR', 'France'], ['IE', 'Ireland'], ['NL', 'Netherlands'], ['ES', 'Spain'], ['IT', 'Italy'], ['SE', 'Sweden'],
+  ['NO', 'Norway'], ['DK', 'Denmark'], ['FI', 'Finland'], ['BE', 'Belgium'], ['AT', 'Austria'], ['CH', 'Switzerland'],
+  ['PT', 'Portugal'], ['PL', 'Poland'], ['NZ', 'New Zealand'], ['JP', 'Japan'], ['KR', 'South Korea'],
+  ['SG', 'Singapore'], ['BR', 'Brazil'], ['MX', 'Mexico'], ['AR', 'Argentina'], ['ZA', 'South Africa'],
+  ['IN', 'India'], ['AE', 'United Arab Emirates'], ['HK', 'Hong Kong'],
+].map(([code, name]) => ({ code, name }));

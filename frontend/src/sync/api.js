@@ -82,3 +82,9 @@ export const accountApi = {
 export const verifyApi = {
   get: async (id) => (await axios.get(`${API}/verify/${encodeURIComponent(id)}`)).data,
 };
+
+// Brief 18: public License Terms blocks and quote requests.
+export const syncApi = {
+  terms: async (version) => (await axios.get(`${API}/sync/terms/${encodeURIComponent(version)}`)).data,
+  quote: async (body) => (await axios.post(`${API}/sync/quotes`, body)).data,
+};
