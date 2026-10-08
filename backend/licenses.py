@@ -5,9 +5,9 @@ Pure module: no DB or R2. Imports only pricing labels from sync_orders.
 """
 import calendar
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 
-from sync_constants import COUNTRIES
+from sync_constants import COUNTRIES, PLANS
 from sync_orders import TIER_DESCRIPTIONS, tier_label
 
 # Verification IDs: "OVX-" + 10 Crockford base32 chars (no I, L, O, U). Matches new_license_id.
@@ -67,8 +67,56 @@ def license_scope(license_type: str, issued_at: str, term: str = None, territory
                 "term_label": f"Ads: {_years_label(n)}. Programs and films: perpetual.",
                 "term_end": None, "paid_term_end": _add_months(issued, n * 12).isoformat(),
                 "media_spend_cap_cents": 25000000}
+    if license_type == "sub_creator":
+        return {**base, "media_summary": "Your own channels, including monetized content. "
+                "No client work, sponsored content or paid ads."}
+    if license_type == "sub_pro":
+        return {**base, "media_summary": "Client and brand work, sponsored content, corporate video, "
+                "paid social and digital ads.",
+                "term_label": "Organic use perpetual. Paid placements 12 months from registration.",
+                "paid_term_end": _add_months(issued, 12).isoformat(), "media_spend_cap_cents": 2500000}
+    if license_type == "sub_business":
+        return {**base, "media_summary": "Pro uses plus campaigns, events, trade shows, retail, "
+                "digital displays and out-of-home.",
+                "term_label": "Organic use perpetual. Paid, out-of-home and event use 1 year from registration.",
+                "paid_term_end": _add_months(issued, 12).isoformat(), "media_spend_cap_cents": 10000000}
     # Legacy / unknown ids: perpetual, worldwide.
     return {**base, "media_summary": TIER_DESCRIPTIONS.get(license_type, "")}
+
+
+SUB_TYPES = {"creator": "sub_creator", "pro": "sub_pro", "business": "sub_business"}
+
+
+def build_subscription_license(*, license_id, user_id, buyer_email, plan, subscription_id, invoice_id,
+                               track, project_name, client, include_stems, terms_version, now) -> dict:
+    """A subscription-registered project license (Brief 19). owner_user_id is the subscriber."""
+    issued_at = now.isoformat()
+    lic_type = SUB_TYPES[plan]
+    return {
+        "license_id": license_id, "source": "subscription", "order_id": None,
+        "subscription_id": subscription_id, "invoice_id": invoice_id,
+        "owner_user_id": user_id, "buyer_email": (buyer_email or "").lower(),
+        "licensee_name": "", "licensee_company": client or "",
+        "track_id": track.get("id"), "track_title": track.get("track_name") or "",
+        "artist_display_name": track.get("artist_name") or "", "artist_user_id": track.get("clerk_user_id"),
+        "license_type": lic_type, "license_label": f"{PLANS[plan]['label']} plan", "plan": plan,
+        "project": {"name": project_name, "client": client or ""},
+        "scope": license_scope(lic_type, issued_at), "include_stems": bool(include_stems),
+        "terms_version": terms_version, "test_mode": False, "status": "active",
+        "cue_sheet": build_cue_sheet(track), "pdf_key": None,
+        "publish_by": _add_months(now, 6).isoformat(),
+        "issued_at": issued_at, "refunded_at": None, "created_at": issued_at,
+    }
+
+
+async def void_invoice_projects(db, invoice_id: str, reason: str) -> int:
+    """Void every subscription license tied to this invoice (refund or lost dispute).
+    Idempotent; never deletes. /verify then shows them as refunded (Brief 19 item 9)."""
+    now = datetime.now(timezone.utc).isoformat()
+    res = await db.licenses.update_many(
+        {"source": "subscription", "invoice_id": invoice_id, "status": {"$ne": "refunded"}},
+        {"$set": {"status": "refunded", "void_reason": reason, "voided_at": now, "refunded_at": now}})
+    return res.modified_count
 
 
 def build_cue_sheet(track: dict) -> list:

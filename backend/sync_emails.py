@@ -80,3 +80,18 @@ def quote_email(q: dict) -> tuple[str, str, str]:
     html += f"<p style='margin:10px 0 0'><b>Details:</b><br>{escape(details).replace(chr(10), '<br>')}</p>"
     text = "\n".join(f"{k}: {v}" for k, v in rows) + f"\n\nDetails:\n{details}"
     return subject, html, text
+
+
+def subscription_license_email(lic: dict, *, download_url: str) -> tuple[str, str, str]:
+    """License email for a project registered under a subscription (Brief 19)."""
+    e = escape
+    plan_label = lic.get("license_label") or "your plan"
+    project = (lic.get("project") or {}).get("name") or "your project"
+    subject = f"Your oVoxi license: {lic.get('track_title') or 'your track'}"
+    html = (f"<p>Your project <b>{e(project)}</b> is licensed under your {e(plan_label)}.</p>"
+            f"<p>License ID {e(lic['license_id'])}. The certificate is attached.</p>"
+            f'<p><a href="{e(download_url, quote=True)}">Download your files</a>. '
+            "It stays licensed even if you cancel later.</p>")
+    text = (f"Your project {project} is licensed under your {plan_label}.\n"
+            f"License ID {lic['license_id']}. Certificate attached.\nDownload: {download_url}")
+    return subject, html, text

@@ -124,6 +124,7 @@ def render_license_pdf(order: dict, *, track_title: str, artist_name: str,
     lic = license or {}
     scope = lic.get("scope") or {}
     project = lic.get("project") or {}
+    is_sub = lic.get("source") == "subscription"
 
     rows = [
         ("License ID", order["license_id"]),
@@ -133,7 +134,8 @@ def render_license_pdf(order: dict, *, track_title: str, artist_name: str,
         ("Email", order["buyer_email"]),
         ("Track", track_title),
         ("Artist", artist_name),
-        ("Tier", TIER_LABELS.get(order["tier"], order["tier"])),
+        (("Plan", lic.get("license_label")) if is_sub
+         else ("Tier", TIER_LABELS.get(order["tier"], order["tier"]))),
         *([("Project", project.get("name"))] if project.get("name") else []),
         *([("Client", project.get("client"))] if project.get("client") else []),
         *([("Territory", scope.get("territory"))] if scope.get("territory") else []),
@@ -141,9 +143,10 @@ def render_license_pdf(order: dict, *, track_title: str, artist_name: str,
         *([("Paid media", _money(scope.get("media_spend_cap_cents"), currency))]
           if scope.get("media_spend_cap_cents") else []),
         ("Stems included", "Yes" if order.get("include_stems") else "No"),
-        ("License fee", _money(order.get("price_cents"), currency)),
-        ("Tax", _money(order.get("tax_cents"), currency)),
-        ("Total paid", _money(order.get("amount_total_cents"), currency)),
+        *([] if is_sub else [
+            ("License fee", _money(order.get("price_cents"), currency)),
+            ("Tax", _money(order.get("tax_cents"), currency)),
+            ("Total paid", _money(order.get("amount_total_cents"), currency))]),
         ("Terms version", order["terms_version"]),
     ]
     table = Table([[_p(k, _LABEL), _p(v)] for k, v in rows], colWidths=[1.7 * inch, 5.0 * inch])
@@ -162,8 +165,13 @@ def render_license_pdf(order: dict, *, track_title: str, artist_name: str,
         Spacer(1, 16),
         table,
         Spacer(1, 18),
-        _p("License terms", _H2),
     ]
+    if lic.get("source") == "subscription" and lic.get("plan"):
+        from sync_constants import PLANS
+        publish = datetime.fromisoformat(lic["publish_by"]).strftime("%B %d, %Y") if lic.get("publish_by") else ""
+        story += [_p(f"Registered under the {PLANS[lic['plan']]['label']} plan. Publish by {publish}.", _SMALL),
+                  Spacer(1, 10)]
+    story.append(_p("License terms", _H2))
     for b in terms:
         if b["type"] in ("title", "heading"):
             story += [_p(b["text"], _H2)]

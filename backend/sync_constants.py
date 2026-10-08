@@ -57,3 +57,13 @@ COUNTRIES = {
     "SG": "Singapore", "BR": "Brazil", "MX": "Mexico", "AR": "Argentina", "ZA": "South Africa",
     "IN": "India", "AE": "United Arab Emirates", "HK": "Hong Kong",
 }
+
+# Subscription plans (Brief 19). Monthly/annual cents are display values that mirror the
+# Stripe prices; the server never charges from them (the setup script verifies they match).
+# Caps are server-side policy. Must stay in step with frontend/src/sync/constants.js.
+PLANS = {
+    "creator":  {"label": "Creator",  "month_cents": 1900,  "year_cents": 19000,  "month_cap": 100},
+    "pro":      {"label": "Pro",       "month_cents": 4900,  "year_cents": 49000,  "month_cap": 300},
+    "business": {"label": "Business",  "month_cents": 14900, "year_cents": 149000, "month_cap": 1000},
+}
+SUB_DAY_CAP = 50

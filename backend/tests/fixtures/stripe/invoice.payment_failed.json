@@ -1,0 +1,169 @@
+{
+  "api_version": "2026-08-26.dahlia",
+  "created": 1791474223,
+  "data": {
+    "object": {
+      "account_country": "US",
+      "account_name": "OVOXI, Inc sandbox",
+      "account_tax_ids": null,
+      "amount_due": 1900,
+      "amount_overpaid": 0,
+      "amount_paid": 0,
+      "amount_remaining": 1900,
+      "amount_shipping": 0,
+      "application": null,
+      "attempt_count": 1,
+      "attempted": true,
+      "auto_advance": true,
+      "automatic_tax": {
+        "disabled_reason": null,
+        "enabled": false,
+        "liability": null,
+        "provider": null,
+        "status": null
+      },
+      "automatically_finalizes_at": null,
+      "billing_reason": "subscription_cycle",
+      "collection_method": "charge_automatically",
+      "created": 1794152597,
+      "currency": "usd",
+      "custom_fields": null,
+      "customer": "cus_VP7jiHiWPGNPhc",
+      "customer_account": null,
+      "customer_address": null,
+      "customer_email": "redacted@example.com",
+      "customer_name": "Redacted",
+      "customer_phone": null,
+      "customer_shipping": null,
+      "customer_tax_exempt": "none",
+      "customer_tax_ids": [],
+      "default_payment_method": null,
+      "default_source": null,
+      "default_tax_rates": [],
+      "description": null,
+      "discounts": [],
+      "due_date": null,
+      "effective_at": 1794156197,
+      "ending_balance": 0,
+      "footer": null,
+      "from_invoice": null,
+      "hosted_invoice_url": "https://invoice.stripe.com/i/acct_1UL5QzHqfblOPF0P/test_YWNjdF8xVUw1UXpIcWZibE9QRjBQLF9WUDdqMkpuV1MzQ0Ftb2dkTkxnUXpleUtSN3dPUmpsLDE4MjAxNTAyNQ0200raSe3oRf?s=ap",
+      "id": "in_1UOJTjHqfblOPF0PlqElAuzf",
+      "invoice_pdf": "https://pay.stripe.com/invoice/acct_1UL5QzHqfblOPF0P/test_YWNjdF8xVUw1UXpIcWZibE9QRjBQLF9WUDdqMkpuV1MzQ0Ftb2dkTkxnUXpleUtSN3dPUmpsLDE4MjAxNTAyNQ0200raSe3oRf/pdf?s=ap",
+      "issuer": {
+        "type": "self"
+      },
+      "last_finalization_error": null,
+      "latest_revision": null,
+      "lines": {
+        "data": [
+          {
+            "amount": 1900,
+            "currency": "usd",
+            "description": "1 \u00d7 oVoxi Creator (at $19.00 / month)",
+            "discount_amounts": [],
+            "discountable": true,
+            "discounts": [],
+            "id": "il_1UZYFVHqfblOPF0PjAHeMwzl",
+            "invoice": "in_1UOJTjHqfblOPF0PlqElAuzf",
+            "livemode": false,
+            "metadata": {
+              "user_id": "user_capture_b"
+            },
+            "object": "line_item",
+            "parent": {
+              "invoice_item_details": null,
+              "subscription_item_details": {
+                "invoice_item": null,
+                "proration": false,
+                "proration_details": {
+                  "credited_items": null
+                },
+                "subscription": "sub_1UOJTbHqfblOPF0PLM4mDPNG",
+                "subscription_item": "si_VP7jiSZ1MSnlnL"
+              },
+              "type": "subscription_item_details"
+            },
+            "period": {
+              "end": 1796744597,
+              "start": 1794152597
+            },
+            "pretax_credit_amounts": [],
+            "pricing": {
+              "price_details": {
+                "price": "price_1UNc9aHqfblOPF0PSjkwpVG5",
+                "product": "prod_VOOxcXQrQPobaI"
+              },
+              "type": "price_details",
+              "unit_amount_decimal": 1900
+            },
+            "quantity": 1,
+            "quantity_decimal": 1,
+            "subtotal": 1900,
+            "taxes": []
+          }
+        ],
+        "has_more": false,
+        "object": "list",
+        "total_count": 1,
+        "url": "/v1/invoices/in_1UOJTjHqfblOPF0PlqElAuzf/lines"
+      },
+      "livemode": false,
+      "metadata": {},
+      "next_payment_attempt": 1794310242,
+      "number": "8VKWZY8J-0002",
+      "object": "invoice",
+      "on_behalf_of": null,
+      "parent": {
+        "quote_details": null,
+        "subscription_details": {
+          "metadata": {
+            "user_id": "user_capture_b"
+          },
+          "subscription": "sub_1UOJTbHqfblOPF0PLM4mDPNG"
+        },
+        "type": "subscription_details"
+      },
+      "payment_settings": {
+        "default_mandate": null,
+        "payment_method_options": null,
+        "payment_method_types": null
+      },
+      "period_end": 1794152597,
+      "period_start": 1791474197,
+      "post_payment_credit_notes_amount": 0,
+      "pre_payment_credit_notes_amount": 0,
+      "receipt_number": null,
+      "rendering": null,
+      "shipping_cost": null,
+      "shipping_details": null,
+      "starting_balance": 0,
+      "statement_descriptor": null,
+      "status": "open",
+      "status_transitions": {
+        "finalized_at": 1794156197,
+        "marked_uncollectible_at": null,
+        "paid_at": null,
+        "voided_at": null
+      },
+      "subtotal": 1900,
+      "subtotal_excluding_tax": 1900,
+      "test_clock": "clock_1UOJTVHqfblOPF0Pq9NtDmzb",
+      "total": 1900,
+      "total_discount_amounts": [],
+      "total_excluding_tax": 1900,
+      "total_pretax_credit_amounts": [],
+      "total_taxes": [],
+      "webhooks_delivered_at": 1794152597
+    }
+  },
+  "id": "evt_1UOJTxHqfblOPF0PqRnaRCH2",
+  "livemode": false,
+  "object": "event",
+  "pending_webhooks": 0,
+  "request": {
+    "id": null,
+    "idempotency_key": null
+  },
+  "type": "invoice.payment_failed"
+}

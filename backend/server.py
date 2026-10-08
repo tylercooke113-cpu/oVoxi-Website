@@ -32,6 +32,7 @@ from pydantic import BaseModel, Field, ConfigDict, EmailStr, field_validator, mo
 from sync_constants import (
     MOODS, MAX_MOODS, VOCALS, SAMPLE_DECLARATIONS, CONTENT_ID_ANSWERS,
     DISTRIBUTORS, PRO_ORGS, IPI_PATTERN, MUSICAL_KEYS, BPM_MIN, BPM_MAX, COUNTRIES,
+    PLANS, SUB_DAY_CAP,
 )
 from consent_ledger import record_grants, record_withdrawals, GRANT_VERSION
 import artist_agreement
@@ -46,7 +47,8 @@ import licenses
 import quotes
 from license_pdf import TERMS as LICENSE_TERMS, render_license_pdf
 from email_sender import send_email
-from sync_emails import license_email, quote_email
+from sync_emails import license_email, quote_email, subscription_license_email
+import subscriptions
 from sync_search import PAGE_SIZE, SearchParamError, build_filter, build_pipeline, encode_cursor, parse_params
 from sync_vault import (
     INSTAGRAM_URL, SPOTIFY_ARTIST_URL, is_legacy, metadata_patch_fields,
@@ -1098,6 +1100,34 @@ class CheckoutRequest(BaseModel):
         elif self.territory is not None:
             raise ValueError("Territory is only for Broadcast.")
         return self
+
+
+class SubscribeRequest(BaseModel):
+    """Brief 19. Only the plan id and interval cross the wire; the price lives in Stripe."""
+    model_config = ConfigDict(extra="forbid")
+    plan: Literal["creator", "pro", "business"]
+    interval: Literal["month", "year"]
+
+
+class RegisterRequest(BaseModel):
+    """Register (license) one track under the signed-in user's subscription."""
+    model_config = ConfigDict(extra="forbid")
+    track_id: str = Field(min_length=1, max_length=64)
+    include_stems: bool = False
+    project_name: str = Field(min_length=1, max_length=120)
+    project_client: str = Field(default="", max_length=120)
+    accept_terms: bool
+    terms_version: str = Field(min_length=1, max_length=32)
+
+    @field_validator("project_name", "project_client")
+    @classmethod
+    def _clean_project(cls, v: str, info) -> str:
+        v = " ".join(v.split())
+        if _BAD_TEXT.search(v):
+            raise ValueError("Remove special characters from this field.")
+        if info.field_name == "project_name" and not v:
+            raise ValueError("Name the project this license is for.")
+        return v
 
 
 class QuoteRequest(BaseModel):
@@ -2504,7 +2534,23 @@ async def stems_callback(request: Request):
 async def sync_checkout_config(request: Request, viewer: Optional[dict] = Depends(optional_clerk)):
     """Prices, stems and terms for the license modal; {"can_checkout": false} otherwise."""
     _, is_admin = _viewer(viewer)
-    return sync_orders.checkout_config(is_admin=is_admin, terms_text=LICENSE_TERMS)
+    cfg = sync_orders.checkout_config(is_admin=is_admin, terms_text=LICENSE_TERMS)
+    if cfg.get("can_checkout"):
+        # subscriptions_enabled is true only with the flag set AND all six prices resolved (13a).
+        # Warm the price cache here while it is empty (13b); on failure log ERROR and report false.
+        enabled = sync_orders.subscriptions_enabled()
+        if enabled and not subscriptions.prices_ready():
+            try:
+                await asyncio.to_thread(subscriptions.ensure_prices, sync_orders.stripe_client())
+            except Exception as exc:
+                logger.error("subscription price load from config failed: %s", exc)
+        enabled = enabled and subscriptions.prices_ready()
+        cfg["subscriptions_enabled"] = enabled
+        if enabled:
+            cfg["plans"] = [{"id": pid, "label": p["label"], "month_cents": p["month_cents"],
+                             "year_cents": p["year_cents"], "month_cap": p["month_cap"], "day_cap": SUB_DAY_CAP}
+                            for pid, p in PLANS.items()]
+    return cfg
 
 
 @api_router.get("/sync/terms/{version}")
@@ -2689,7 +2735,10 @@ async def _run_fulfilment_reconciler() -> None:
 
 
 STRIPE_HANDLED_EVENTS = {"checkout.session.completed", "checkout.session.async_payment_succeeded",
-                         "checkout.session.expired", "charge.refunded"}
+                         "checkout.session.expired", "charge.refunded",
+                         "customer.subscription.created", "customer.subscription.updated",
+                         "customer.subscription.deleted", "invoice.paid", "invoice.payment_failed",
+                         "charge.dispute.created", "charge.dispute.closed"}
 
 
 @api_router.post("/stripe/webhook")
@@ -2714,18 +2763,347 @@ async def stripe_webhook(request: Request, background: BackgroundTasks):
 
     obj = event.data.object.to_dict()
     now = datetime.now(timezone.utc)
+    try:
+        client = sync_orders.stripe_client()                 # subscription handlers re-fetch from Stripe
+    except sync_orders.ConfigError:
+        client = None                                        # single-track-only envs (and tests) have no API key
     if event.type in ("checkout.session.completed", "checkout.session.async_payment_succeeded"):
-        order_id = await sync_orders.apply_session_paid(db, obj, now=now)
-        if order_id:
-            background.add_task(_fulfil_order, order_id)
+        if obj.get("mode") == "subscription":
+            if client:
+                await subscriptions.on_checkout_completed(db, client, obj, now)
+            else:
+                logger.error("subscription checkout %s arrived but no Stripe API key is configured", obj.get("id"))
+        else:
+            order_id = await sync_orders.apply_session_paid(db, obj, now=now)
+            if order_id:
+                background.add_task(_fulfil_order, order_id)
     elif event.type == "checkout.session.expired":
         await sync_orders.apply_session_expired(db, obj, now=now)
     elif event.type == "charge.refunded":
-        order_id = await sync_orders.apply_refund(db, obj, now=now)
-        logger.info("refund event order=%s full=%s", order_id, obj.get("refunded"))
+        order_id = await sync_orders.apply_refund(db, obj, now=now)          # single-track first
+        if order_id:
+            logger.info("charge.refunded %s is single-track order %s; no subscription action",
+                        obj.get("id"), order_id)
+        elif client:
+            sub_invoice = await subscriptions.on_charge_refunded(db, client, obj, now)
+            if not sub_invoice:
+                logger.error("charge.refunded %s matched neither a single-track order nor an invoice",
+                             obj.get("id"))
+        else:
+            logger.error("charge.refunded %s matched no single-track order and no Stripe API key is configured",
+                         obj.get("id"))
+    elif event.type in ("customer.subscription.created", "customer.subscription.updated",
+                        "customer.subscription.deleted"):
+        if client:
+            await subscriptions.on_subscription_event(db, client, obj["id"], now)
+        else:
+            logger.error("subscription event %s arrived but no Stripe API key is configured", event.type)
+    elif event.type == "invoice.paid":
+        if client:
+            await subscriptions.on_invoice_paid(db, client, obj, now)
+        else:
+            logger.error("invoice.paid arrived but no Stripe API key is configured")
+    elif event.type == "invoice.payment_failed":
+        await subscriptions.on_invoice_payment_failed(db, obj, now)
+    elif event.type in ("charge.dispute.created", "charge.dispute.closed"):
+        if client:
+            pi = obj.get("payment_intent")
+            order = await db.orders.find_one({"stripe_payment_intent": pi}) if pi else None
+            if order:
+                # Single-track dispute. Brief 17/18 define no dispute handling, so nothing changes
+                # here; the point is that the subscription void path never runs on a single-track charge.
+                logger.info("charge.dispute %s is single-track order %s; no subscription action",
+                            obj.get("id"), order.get("order_id"))
+            else:
+                sub_invoice = await subscriptions.on_dispute(db, client, obj, now,
+                                                             closed=event.type.endswith("closed"))
+                if not sub_invoice:
+                    logger.error("charge.dispute %s matched neither a single-track order nor an invoice",
+                                 obj.get("id"))
+        else:
+            logger.error("dispute event %s arrived but no Stripe API key is configured", event.type)
 
-    await sync_orders.record_event(db, event.id, event.type, now=now)
+    await sync_orders.record_event(db, event.id, event.type, now=now)   # only after handlers succeed
     return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Subscriptions (Brief 19). Plans live in Stripe; the client sends only plan + interval.
+# ---------------------------------------------------------------------------
+
+_REGISTER_BLOCK = {
+    "no_plan": (403, "You need an active plan to register projects."),
+    "payment": (403, "Your payment is past due. Update your card to keep registering."),
+    "dispute": (403, "Registration is paused while a payment dispute is open."),
+    "month_cap": (429, "You have reached this month's project limit for your plan."),
+    "day_cap": (429, "You have reached today's download limit. Try again tomorrow."),
+}
+
+
+def _register_block(reason) -> tuple:
+    return _REGISTER_BLOCK.get(reason, (403, "You cannot register a project right now."))
+
+
+async def _subscriptions_ready() -> bool:
+    if os.environ.get("SUBSCRIPTIONS_ENABLED", "").strip().lower() != "true":
+        return False
+    try:
+        return await asyncio.to_thread(subscriptions.ensure_prices, sync_orders.stripe_client())
+    except Exception as exc:
+        logger.warning("subscription gate price check failed: %s", exc)
+        return False
+
+
+async def _require_subscriptions() -> None:
+    if not await _subscriptions_ready():
+        raise HTTPException(status_code=503, detail="Subscriptions are not available right now.")
+
+
+async def _sub_gate(clerk_payload: dict) -> None:
+    """Write-endpoint gate: the flag and all six prices (via _require_subscriptions), plus the
+    same admin-only gating single-track checkout uses while public checkout is still closed."""
+    await _require_subscriptions()
+    if not sync_orders.can_checkout(_role(clerk_payload) == "admin"):
+        raise HTTPException(status_code=403, detail="Subscriptions are not open yet.")
+
+
+async def _stripe_customer_for(uid: str, client) -> str:
+    """The user's Stripe customer id, created and persisted once."""
+    prof = await db.buyer_profiles.find_one({"user_id": uid})
+    if prof and prof.get("stripe_customer_id"):
+        return prof["stripe_customer_id"]
+    user = await fetch_clerk_user(uid)
+    cust = await asyncio.to_thread(client.v1.customers.create,
+                                   {"email": user["email"], "metadata": {"user_id": uid}})
+    now = datetime.now(timezone.utc).isoformat()
+    await db.buyer_profiles.update_one(
+        {"user_id": uid},
+        {"$set": {"stripe_customer_id": cust.id, "updated_at": now},
+         "$setOnInsert": {"user_id": uid, "created_at": now}}, upsert=True)
+    return cust.id
+
+
+async def _subscription_me(uid: str, now: datetime) -> dict:
+    access = await subscriptions.plan_access(db, uid, now)
+    sub = await db.subscriptions.find_one({"user_id": uid}, sort=[("created_at", -1)])
+    view = {"state": access["state"], "plan": access["plan"], "interval": access["interval"],
+            "can_register": access["can_register"], "reason": access["reason"],
+            "month_used": access["month_used"], "month_cap": access["month_cap"],
+            "day_used": access["day_used"], "day_cap": access["day_cap"], "subscription": None}
+    if sub:
+        view["subscription"] = {
+            "status": sub.get("status"), "plan": sub.get("plan"), "interval": sub.get("interval"),
+            "plan_label": PLANS.get(sub.get("plan"), {}).get("label"),
+            "current_period_end": sub.get("current_period_end"),
+            "cancel_at_period_end": bool(sub.get("cancel_at_period_end")),
+            "loyalty_pct": sub.get("loyalty_pct") or 0,
+            "subscribed_since": sub.get("subscribed_since")}
+    return view
+
+
+def _license_as_order(lic: dict) -> dict:
+    """Shape a subscription license as the dict render_license_pdf and delivery_files expect."""
+    return {
+        "order_id": f"sub-{lic['license_id']}", "license_id": lic["license_id"],
+        "track_id": lic["track_id"], "tier": lic["license_label"], "terms_version": lic["terms_version"],
+        "created_at": lic["issued_at"], "paid_at": lic["issued_at"], "currency": "usd",
+        "buyer_name": lic.get("licensee_name") or "", "buyer_company": lic.get("licensee_company") or "",
+        "buyer_email": lic["buyer_email"], "include_stems": bool(lic["include_stems"]),
+        "price_cents": None, "tax_cents": None, "amount_total_cents": None, "test_mode": False,
+        "license_pdf_key": lic.get("pdf_key"), "project": lic.get("project") or {}}
+
+
+def _register_result(lic: dict) -> dict:
+    token = sync_orders.derive_token(lic["license_id"], 1)
+    return {"license_id": lic["license_id"], "track_title": lic["track_title"],
+            "plan_label": lic["license_label"], "download_url": f"/license/{token}"}
+
+
+def _norm_project(name: str) -> str:
+    """Normalize a project name for the duplicate-submit guard: collapsed whitespace, case-folded."""
+    return " ".join((name or "").split()).casefold()
+
+
+async def _release_slot(uid: str, now: datetime) -> None:
+    await db.sub_usage.update_one({"user_id": uid, "period": subscriptions.month_key(now)}, {"$inc": {"count": -1}})
+    await db.sub_usage.update_one({"user_id": uid, "period": subscriptions.day_key(now)}, {"$inc": {"count": -1}})
+
+
+@api_router.post("/subscriptions/checkout")
+@limiter.limit("10/minute")
+async def subscriptions_checkout(request: Request, payload: SubscribeRequest,
+                                 clerk_payload: dict = Depends(verify_clerk_token)):
+    """Start a Stripe Checkout Session in subscription mode. Price comes from Stripe by plan+interval."""
+    await _sub_gate(clerk_payload)
+    uid = clerk_payload["sub"]
+    now = datetime.now(timezone.utc)
+    access = await subscriptions.plan_access(db, uid, now)
+    if access["state"] in subscriptions.ACTIVE_STATES:
+        raise HTTPException(status_code=409, detail="You already have a plan. Manage it from your account.")
+    pid = subscriptions.price_id(payload.plan, payload.interval)
+    if not pid:
+        raise HTTPException(status_code=503, detail="Plans are temporarily unavailable.")
+    client = sync_orders.stripe_client()
+    customer_id = await _stripe_customer_for(uid, client)
+    site = sync_orders.site_url()
+    params = {
+        "mode": "subscription", "customer": customer_id,
+        "line_items": [{"price": pid, "quantity": 1}],
+        "client_reference_id": uid,
+        "subscription_data": {"metadata": {"user_id": uid}},
+        "automatic_tax": {"enabled": True},
+        "customer_update": {"address": "auto", "name": "auto"},
+        "billing_address_collection": "required", "tax_id_collection": {"enabled": True},
+        "allow_promotion_codes": False,
+        "success_url": f"{site}/account?subscription=success",
+        "cancel_url": f"{site}/pricing?subscription=cancelled"}
+    try:
+        session = await asyncio.to_thread(
+            client.v1.checkout.sessions.create, params,
+            {"idempotency_key": f"sub-checkout-{uid}-{payload.plan}-{payload.interval}-{int(now.timestamp() // 3600)}"})
+    except Exception as exc:
+        logger.error("subscription checkout create failed uid=%s error=%s", uid, exc)
+        raise HTTPException(status_code=502, detail="Could not start checkout. Please try again.")
+    logger.info("subscription checkout uid=%s plan=%s interval=%s", uid, payload.plan, payload.interval)
+    return {"checkout_url": session.url}
+
+
+@api_router.post("/subscriptions/portal")
+@limiter.limit("10/minute")
+async def subscriptions_portal(request: Request, clerk_payload: dict = Depends(verify_clerk_token)):
+    """A Stripe Billing Portal link so the user can change card, plan or cancel."""
+    config_id = os.environ.get("STRIPE_PORTAL_CONFIG_ID", "").strip()
+    if not config_id:
+        raise HTTPException(status_code=503, detail="Billing management is temporarily unavailable.")
+    uid = clerk_payload["sub"]
+    prof = await db.buyer_profiles.find_one({"user_id": uid})
+    if not prof or not prof.get("stripe_customer_id"):
+        raise HTTPException(status_code=404, detail="No billing account yet.")
+    client = sync_orders.stripe_client()
+    try:
+        session = await asyncio.to_thread(
+            client.v1.billing_portal.sessions.create,
+            {"customer": prof["stripe_customer_id"], "configuration": config_id,
+             "return_url": f"{sync_orders.site_url()}/account"})
+    except Exception as exc:
+        logger.error("portal session create failed uid=%s error=%s", uid, exc)
+        raise HTTPException(status_code=502, detail="Could not open billing. Please try again.")
+    return {"portal_url": session.url}
+
+
+@api_router.post("/subscriptions/resume")
+@limiter.limit("10/minute")
+async def subscriptions_resume(request: Request, clerk_payload: dict = Depends(verify_clerk_token)):
+    """Undo a scheduled cancellation before the period ends."""
+    uid = clerk_payload["sub"]
+    now = datetime.now(timezone.utc)
+    sub = await db.subscriptions.find_one({"user_id": uid}, sort=[("created_at", -1)])
+    if not sub or not sub.get("cancel_at_period_end"):
+        raise HTTPException(status_code=409, detail="There is nothing to resume.")
+    if subscriptions._state(sub, now) not in ("ending", "active", "grace"):
+        raise HTTPException(status_code=409, detail="This plan cannot be resumed.")
+    client = sync_orders.stripe_client()
+    try:
+        await asyncio.to_thread(client.v1.subscriptions.update,
+                                sub["stripe_subscription_id"], {"cancel_at_period_end": False})
+    except Exception as exc:
+        logger.error("resume failed uid=%s error=%s", uid, exc)
+        raise HTTPException(status_code=502, detail="Could not resume. Please try again.")
+    await subscriptions.on_subscription_event(db, client, sub["stripe_subscription_id"], now)
+    return await _subscription_me(uid, now)
+
+
+@api_router.get("/subscriptions/me")
+@limiter.limit("30/minute")
+async def subscriptions_me(request: Request, clerk_payload: dict = Depends(verify_clerk_token)):
+    return await _subscription_me(clerk_payload["sub"], datetime.now(timezone.utc))
+
+
+@api_router.post("/subscriptions/register")
+@limiter.limit("20/minute")
+async def subscriptions_register(request: Request, payload: RegisterRequest,
+                                 clerk_payload: dict = Depends(verify_clerk_token)):
+    """License one track under the signed-in user's plan. One registration = one spent download slot."""
+    await _sub_gate(clerk_payload)
+    if not payload.accept_terms:
+        raise HTTPException(status_code=422, detail="You must accept the license terms")
+    current_terms = sync_orders.terms_version()
+    if payload.terms_version != current_terms:
+        raise HTTPException(status_code=409, detail="The license terms have changed. Reload and review them.")
+    uid = clerk_payload["sub"]
+    now = datetime.now(timezone.utc)
+
+    # Double-submit guard: the same user + track + normalized project name within 10 minutes
+    # returns the existing license, with no new count.
+    cutoff = (now - timedelta(minutes=10)).isoformat()
+    target_name = _norm_project(payload.project_name)
+    recent = await db.licenses.find(
+        {"source": "subscription", "owner_user_id": uid, "track_id": payload.track_id,
+         "created_at": {"$gte": cutoff}}).sort("created_at", -1).to_list(20)
+    for existing in recent:
+        if _norm_project((existing.get("project") or {}).get("name")) == target_name:
+            return _register_result(existing)
+
+    access = await subscriptions.plan_access(db, uid, now)
+    if not access["can_register"]:
+        status, msg = _register_block(access["reason"])
+        raise HTTPException(status_code=status, detail=msg)
+
+    track = await db.track_submissions.find_one(
+        {"id": payload.track_id}, {"_id": 0, **{f: 0 for f in MATCH_DETAIL_FIELDS}})
+    if not track or not is_listed(track):
+        raise _not_found()
+    include_stems = payload.include_stems and sync_orders.deliver_stems()
+    sub = await db.subscriptions.find_one({"user_id": uid}, sort=[("created_at", -1)])
+    plan = access["plan"]
+    user = await fetch_clerk_user(uid)
+
+    ok, reason = await subscriptions.claim_download_slot(db, uid, PLANS[plan]["month_cap"], SUB_DAY_CAP, now)
+    if not ok:
+        status, msg = _register_block(reason)
+        raise HTTPException(status_code=status, detail=msg)
+
+    # A slot is now spent; release it on any failure before the license is stored.
+    try:
+        lic = licenses.build_subscription_license(
+            license_id=sync_orders.new_license_id(), user_id=uid, buyer_email=user["email"], plan=plan,
+            subscription_id=(sub or {}).get("stripe_subscription_id"), invoice_id=(sub or {}).get("latest_invoice"),
+            track=track, project_name=payload.project_name, client=payload.project_client,
+            include_stems=include_stems, terms_version=current_terms, now=now)
+        name = " ".join(p for p in (user.get("first_name"), user.get("last_name")) if p).strip()
+        lic["licensee_name"] = name
+        pdf_key = f"licenses/sub/{lic['license_id']}.pdf"
+        lic["pdf_key"] = pdf_key
+        token = sync_orders.derive_token(lic["license_id"], 1)
+        lic["download_token_hash"] = sync_orders.hash_token(token)
+        lic["email_status"] = None
+        order_like = _license_as_order(lic)
+        sync_orders.delivery_files(order_like, track)   # DeliveryError before any upload
+        pdf = await _render_license(order_like, track_title=lic["track_title"],
+                                    artist_name=lic["artist_display_name"], lic=lic)
+        await _r2_put(pdf_key, pdf, "application/pdf")
+        await db.licenses.insert_one(dict(lic))
+    except sync_orders.DeliveryError as exc:
+        await _release_slot(uid, now)
+        logger.error("subscription register delivery error uid=%s track=%s: %s", uid, payload.track_id, exc)
+        raise HTTPException(status_code=409, detail="This track's files are not ready yet. Try again shortly.")
+    except Exception:
+        await _release_slot(uid, now)
+        raise
+
+    try:
+        subject, html, text = subscription_license_email(
+            lic, download_url=f"{sync_orders.site_url()}/license/{token}")
+        res = await send_email(to=lic["buyer_email"], subject=subject, html=html, text=text,
+                               attachments=[(f"oVoxi-license-{lic['license_id']}.pdf", pdf)],
+                               idempotency_key=f"sub-license-{lic['license_id']}")
+        await db.licenses.update_one({"license_id": lic["license_id"]},
+                                     {"$set": {"email_status": res["status"]}})
+    except Exception as exc:
+        logger.error("subscription license email failed license=%s error=%s", lic["license_id"], exc)
+    logger.info("subscription register uid=%s license=%s track=%s plan=%s",
+                uid, lic["license_id"], payload.track_id, plan)
+    return _register_result(lic)
 
 
 @api_router.get("/sync/orders/by-session/{session_id}")
@@ -2754,9 +3132,22 @@ async def sync_order_by_session(request: Request, session_id: str):
 
 async def _order_for_token(token: str) -> dict:
     order = await sync_orders.find_by_token(db, token, now=datetime.now(timezone.utc))
-    if not order:
-        raise HTTPException(status_code=404, detail="This download link is invalid or has expired.")
-    return order
+    if order:
+        return order
+    # Subscription licenses mint the same style of token (Brief 19); gate on plan state at download time.
+    lic = await db.licenses.find_one({"download_token_hash": sync_orders.hash_token(token),
+                                      "source": "subscription"})
+    if lic:
+        if lic.get("status") in ("refunded", "void"):
+            raise HTTPException(status_code=404, detail="This download link is invalid or has expired.")
+        access = await subscriptions.plan_access(db, lic["owner_user_id"])
+        if access["state"] not in subscriptions.ACTIVE_STATES:
+            raise HTTPException(status_code=403,
+                                detail="Your plan has ended. Projects you registered stay licensed.")
+        return {"_subscription_license": lic, "license_id": lic["license_id"], "track_id": lic["track_id"],
+                "include_stems": lic["include_stems"], "license_pdf_key": lic["pdf_key"],
+                "track_title": lic["track_title"], "artist_display_name": lic["artist_display_name"]}
+    raise HTTPException(status_code=404, detail="This download link is invalid or has expired.")
 
 
 async def _files_for(order: dict) -> dict:
@@ -2773,7 +3164,17 @@ async def _files_for(order: dict) -> dict:
 @limiter.limit("30/minute")
 async def sync_download_listing(request: Request, token: str):
     order = await _order_for_token(token)
-    return sync_orders.download_listing(order, await _files_for(order))
+    files = await _files_for(order)
+    lic = order.get("_subscription_license")
+    if lic:
+        # Subscription downloads are not metered per file (the project is already registered).
+        return {"license_id": lic["license_id"], "track_title": lic["track_title"],
+                "artist_display_name": lic["artist_display_name"], "tier": lic["license_label"],
+                "include_stems": bool(lic["include_stems"]), "expires_at": None, "test_mode": False,
+                "source": "subscription",
+                "files": [{"name": n, "label": sync_orders.FILE_LABELS.get(n, n), "remaining": None}
+                          for n in files]}
+    return sync_orders.download_listing(order, files)
 
 
 @api_router.post("/sync/downloads/{token}/{file_name}")
@@ -2784,7 +3185,8 @@ async def sync_download_file(request: Request, token: str, file_name: str):
     files = await _files_for(order)
     if file_name not in files:
         raise _not_found()
-    if not await sync_orders.claim_download(db, order, file_name):
+    is_sub = bool(order.get("_subscription_license"))
+    if not is_sub and not await sync_orders.claim_download(db, order, file_name):
         raise HTTPException(status_code=429, detail="Download limit reached for this file.")
     key = files[file_name]
     filename = sync_orders.download_filename(order, file_name, key)
@@ -2796,10 +3198,11 @@ async def sync_download_file(request: Request, token: str, file_name: str):
             ExpiresIn=sync_orders.DOWNLOAD_URL_TTL_SECONDS,
         )
     except Exception as exc:
-        logger.error("download sign failed order=%s file=%s error=%s", order["order_id"], file_name, exc)
-        await db.orders.update_one({"order_id": order["order_id"]}, {"$inc": {f"download_counts.{file_name}": -1}})
+        logger.error("download sign failed order=%s file=%s error=%s", order.get("order_id"), file_name, exc)
+        if not is_sub:
+            await db.orders.update_one({"order_id": order["order_id"]}, {"$inc": {f"download_counts.{file_name}": -1}})
         raise HTTPException(status_code=503, detail="Download unavailable. Please try again.")
-    logger.info("download order=%s file=%s", order["order_id"], file_name)
+    logger.info("download order=%s file=%s sub=%s", order.get("order_id"), file_name, is_sub)
     return {"url": url, "filename": filename, "expires_in": sync_orders.DOWNLOAD_URL_TTL_SECONDS}
 
 
@@ -3023,8 +3426,15 @@ async def create_indexes():
         await db.artist_legal_profiles.create_index([("user_id", 1)], unique=True)
         await sync_orders.ensure_indexes(db)
         await licenses.ensure_indexes(db)
+        await subscriptions.ensure_indexes(db)
+        await db.buyer_profiles.create_index([("user_id", 1)], unique=True)
+        await db.buyer_profiles.create_index([("stripe_customer_id", 1)])
     except Exception as exc:
         logger.warning("Index creation failed (non-fatal): %s", exc)
+    try:
+        await asyncio.to_thread(subscriptions.load_prices, sync_orders.stripe_client())
+    except Exception as exc:
+        logger.warning("subscription price load skipped: %s", exc)
     if RUN_WORKER:
         for _ in range(WORKER_CONCURRENCY):
             asyncio.ensure_future(_worker_loop())

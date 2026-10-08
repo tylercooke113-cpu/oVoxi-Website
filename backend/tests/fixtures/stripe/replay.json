@@ -1,0 +1,782 @@
+{
+ "balance_transactions.retrieve": {
+  "txn_3UOJU2HqfblOPF0P0GDY40xT": {
+   "amount": 1900,
+   "available_on": 1792022400,
+   "balance_type": "payments",
+   "created": 1791474230,
+   "currency": "usd",
+   "description": "Subscription creation",
+   "exchange_rate": null,
+   "fee": 85,
+   "fee_details": [
+    {
+     "amount": 85,
+     "application": null,
+     "currency": "usd",
+     "description": "Stripe processing fees",
+     "type": "stripe_fee"
+    }
+   ],
+   "id": "txn_3UOJU2HqfblOPF0P0GDY40xT",
+   "net": 1815,
+   "object": "balance_transaction",
+   "reporting_category": "charge",
+   "source": "ch_3UOJU2HqfblOPF0P0a0ldOUd",
+   "status": "pending",
+   "type": "charge"
+  }
+ },
+ "charges.retrieve": {
+  "ch_3UOJTlHqfblOPF0P0ZCXeKIw": {
+   "amount": 4900,
+   "amount_captured": 4900,
+   "amount_refunded": 4900,
+   "application": null,
+   "application_fee": null,
+   "application_fee_amount": null,
+   "balance_transaction": "txn_3UOJTlHqfblOPF0P0Au4ONFr",
+   "billing_details": {
+    "address": {
+     "city": null,
+     "country": null,
+     "line1": "Redacted",
+     "line2": "Redacted",
+     "postal_code": "Redacted",
+     "state": null
+    },
+    "email": "redacted@example.com",
+    "name": "Redacted",
+    "phone": "Redacted",
+    "tax_id": null
+   },
+   "calculated_statement_descriptor": "Stripe",
+   "captured": true,
+   "created": 1791474215,
+   "currency": "usd",
+   "customer": "cus_VP7ikSUMO31ugZ",
+   "description": "Subscription update",
+   "destination": null,
+   "dispute": null,
+   "disputed": false,
+   "failure_balance_transaction": null,
+   "failure_code": null,
+   "failure_message": null,
+   "fraud_details": {},
+   "id": "ch_3UOJTlHqfblOPF0P0ZCXeKIw",
+   "livemode": false,
+   "metadata": {},
+   "object": "charge",
+   "on_behalf_of": null,
+   "order": null,
+   "outcome": {
+    "advice_code": null,
+    "network_advice_code": null,
+    "network_decline_code": null,
+    "network_status": "approved_by_network",
+    "reason": null,
+    "risk_level": "normal",
+    "risk_score": 27,
+    "seller_message": "Payment complete.",
+    "type": "authorized"
+   },
+   "paid": true,
+   "payment_intent": "pi_3UOJTlHqfblOPF0P0YVNyslG",
+   "payment_method": "pm_1UOJTWHqfblOPF0PcuSTqLNW",
+   "payment_method_details": {
+    "card": {
+     "amount_authorized": 4900,
+     "authorization_code": "293546",
+     "brand": "visa",
+     "checks": {
+      "address_line1_check": null,
+      "address_postal_code_check": null,
+      "cvc_check": "pass"
+     },
+     "country": "US",
+     "electronic_commerce_indicator": "02",
+     "exp_month": 10,
+     "exp_year": 2027,
+     "extended_authorization": {
+      "status": "disabled"
+     },
+     "fingerprint": "zDyvwBnaC3qYlK5k",
+     "funding": "credit",
+     "incremental_authorization": {
+      "status": "unavailable"
+     },
+     "installments": null,
+     "last4": "4242",
+     "mandate": null,
+     "multicapture": {
+      "status": "unavailable"
+     },
+     "network": "visa",
+     "network_token": {
+      "used": false
+     },
+     "network_transaction_id": "122681211181196",
+     "overcapture": {
+      "maximum_amount_capturable": 4900,
+      "status": "unavailable"
+     },
+     "regulated_status": "unregulated",
+     "three_d_secure": null,
+     "transaction_link_id": null,
+     "wallet": null
+    },
+    "type": "card"
+   },
+   "radar_options": {},
+   "receipt_email": "redacted@example.com",
+   "receipt_number": null,
+   "receipt_url": "https://pay.stripe.com/receipts/invoices/CAcaFwoVYWNjdF8xVUw1UXpIcWZibE9QRjBQKMmDn9YGMgbistX6tQU6LBaHbBZ1usSBzFWpO3J5pqV9WpThMocXW_UkeXVrCdx-vhVj9qInCEAZam_t?s=ap",
+   "refunded": true,
+   "review": null,
+   "shipping": null,
+   "source": null,
+   "source_transfer": null,
+   "statement_descriptor": null,
+   "statement_descriptor_suffix": null,
+   "status": "succeeded",
+   "transfer_data": null,
+   "transfer_group": null
+  },
+  "ch_3UOJU2HqfblOPF0P0a0ldOUd": {
+   "amount": 1900,
+   "amount_captured": 1900,
+   "amount_refunded": 0,
+   "application": null,
+   "application_fee": null,
+   "application_fee_amount": null,
+   "balance_transaction": "txn_3UOJU2HqfblOPF0P0GDY40xT",
+   "billing_details": {
+    "address": {
+     "city": null,
+     "country": null,
+     "line1": "Redacted",
+     "line2": "Redacted",
+     "postal_code": "Redacted",
+     "state": null
+    },
+    "email": "redacted@example.com",
+    "name": "Redacted",
+    "phone": "Redacted",
+    "tax_id": null
+   },
+   "calculated_statement_descriptor": "Stripe",
+   "captured": true,
+   "created": 1791474230,
+   "currency": "usd",
+   "customer": "cus_VP7jbcuxeauglC",
+   "description": "Subscription creation",
+   "destination": null,
+   "dispute": "du_1UOJU4HqfblOPF0PHvjX528v",
+   "disputed": true,
+   "failure_balance_transaction": null,
+   "failure_code": null,
+   "failure_message": null,
+   "fraud_details": {},
+   "id": "ch_3UOJU2HqfblOPF0P0a0ldOUd",
+   "livemode": false,
+   "metadata": {},
+   "object": "charge",
+   "on_behalf_of": null,
+   "order": null,
+   "outcome": {
+    "advice_code": null,
+    "network_advice_code": null,
+    "network_decline_code": null,
+    "network_status": "approved_by_network",
+    "reason": null,
+    "risk_level": "normal",
+    "risk_score": 17,
+    "seller_message": "Payment complete.",
+    "type": "authorized"
+   },
+   "paid": true,
+   "payment_intent": "pi_3UOJU2HqfblOPF0P0OVdlkM5",
+   "payment_method": "pm_1UOJU0HqfblOPF0POOJMXvte",
+   "payment_method_details": {
+    "card": {
+     "amount_authorized": 1900,
+     "authorization_code": "340024",
+     "brand": "visa",
+     "checks": {
+      "address_line1_check": null,
+      "address_postal_code_check": null,
+      "cvc_check": "pass"
+     },
+     "country": "US",
+     "electronic_commerce_indicator": "02",
+     "exp_month": 10,
+     "exp_year": 2027,
+     "extended_authorization": {
+      "status": "disabled"
+     },
+     "fingerprint": "mvE8LOHr80qgV3lw",
+     "funding": "credit",
+     "incremental_authorization": {
+      "status": "unavailable"
+     },
+     "installments": null,
+     "last4": "0259",
+     "mandate": null,
+     "multicapture": {
+      "status": "unavailable"
+     },
+     "network": "visa",
+     "network_token": {
+      "used": false
+     },
+     "network_transaction_id": "109118695676797",
+     "overcapture": {
+      "maximum_amount_capturable": 1900,
+      "status": "unavailable"
+     },
+     "regulated_status": "unregulated",
+     "three_d_secure": null,
+     "transaction_link_id": null,
+     "wallet": null
+    },
+    "type": "card"
+   },
+   "radar_options": {},
+   "receipt_email": "redacted@example.com",
+   "receipt_number": null,
+   "receipt_url": "https://pay.stripe.com/receipts/invoices/CAcaFwoVYWNjdF8xVUw1UXpIcWZibE9QRjBQKMmDn9YGMgbCcCiSIiE6LBYkCyd3WhlAYTCS6iSZv_P47jgDH_QqOoP7dgpzpy9o3KRIm2jR64ITBYdQ?s=ap",
+   "refunded": false,
+   "review": null,
+   "shipping": null,
+   "source": null,
+   "source_transfer": null,
+   "statement_descriptor": null,
+   "statement_descriptor_suffix": null,
+   "status": "succeeded",
+   "transfer_data": null,
+   "transfer_group": null
+  }
+ },
+ "invoice_payments.list": {
+  "pi_3UOJTlHqfblOPF0P0YVNyslG": [
+   {
+    "amount_paid": 4900,
+    "amount_requested": 4900,
+    "created": 1794156197,
+    "currency": "usd",
+    "id": "inpay_1UOJTmHqfblOPF0Pj8thhD6E",
+    "invoice": "in_1UOJTiHqfblOPF0PQNM3SjJ6",
+    "is_default": true,
+    "livemode": false,
+    "object": "invoice_payment",
+    "payment": {
+     "payment_intent": "pi_3UOJTlHqfblOPF0P0YVNyslG",
+     "type": "payment_intent"
+    },
+    "status": "paid",
+    "status_transitions": {
+     "canceled_at": null,
+     "paid_at": 1794156197
+    }
+   }
+  ],
+  "pi_3UOJU2HqfblOPF0P0OVdlkM5": [
+   {
+    "amount_paid": 1900,
+    "amount_requested": 1900,
+    "created": 1794156197,
+    "currency": "usd",
+    "id": "inpay_1UOJU2HqfblOPF0P48sKmykd",
+    "invoice": "in_1UOJU1HqfblOPF0PTyV8ueCR",
+    "is_default": true,
+    "livemode": false,
+    "object": "invoice_payment",
+    "payment": {
+     "payment_intent": "pi_3UOJU2HqfblOPF0P0OVdlkM5",
+     "type": "payment_intent"
+    },
+    "status": "paid",
+    "status_transitions": {
+     "canceled_at": null,
+     "paid_at": 1794156197
+    }
+   }
+  ]
+ },
+ "invoices.retrieve": {
+  "in_1UOJTiHqfblOPF0PQNM3SjJ6": {
+   "account_country": "US",
+   "account_name": "OVOXI, Inc sandbox",
+   "account_tax_ids": null,
+   "amount_due": 4900,
+   "amount_overpaid": 0,
+   "amount_paid": 4900,
+   "amount_remaining": 0,
+   "amount_shipping": 0,
+   "application": null,
+   "attempt_count": 1,
+   "attempted": true,
+   "auto_advance": false,
+   "automatic_tax": {
+    "disabled_reason": null,
+    "enabled": false,
+    "liability": null,
+    "provider": null,
+    "status": null
+   },
+   "automatically_finalizes_at": null,
+   "billing_reason": "subscription_cycle",
+   "collection_method": "charge_automatically",
+   "created": 1794152597,
+   "currency": "usd",
+   "custom_fields": null,
+   "customer": "cus_VP7ikSUMO31ugZ",
+   "customer_account": null,
+   "customer_address": null,
+   "customer_email": "redacted@example.com",
+   "customer_name": "Redacted",
+   "customer_phone": null,
+   "customer_shipping": null,
+   "customer_tax_exempt": "none",
+   "customer_tax_ids": [],
+   "default_payment_method": null,
+   "default_source": null,
+   "default_tax_rates": [],
+   "description": null,
+   "discounts": [],
+   "due_date": null,
+   "effective_at": 1794156197,
+   "ending_balance": 0,
+   "footer": null,
+   "from_invoice": null,
+   "hosted_invoice_url": "https://invoice.stripe.com/i/acct_1UL5QzHqfblOPF0P/test_YWNjdF8xVUw1UXpIcWZibE9QRjBQLF9WUDdqRVZKOE1udTZJU0lSOEpUb1g4dnJDNUhxcUtjLDE4MjAxNjk2OQ02000H3rgcus?s=ap",
+   "id": "in_1UOJTiHqfblOPF0PQNM3SjJ6",
+   "invoice_pdf": "https://pay.stripe.com/invoice/acct_1UL5QzHqfblOPF0P/test_YWNjdF8xVUw1UXpIcWZibE9QRjBQLF9WUDdqRVZKOE1udTZJU0lSOEpUb1g4dnJDNUhxcUtjLDE4MjAxNjk2OQ02000H3rgcus/pdf?s=ap",
+   "issuer": {
+    "type": "self"
+   },
+   "last_finalization_error": null,
+   "latest_revision": null,
+   "lines": {
+    "data": [
+     {
+      "amount": 4900,
+      "currency": "usd",
+      "description": "1 \u00d7 oVoxi Pro (at $49.00 / month)",
+      "discount_amounts": [],
+      "discountable": true,
+      "discounts": [],
+      "id": "il_1UZYFVHqfblOPF0P47vyGs6f",
+      "invoice": "in_1UOJTiHqfblOPF0PQNM3SjJ6",
+      "livemode": false,
+      "metadata": {
+       "user_id": "user_capture_a"
+      },
+      "object": "line_item",
+      "parent": {
+       "invoice_item_details": null,
+       "subscription_item_details": {
+        "invoice_item": null,
+        "proration": false,
+        "proration_details": {
+         "credited_items": null
+        },
+        "subscription": "sub_1UOJTWHqfblOPF0PVogPOAD4",
+        "subscription_item": "si_VP7iHj82i6EU90"
+       },
+       "type": "subscription_item_details"
+      },
+      "period": {
+       "end": 1796744597,
+       "start": 1794152597
+      },
+      "pretax_credit_amounts": [],
+      "pricing": {
+       "price_details": {
+        "price": "price_1UNc9bHqfblOPF0PwFBK9ln9",
+        "product": "prod_VOOxfy1Ja1qTpB"
+       },
+       "type": "price_details",
+       "unit_amount_decimal": 4900
+      },
+      "quantity": 1,
+      "quantity_decimal": 1,
+      "subtotal": 4900,
+      "taxes": []
+     }
+    ],
+    "has_more": false,
+    "object": "list",
+    "total_count": 1,
+    "url": "/v1/invoices/in_1UOJTiHqfblOPF0PQNM3SjJ6/lines"
+   },
+   "livemode": false,
+   "metadata": {},
+   "next_payment_attempt": null,
+   "number": "XNL5TX4G-0002",
+   "object": "invoice",
+   "on_behalf_of": null,
+   "parent": {
+    "quote_details": null,
+    "subscription_details": {
+     "metadata": {
+      "user_id": "user_capture_a"
+     },
+     "subscription": "sub_1UOJTWHqfblOPF0PVogPOAD4"
+    },
+    "type": "subscription_details"
+   },
+   "payment_settings": {
+    "default_mandate": null,
+    "payment_method_options": null,
+    "payment_method_types": null
+   },
+   "payments": {
+    "data": [
+     {
+      "amount_paid": 4900,
+      "amount_requested": 4900,
+      "created": 1794156197,
+      "currency": "usd",
+      "id": "inpay_1UOJTmHqfblOPF0Pj8thhD6E",
+      "invoice": "in_1UOJTiHqfblOPF0PQNM3SjJ6",
+      "is_default": true,
+      "livemode": false,
+      "object": "invoice_payment",
+      "payment": {
+       "payment_intent": "pi_3UOJTlHqfblOPF0P0YVNyslG",
+       "type": "payment_intent"
+      },
+      "status": "paid",
+      "status_transitions": {
+       "canceled_at": null,
+       "paid_at": 1794156197
+      }
+     }
+    ],
+    "has_more": false,
+    "object": "list",
+    "url": "/v1/invoices/payments"
+   },
+   "period_end": 1794152597,
+   "period_start": 1791474197,
+   "post_payment_credit_notes_amount": 0,
+   "pre_payment_credit_notes_amount": 0,
+   "receipt_number": null,
+   "rendering": null,
+   "shipping_cost": null,
+   "shipping_details": null,
+   "starting_balance": 0,
+   "statement_descriptor": null,
+   "status": "paid",
+   "status_transitions": {
+    "finalized_at": 1794156197,
+    "marked_uncollectible_at": null,
+    "paid_at": 1794156197,
+    "voided_at": null
+   },
+   "subtotal": 4900,
+   "subtotal_excluding_tax": 4900,
+   "test_clock": "clock_1UOJTVHqfblOPF0Pq9NtDmzb",
+   "total": 4900,
+   "total_discount_amounts": [],
+   "total_excluding_tax": 4900,
+   "total_pretax_credit_amounts": [],
+   "total_taxes": [],
+   "webhooks_delivered_at": 1794152597
+  },
+  "in_1UOJU1HqfblOPF0PTyV8ueCR": {
+   "account_country": "US",
+   "account_name": "OVOXI, Inc sandbox",
+   "account_tax_ids": null,
+   "amount_due": 1900,
+   "amount_overpaid": 0,
+   "amount_paid": 1900,
+   "amount_remaining": 0,
+   "amount_shipping": 0,
+   "application": null,
+   "attempt_count": 1,
+   "attempted": true,
+   "auto_advance": false,
+   "automatic_tax": {
+    "disabled_reason": null,
+    "enabled": false,
+    "liability": null,
+    "provider": null,
+    "status": null
+   },
+   "automatically_finalizes_at": null,
+   "billing_reason": "subscription_create",
+   "collection_method": "charge_automatically",
+   "created": 1794156197,
+   "currency": "usd",
+   "custom_fields": null,
+   "customer": "cus_VP7jbcuxeauglC",
+   "customer_account": null,
+   "customer_address": null,
+   "customer_email": "redacted@example.com",
+   "customer_name": "Redacted",
+   "customer_phone": null,
+   "customer_shipping": null,
+   "customer_tax_exempt": "none",
+   "customer_tax_ids": [],
+   "default_payment_method": null,
+   "default_source": null,
+   "default_tax_rates": [],
+   "description": null,
+   "discounts": [],
+   "due_date": null,
+   "effective_at": 1794156197,
+   "ending_balance": 0,
+   "footer": null,
+   "from_invoice": null,
+   "hosted_invoice_url": "https://invoice.stripe.com/i/acct_1UL5QzHqfblOPF0P/test_YWNjdF8xVUw1UXpIcWZibE9QRjBQLF9WUDdqZlA3VXM0cWQ4bk1zTnplbWN3VU1iYktWZlQ4LDE4MjAxNjk3MA02008y7dwVJq?s=ap",
+   "id": "in_1UOJU1HqfblOPF0PTyV8ueCR",
+   "invoice_pdf": "https://pay.stripe.com/invoice/acct_1UL5QzHqfblOPF0P/test_YWNjdF8xVUw1UXpIcWZibE9QRjBQLF9WUDdqZlA3VXM0cWQ4bk1zTnplbWN3VU1iYktWZlQ4LDE4MjAxNjk3MA02008y7dwVJq/pdf?s=ap",
+   "issuer": {
+    "type": "self"
+   },
+   "last_finalization_error": null,
+   "latest_revision": null,
+   "lines": {
+    "data": [
+     {
+      "amount": 1900,
+      "currency": "usd",
+      "description": "1 \u00d7 oVoxi Creator (at $19.00 / month)",
+      "discount_amounts": [],
+      "discountable": true,
+      "discounts": [],
+      "id": "il_1UZZBZHqfblOPF0PD3RraGRz",
+      "invoice": "in_1UOJU1HqfblOPF0PTyV8ueCR",
+      "livemode": false,
+      "metadata": {
+       "user_id": "user_capture_d"
+      },
+      "object": "line_item",
+      "parent": {
+       "invoice_item_details": null,
+       "subscription_item_details": {
+        "invoice_item": null,
+        "proration": false,
+        "proration_details": {
+         "credited_items": null
+        },
+        "subscription": "sub_1UOJU1HqfblOPF0P374ULNgn",
+        "subscription_item": "si_VP7jPxs4niyr40"
+       },
+       "type": "subscription_item_details"
+      },
+      "period": {
+       "end": 1796748197,
+       "start": 1794156197
+      },
+      "pretax_credit_amounts": [],
+      "pricing": {
+       "price_details": {
+        "price": "price_1UNc9aHqfblOPF0PSjkwpVG5",
+        "product": "prod_VOOxcXQrQPobaI"
+       },
+       "type": "price_details",
+       "unit_amount_decimal": 1900
+      },
+      "quantity": 1,
+      "quantity_decimal": 1,
+      "subtotal": 1900,
+      "taxes": []
+     }
+    ],
+    "has_more": false,
+    "object": "list",
+    "total_count": 1,
+    "url": "/v1/invoices/in_1UOJU1HqfblOPF0PTyV8ueCR/lines"
+   },
+   "livemode": false,
+   "metadata": {},
+   "next_payment_attempt": null,
+   "number": "FTX3REUB-0001",
+   "object": "invoice",
+   "on_behalf_of": null,
+   "parent": {
+    "quote_details": null,
+    "subscription_details": {
+     "metadata": {
+      "user_id": "user_capture_d"
+     },
+     "subscription": "sub_1UOJU1HqfblOPF0P374ULNgn"
+    },
+    "type": "subscription_details"
+   },
+   "payment_settings": {
+    "default_mandate": null,
+    "payment_method_options": null,
+    "payment_method_types": null
+   },
+   "payments": {
+    "data": [
+     {
+      "amount_paid": 1900,
+      "amount_requested": 1900,
+      "created": 1794156197,
+      "currency": "usd",
+      "id": "inpay_1UOJU2HqfblOPF0P48sKmykd",
+      "invoice": "in_1UOJU1HqfblOPF0PTyV8ueCR",
+      "is_default": true,
+      "livemode": false,
+      "object": "invoice_payment",
+      "payment": {
+       "payment_intent": "pi_3UOJU2HqfblOPF0P0OVdlkM5",
+       "type": "payment_intent"
+      },
+      "status": "paid",
+      "status_transitions": {
+       "canceled_at": null,
+       "paid_at": 1794156197
+      }
+     }
+    ],
+    "has_more": false,
+    "object": "list",
+    "url": "/v1/invoices/payments"
+   },
+   "period_end": 1794156197,
+   "period_start": 1794156197,
+   "post_payment_credit_notes_amount": 0,
+   "pre_payment_credit_notes_amount": 0,
+   "receipt_number": null,
+   "rendering": null,
+   "shipping_cost": null,
+   "shipping_details": null,
+   "starting_balance": 0,
+   "statement_descriptor": null,
+   "status": "paid",
+   "status_transitions": {
+    "finalized_at": 1794156197,
+    "marked_uncollectible_at": null,
+    "paid_at": 1794156197,
+    "voided_at": null
+   },
+   "subtotal": 1900,
+   "subtotal_excluding_tax": 1900,
+   "test_clock": "clock_1UOJTVHqfblOPF0Pq9NtDmzb",
+   "total": 1900,
+   "total_discount_amounts": [],
+   "total_excluding_tax": 1900,
+   "total_pretax_credit_amounts": [],
+   "total_taxes": [],
+   "webhooks_delivered_at": 1794156197
+  }
+ },
+ "payment_intents.retrieve": {
+  "pi_3UOJU2HqfblOPF0P0OVdlkM5": {
+   "allowed_payment_method_types": null,
+   "amount": 1900,
+   "amount_capturable": 0,
+   "amount_details": {
+    "tip": {}
+   },
+   "amount_received": 1900,
+   "application": null,
+   "application_fee_amount": null,
+   "automatic_payment_methods": null,
+   "canceled_at": null,
+   "cancellation_reason": null,
+   "capture_method": "automatic",
+   "client_secret": "pi_3UOJU2HqfblOPF0P0OVdlkM5_secret_ErtIuLVjIGqEU5NivK9pfxkRb",
+   "confirmation_method": "automatic",
+   "created": 1791474230,
+   "currency": "usd",
+   "customer": "cus_VP7jbcuxeauglC",
+   "customer_account": null,
+   "description": "Subscription creation",
+   "excluded_payment_method_types": null,
+   "id": "pi_3UOJU2HqfblOPF0P0OVdlkM5",
+   "last_payment_error": null,
+   "latest_charge": "ch_3UOJU2HqfblOPF0P0a0ldOUd",
+   "livemode": false,
+   "managed_payments": {
+    "enabled": false
+   },
+   "metadata": {},
+   "next_action": null,
+   "object": "payment_intent",
+   "on_behalf_of": null,
+   "payment_details": {
+    "customer_reference": null,
+    "order_reference": "in_1UOJU1HqfblOPF0PTyV8ueCR"
+   },
+   "payment_method": "pm_1UOJU0HqfblOPF0POOJMXvte",
+   "payment_method_configuration_details": null,
+   "payment_method_options": {
+    "amazon_pay": {
+     "express_checkout_element_session_id": null
+    },
+    "card": {
+     "installments": null,
+     "mandate_options": null,
+     "network": null,
+     "request_three_d_secure": "automatic"
+    },
+    "cashapp": {},
+    "klarna": {
+     "preferred_locale": null
+    },
+    "link": {
+     "persistent_token": null
+    }
+   },
+   "payment_method_types": [
+    "amazon_pay",
+    "card",
+    "cashapp",
+    "klarna",
+    "link"
+   ],
+   "payment_record": null,
+   "processing": null,
+   "receipt_email": "redacted@example.com",
+   "review": null,
+   "setup_future_usage": "off_session",
+   "shared_payment_granted_token": null,
+   "shipping": null,
+   "source": null,
+   "statement_descriptor": null,
+   "statement_descriptor_suffix": null,
+   "status": "succeeded",
+   "transfer_data": null,
+   "transfer_group": null
+  }
+ },
+ "refunds.list": {
+  "ch_3UOJTlHqfblOPF0P0ZCXeKIw": [
+   {
+    "amount": 4900,
+    "balance_transaction": "txn_3UOJTlHqfblOPF0P0z1ay33K",
+    "charge": "ch_3UOJTlHqfblOPF0P0ZCXeKIw",
+    "created": 1791474227,
+    "currency": "usd",
+    "customer": "cus_VP7ikSUMO31ugZ",
+    "customer_account": null,
+    "destination_details": {
+     "card": {
+      "reference": "2672216871012452",
+      "reference_status": "available",
+      "reference_type": "acquirer_reference_number",
+      "type": "refund"
+     },
+     "type": "card"
+    },
+    "id": "re_3UOJTlHqfblOPF0P0pXCW8Gl",
+    "metadata": {},
+    "object": "refund",
+    "payment_intent": "pi_3UOJTlHqfblOPF0P0YVNyslG",
+    "payment_method": "pm_1UOJTWHqfblOPF0PcuSTqLNW",
+    "reason": null,
+    "receipt_number": null,
+    "source_transfer_reversal": null,
+    "status": "succeeded",
+    "transfer_reversal": null
+   }
+  ]
+ }
+}

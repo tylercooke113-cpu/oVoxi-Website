@@ -1,0 +1,105 @@
+{
+  "api_version": "2026-08-26.dahlia",
+  "created": 1791474233,
+  "data": {
+    "object": {
+      "amount": 1900,
+      "balance_transaction": "txn_1UOJU4HqfblOPF0PU6rYJl75",
+      "balance_transactions": [
+        {
+          "amount": -1900,
+          "available_on": 1792022400,
+          "balance_type": "payments",
+          "created": 1791474232,
+          "currency": "usd",
+          "description": "Chargeback withdrawal for ch_3UOJU2HqfblOPF0P0a0ldOUd",
+          "exchange_rate": null,
+          "fee": 1500,
+          "fee_details": [
+            {
+              "amount": 1500,
+              "application": null,
+              "currency": "usd",
+              "description": "Dispute fee",
+              "type": "stripe_fee"
+            }
+          ],
+          "id": "txn_1UOJU4HqfblOPF0PU6rYJl75",
+          "net": -3400,
+          "object": "balance_transaction",
+          "reporting_category": "dispute",
+          "source": "du_1UOJU4HqfblOPF0PHvjX528v",
+          "status": "pending",
+          "type": "adjustment"
+        }
+      ],
+      "charge": "ch_3UOJU2HqfblOPF0P0a0ldOUd",
+      "created": 1791474232,
+      "currency": "usd",
+      "enhanced_eligibility_types": [],
+      "evidence": {
+        "access_activity_log": null,
+        "billing_address": null,
+        "cancellation_policy": null,
+        "cancellation_policy_disclosure": null,
+        "cancellation_rebuttal": null,
+        "customer_communication": null,
+        "customer_email_address": null,
+        "customer_name": "Redacted",
+        "customer_purchase_ip": null,
+        "customer_signature": null,
+        "duplicate_charge_documentation": null,
+        "duplicate_charge_explanation": null,
+        "duplicate_charge_id": null,
+        "enhanced_evidence": {},
+        "product_description": null,
+        "receipt": null,
+        "refund_policy": null,
+        "refund_policy_disclosure": null,
+        "refund_refusal_explanation": null,
+        "service_date": null,
+        "service_documentation": null,
+        "shipping_address": null,
+        "shipping_carrier": null,
+        "shipping_date": null,
+        "shipping_documentation": null,
+        "shipping_tracking_number": null,
+        "uncategorized_file": null,
+        "uncategorized_text": null
+      },
+      "evidence_details": {
+        "due_by": 1792195199,
+        "enhanced_eligibility": {},
+        "has_evidence": false,
+        "past_due": false,
+        "submission_count": 0
+      },
+      "id": "du_1UOJU4HqfblOPF0PHvjX528v",
+      "is_charge_refundable": false,
+      "livemode": false,
+      "metadata": {},
+      "object": "dispute",
+      "payment_intent": "pi_3UOJU2HqfblOPF0P0OVdlkM5",
+      "payment_method_details": {
+        "card": {
+          "brand": "visa",
+          "case_type": "chargeback",
+          "network": "visa",
+          "network_reason_code": "10.4"
+        },
+        "type": "card"
+      },
+      "reason": "fraudulent",
+      "status": "needs_response"
+    }
+  },
+  "id": "evt_1UOJU6HqfblOPF0PANQtWpvz",
+  "livemode": false,
+  "object": "event",
+  "pending_webhooks": 0,
+  "request": {
+    "id": "req_4kCihLLNWB3RQp",
+    "idempotency_key": "92c1ad4a-fecd-3383-8f97-a7b93842fdfd"
+  },
+  "type": "charge.dispute.created"
+}

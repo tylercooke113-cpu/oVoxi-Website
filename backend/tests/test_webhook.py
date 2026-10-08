@@ -157,6 +157,54 @@ def test_missing_stem_leaves_order_paid_for_retry(env):
     assert r.status_code == 200 and get(env)["status"] == "paid" and env.puts == [] and sales(env) == 0
 
 
+def test_single_track_refund_skips_subscription_path(env, monkeypatch):
+    """A refund that matches a single-track order must not touch the subscription path:
+    on_charge_refunded (and therefore invoice_payments.list) is never called."""
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_x")
+    calls = []
+
+    class _IP:
+        def list(self, *a, **k):
+            calls.append((a, k))
+            raise AssertionError("invoice_payments.list must not run for a single-track refund")
+
+    class _FakeClient:
+        v1 = SimpleNamespace(invoice_payments=_IP())
+
+    monkeypatch.setattr(so, "stripe_client", lambda: _FakeClient())
+    env.db._db.orders.update_one({"order_id": env.order["order_id"]},
+                                 {"$set": {"stripe_payment_intent": "pi_single", "status": "fulfilled"}})
+    charge = {"id": "ch_single", "payment_intent": "pi_single", "currency": "usd",
+              "refunded": True, "amount": 4900, "amount_refunded": 4900}
+    r = env.post("charge.refunded", charge, eid="evt_refund_single")
+    assert r.status_code == 200, r.text
+    assert calls == []                                   # subscription path skipped entirely
+    assert get(env)["status"] == "refunded"
+
+
+def test_subscription_lookup_exception_returns_500_and_not_recorded(env, monkeypatch):
+    """A Stripe lookup failure inside a subscription handler must 500 (so Stripe retries) and
+    leave the event unrecorded, since the event id is only stored after the handlers succeed."""
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_x")
+
+    class _Boom:
+        def list(self, *a, **k):
+            raise RuntimeError("stripe lookup down")
+
+    class _FakeClient:
+        v1 = SimpleNamespace(invoice_payments=_Boom())
+
+    monkeypatch.setattr(so, "stripe_client", lambda: _FakeClient())
+    charge = {"id": "ch_boom", "payment_intent": "pi_boom", "currency": "usd",
+              "refunded": True, "amount": 4900, "amount_refunded": 4900}
+    body = event("charge.refunded", charge, eid="evt_boom")
+    client = TestClient(server.app, raise_server_exceptions=False)
+    r = client.post("/api/stripe/webhook", content=body,
+                    headers={"stripe-signature": sign(body), "content-type": "application/json"})
+    assert r.status_code == 500
+    assert env.db._db.stripe_events.count_documents({"event_id": "evt_boom"}) == 0
+
+
 def test_test_mode_orders_do_not_count_as_sales(env):
     env.db._db.orders.update_one({"order_id": env.order["order_id"]}, {"$set": {"test_mode": True}})
     env.post("checkout.session.completed", session(env.order))

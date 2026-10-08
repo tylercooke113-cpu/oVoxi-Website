@@ -58,8 +58,38 @@ def test_stems_off(env, monkeypatch):
 
 
 def test_subscriptions_flag(env, monkeypatch):
+    import subscriptions as subs
     monkeypatch.setenv("SUBSCRIPTIONS_ENABLED", "true")
-    assert cfg(env)["subscriptions_enabled"] is True
+    monkeypatch.setattr(subs, "prices_ready", lambda: True)   # six prices resolved (Brief 19 item 13a)
+    c = cfg(env)
+    assert c["subscriptions_enabled"] is True
+    assert {p["id"] for p in c["plans"]} == {"creator", "pro", "business"}
+
+
+def test_subscriptions_flag_requires_prices(env, monkeypatch):
+    import subscriptions as subs
+    monkeypatch.setenv("SUBSCRIPTIONS_ENABLED", "true")
+    monkeypatch.setattr(subs, "prices_ready", lambda: False)
+    calls = {"n": 0}
+    monkeypatch.setattr(subs, "ensure_prices", lambda client: calls.__setitem__("n", calls["n"] + 1))
+    c = cfg(env)
+    assert c["subscriptions_enabled"] is False and "plans" not in c
+    assert calls["n"] == 1                                    # 13b: config warms the cache while empty
+
+
+def test_subscriptions_price_load_failure_reports_false(env, monkeypatch, caplog):
+    import subscriptions as subs
+    monkeypatch.setenv("SUBSCRIPTIONS_ENABLED", "true")
+    monkeypatch.setattr(subs, "prices_ready", lambda: False)
+
+    def _boom(client):
+        raise RuntimeError("stripe down")
+
+    monkeypatch.setattr(subs, "ensure_prices", _boom)
+    with caplog.at_level("ERROR"):
+        c = cfg(env)
+    assert c["subscriptions_enabled"] is False
+    assert any("price load from config failed" in r.message for r in caplog.records)
 
 
 def test_price_override_is_reflected(env, monkeypatch):

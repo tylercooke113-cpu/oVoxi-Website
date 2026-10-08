@@ -1,0 +1,134 @@
+{
+  "api_version": "2026-08-26.dahlia",
+  "created": 1791474228,
+  "data": {
+    "object": {
+      "amount": 4900,
+      "amount_captured": 4900,
+      "amount_refunded": 4900,
+      "application": null,
+      "application_fee": null,
+      "application_fee_amount": null,
+      "balance_transaction": "txn_3UOJTlHqfblOPF0P0Au4ONFr",
+      "billing_details": {
+        "address": {
+          "city": null,
+          "country": null,
+          "line1": "Redacted",
+          "line2": "Redacted",
+          "postal_code": "Redacted",
+          "state": null
+        },
+        "email": "redacted@example.com",
+        "name": "Redacted",
+        "phone": "Redacted",
+        "tax_id": null
+      },
+      "calculated_statement_descriptor": "Stripe",
+      "captured": true,
+      "created": 1791474215,
+      "currency": "usd",
+      "customer": "cus_VP7ikSUMO31ugZ",
+      "description": "Subscription update",
+      "destination": null,
+      "dispute": null,
+      "disputed": false,
+      "failure_balance_transaction": null,
+      "failure_code": null,
+      "failure_message": null,
+      "fraud_details": {},
+      "id": "ch_3UOJTlHqfblOPF0P0ZCXeKIw",
+      "livemode": false,
+      "metadata": {},
+      "object": "charge",
+      "on_behalf_of": null,
+      "order": null,
+      "outcome": {
+        "advice_code": null,
+        "network_advice_code": null,
+        "network_decline_code": null,
+        "network_status": "approved_by_network",
+        "reason": null,
+        "risk_level": "normal",
+        "risk_score": 27,
+        "seller_message": "Payment complete.",
+        "type": "authorized"
+      },
+      "paid": true,
+      "payment_intent": "pi_3UOJTlHqfblOPF0P0YVNyslG",
+      "payment_method": "pm_1UOJTWHqfblOPF0PcuSTqLNW",
+      "payment_method_details": {
+        "card": {
+          "amount_authorized": 4900,
+          "authorization_code": "293546",
+          "brand": "visa",
+          "checks": {
+            "address_line1_check": null,
+            "address_postal_code_check": null,
+            "cvc_check": "pass"
+          },
+          "country": "US",
+          "electronic_commerce_indicator": "02",
+          "exp_month": 10,
+          "exp_year": 2027,
+          "extended_authorization": {
+            "status": "disabled"
+          },
+          "fingerprint": "zDyvwBnaC3qYlK5k",
+          "funding": "credit",
+          "incremental_authorization": {
+            "status": "unavailable"
+          },
+          "installments": null,
+          "last4": "4242",
+          "mandate": null,
+          "multicapture": {
+            "status": "unavailable"
+          },
+          "network": "visa",
+          "network_token": {
+            "used": false
+          },
+          "network_transaction_id": "122681211181196",
+          "overcapture": {
+            "maximum_amount_capturable": 4900,
+            "status": "unavailable"
+          },
+          "regulated_status": "unregulated",
+          "three_d_secure": null,
+          "transaction_link_id": null,
+          "wallet": null
+        },
+        "type": "card"
+      },
+      "radar_options": {},
+      "receipt_email": "redacted@example.com",
+      "receipt_number": null,
+      "receipt_url": "https://pay.stripe.com/receipts/invoices/CAcaFwoVYWNjdF8xVUw1UXpIcWZibE9QRjBQKLT0ntYGMgZ8yhn05Mc6LBaVn_ZcmVAOeKjS4qUye_8wASb8jpAkqobLCBepA_E1BRFi-5jF2maIuCa9?s=ap",
+      "refunded": true,
+      "review": null,
+      "shipping": null,
+      "source": null,
+      "source_transfer": null,
+      "statement_descriptor": null,
+      "statement_descriptor_suffix": null,
+      "status": "succeeded",
+      "transfer_data": null,
+      "transfer_group": null
+    },
+    "previous_attributes": {
+      "amount_refunded": 0,
+      "receipt_url": "https://pay.stripe.com/receipts/invoices/CAcaFwoVYWNjdF8xVUw1UXpIcWZibE9QRjBQKLP0ntYGMgbNyJgIqBs6LBaPj9H6AEdxH9lq1uYH3pT1gxDPyJcKjBXz__uJzbzX3j3IZnlJzfWoHRKx?s=ap",
+      "refunded": false
+    }
+  },
+  "id": "evt_3UOJTlHqfblOPF0P0aM8OD13",
+  "livemode": false,
+  "object": "event",
+  "pending_webhooks": 0,
+  "request": {
+    "id": "req_l9pYAhtsOcp6ey",
+    "idempotency_key": "21db89d5-8917-37a3-b11a-98fbbb9224e7"
+  },
+  "type": "charge.refunded"
+}
