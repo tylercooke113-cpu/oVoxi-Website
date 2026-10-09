@@ -214,19 +214,25 @@ def _add_months_iso(iso: str, months: int) -> str:
     return dt.replace(year=year, month=month, day=min(dt.day, calendar.monthrange(year, month)[1])).isoformat()
 
 
+def loyalty_price_cents(month_cents: int, pct: int) -> int:
+    """Monthly price after a loyalty discount. The single definition of the discount formula,
+    shared by loyalty_view and the /sync/checkout/config overlay so neither re-derives it."""
+    return int(month_cents or 0) * (100 - (pct or 0)) // 100
+
+
 def loyalty_view(plan: str, interval: str, loyalty_pct: int, subscribed_since: str) -> dict:
     """Server-computed price and next-discount fields so the client never does loyalty math.
     Monthly steps 0 -> 15 (month 3) -> 20 (month 7); annual plans never discount. Cents are integers."""
     cents = PLANS.get(plan, {}).get("month_cents" if interval == "month" else "year_cents", 0)
     pct = loyalty_pct or 0
-    out = {"price_cents": cents if interval != "month" else cents * (100 - pct) // 100,
+    out = {"price_cents": cents if interval != "month" else loyalty_price_cents(cents, pct),
            "next_loyalty_pct": None, "next_loyalty_price_cents": None,
            "next_loyalty_month": None, "next_loyalty_date": None}
     if interval == "month" and pct < 20 and subscribed_since:
         nxt_pct, nxt_month = (15, 3) if pct < 15 else (20, 7)
         out["next_loyalty_pct"] = nxt_pct
         out["next_loyalty_month"] = nxt_month
-        out["next_loyalty_price_cents"] = cents * (100 - nxt_pct) // 100
+        out["next_loyalty_price_cents"] = loyalty_price_cents(cents, nxt_pct)
         out["next_loyalty_date"] = _add_months_iso(subscribed_since, nxt_month - 1)
     return out
 

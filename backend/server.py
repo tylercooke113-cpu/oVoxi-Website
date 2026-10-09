@@ -2548,7 +2548,11 @@ async def sync_checkout_config(request: Request, viewer: Optional[dict] = Depend
         cfg["subscriptions_enabled"] = enabled
         if enabled:
             cfg["plans"] = [{"id": pid, "label": p["label"], "month_cents": p["month_cents"],
-                             "year_cents": p["year_cents"], "month_cap": p["month_cap"], "day_cap": SUB_DAY_CAP}
+                             "year_cents": p["year_cents"], "month_cap": p["month_cap"], "day_cap": SUB_DAY_CAP,
+                             # Server-computed loyalty monthly prices (15% from month 3, 20% from 7) so
+                             # the client never does discount math; one formula via loyalty_price_cents.
+                             "month_cents_loyalty15": subscriptions.loyalty_price_cents(p["month_cents"], 15),
+                             "month_cents_loyalty20": subscriptions.loyalty_price_cents(p["month_cents"], 20)}
                             for pid, p in PLANS.items()]
     return cfg
 

@@ -64,6 +64,9 @@ def test_subscriptions_flag(env, monkeypatch):
     c = cfg(env)
     assert c["subscriptions_enabled"] is True
     assert {p["id"] for p in c["plans"]} == {"creator", "pro", "business"}
+    # Server-computed loyalty monthly prices feed SubscribeModal; the client does no discount math.
+    loyalty = {p["id"]: (p["month_cents_loyalty15"], p["month_cents_loyalty20"]) for p in c["plans"]}
+    assert loyalty == {"creator": (1615, 1520), "pro": (4165, 3920), "business": (12665, 11920)}
 
 
 def test_subscriptions_flag_requires_prices(env, monkeypatch):
