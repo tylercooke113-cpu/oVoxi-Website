@@ -2886,18 +2886,25 @@ async def _stripe_customer_for(uid: str, client) -> str:
 async def _subscription_me(uid: str, now: datetime) -> dict:
     access = await subscriptions.plan_access(db, uid, now)
     sub = await db.subscriptions.find_one({"user_id": uid}, sort=[("created_at", -1)])
+    registered_count = await db.licenses.count_documents({"source": "subscription", "owner_user_id": uid})
     view = {"state": access["state"], "plan": access["plan"], "interval": access["interval"],
             "can_register": access["can_register"], "reason": access["reason"],
             "month_used": access["month_used"], "month_cap": access["month_cap"],
-            "day_used": access["day_used"], "day_cap": access["day_cap"], "subscription": None}
+            "day_used": access["day_used"], "day_cap": access["day_cap"],
+            "registered_count": registered_count, "subscription": None}
     if sub:
+        # All loyalty and grace figures are computed here so the client only formats them.
+        lv = subscriptions.loyalty_view(sub.get("plan"), sub.get("interval"),
+                                        sub.get("loyalty_pct") or 0, sub.get("subscribed_since"))
         view["subscription"] = {
             "status": sub.get("status"), "plan": sub.get("plan"), "interval": sub.get("interval"),
             "plan_label": PLANS.get(sub.get("plan"), {}).get("label"),
-            "current_period_end": sub.get("current_period_end"),
             "cancel_at_period_end": bool(sub.get("cancel_at_period_end")),
             "loyalty_pct": sub.get("loyalty_pct") or 0,
-            "subscribed_since": sub.get("subscribed_since")}
+            "subscribed_since": sub.get("subscribed_since"),
+            "next_payment_date": sub.get("current_period_end"),
+            "grace_ends_at": subscriptions.grace_ends_at(sub),
+            **lv}
     return view
 
 
@@ -2913,10 +2920,13 @@ def _license_as_order(lic: dict) -> dict:
         "license_pdf_key": lic.get("pdf_key"), "project": lic.get("project") or {}}
 
 
-def _register_result(lic: dict) -> dict:
+async def _register_result(lic: dict, now: datetime) -> dict:
     token = sync_orders.derive_token(lic["license_id"], 1)
+    access = await subscriptions.plan_access(db, lic["owner_user_id"], now)
     return {"license_id": lic["license_id"], "track_title": lic["track_title"],
-            "plan_label": lic["license_label"], "download_url": f"/license/{token}"}
+            "plan_label": lic["license_label"], "download_url": f"/license/{token}",
+            "certificate_url": f"/api/account/licenses/{lic['license_id']}/certificate",
+            "remaining": max(access["month_cap"] - access["month_used"], 0)}
 
 
 def _norm_project(name: str) -> str:
@@ -2939,12 +2949,21 @@ async def subscriptions_checkout(request: Request, payload: SubscribeRequest,
     now = datetime.now(timezone.utc)
     access = await subscriptions.plan_access(db, uid, now)
     if access["state"] in subscriptions.ACTIVE_STATES:
-        raise HTTPException(status_code=409, detail="You already have a plan. Manage it from your account.")
+        raise HTTPException(status_code=409, detail="You already have a plan. Use Manage billing to change it.")
     pid = subscriptions.price_id(payload.plan, payload.interval)
     if not pid:
         raise HTTPException(status_code=503, detail="Plans are temporarily unavailable.")
     client = sync_orders.stripe_client()
     customer_id = await _stripe_customer_for(uid, client)
+    # Stripe is the source of truth: 409 on a plan that exists in Stripe but has not mirrored yet,
+    # and expire any stale open Checkout Sessions so a customer cannot run two at once.
+    existing = await asyncio.to_thread(client.v1.subscriptions.list,
+                                       {"customer": customer_id, "status": "all", "limit": 100})
+    if any(s.status in ("active", "trialing", "past_due", "unpaid") for s in existing.data):
+        raise HTTPException(status_code=409, detail="You already have a plan. Use Manage billing to change it.")
+    for s in (await asyncio.to_thread(client.v1.checkout.sessions.list,
+                                      {"customer": customer_id, "status": "open", "limit": 100})).data:
+        await asyncio.to_thread(client.v1.checkout.sessions.expire, s.id)
     site = sync_orders.site_url()
     params = {
         "mode": "subscription", "customer": customer_id,
@@ -2955,8 +2974,8 @@ async def subscriptions_checkout(request: Request, payload: SubscribeRequest,
         "customer_update": {"address": "auto", "name": "auto"},
         "billing_address_collection": "required", "tax_id_collection": {"enabled": True},
         "allow_promotion_codes": False,
-        "success_url": f"{site}/account?subscription=success",
-        "cancel_url": f"{site}/pricing?subscription=cancelled"}
+        "success_url": f"{site}/account?tab=subscription&checkout=success",
+        "cancel_url": f"{site}/account?tab=subscription"}
     try:
         session = await asyncio.to_thread(
             client.v1.checkout.sessions.create, params,
@@ -3042,7 +3061,7 @@ async def subscriptions_register(request: Request, payload: RegisterRequest,
          "created_at": {"$gte": cutoff}}).sort("created_at", -1).to_list(20)
     for existing in recent:
         if _norm_project((existing.get("project") or {}).get("name")) == target_name:
-            return _register_result(existing)
+            return await _register_result(existing, now)
 
     access = await subscriptions.plan_access(db, uid, now)
     if not access["can_register"]:
@@ -3103,7 +3122,7 @@ async def subscriptions_register(request: Request, payload: RegisterRequest,
         logger.error("subscription license email failed license=%s error=%s", lic["license_id"], exc)
     logger.info("subscription register uid=%s license=%s track=%s plan=%s",
                 uid, lic["license_id"], payload.track_id, plan)
-    return _register_result(lic)
+    return await _register_result(lic, now)
 
 
 @api_router.get("/sync/orders/by-session/{session_id}")

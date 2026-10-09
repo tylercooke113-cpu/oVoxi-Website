@@ -492,6 +492,43 @@ def test_apply_loyalty_annual_clears_any_coupon():
     assert db._db.subscriptions.find_one({"stripe_subscription_id": "s1"})["loyalty_pct"] == 0
 
 
+# --------------------------------------------------------------------------- /me server-computed values (A4)
+
+def test_loyalty_view_monthly_steps():
+    since = "2026-01-01T00:00:00+00:00"
+    v0 = subs.loyalty_view("pro", "month", 0, since)
+    assert v0["price_cents"] == 4900 and v0["next_loyalty_pct"] == 15
+    assert v0["next_loyalty_price_cents"] == 4165 and v0["next_loyalty_month"] == 3
+    assert v0["next_loyalty_date"].startswith("2026-03-01")
+    v15 = subs.loyalty_view("pro", "month", 15, since)
+    assert v15["price_cents"] == 4165 and v15["next_loyalty_pct"] == 20
+    assert v15["next_loyalty_price_cents"] == 3920 and v15["next_loyalty_month"] == 7
+    assert v15["next_loyalty_date"].startswith("2026-07-01")
+    v20 = subs.loyalty_view("pro", "month", 20, since)
+    assert v20["price_cents"] == 3920 and v20["next_loyalty_pct"] is None and v20["next_loyalty_date"] is None
+
+
+def test_loyalty_view_annual_never_discounts():
+    v = subs.loyalty_view("pro", "year", 0, "2026-01-01T00:00:00+00:00")
+    assert v["price_cents"] == 49000 and v["next_loyalty_pct"] is None and v["next_loyalty_date"] is None
+
+
+def test_grace_ends_at():
+    assert subs.grace_ends_at({"status": "active", "past_due_since": None}) is None
+    since = "2026-10-01T00:00:00+00:00"
+    g = subs.grace_ends_at({"status": "past_due", "past_due_since": since})
+    expected = (subs._parse(since) + timedelta(days=subs.grace_days())).isoformat()
+    assert g == expected   # past_due_since + SUB_GRACE_DAYS, read from the module (not hardcoded)
+
+
+def test_owner_view_includes_source():
+    import licenses
+    assert licenses.owner_view({"license_id": "L1", "source": "subscription", "status": "active", "scope": {}},
+                               NOW)["source"] == "subscription"
+    assert licenses.owner_view({"license_id": "L2", "status": "active", "scope": {}},
+                               NOW)["source"] == "single"
+
+
 # --------------------------------------------------------------------------- endpoints: gate (9a) + dup guard (9b)
 
 def test_sub_gate_admin_only_while_single_track_checkout_closed(monkeypatch):
@@ -536,7 +573,115 @@ def test_register_duplicate_guard_normalizes_project(monkeypatch):
             "track_id": "t1", "project_name": "my project", "project_client": "",
             "include_stems": False, "accept_terms": True, "terms_version": so.terms_version()})
         assert resp.status_code == 200, resp.text
-        assert resp.json()["license_id"] == "OVX-DUP"            # same user+track+normalized name
+        body = resp.json()
+        assert body["license_id"] == "OVX-DUP"                   # same user+track+normalized name
+        assert body["certificate_url"] == "/api/account/licenses/OVX-DUP/certificate"
+        assert body["remaining"] == 0                            # user "u" has no mirror -> month_cap 0
         assert db._db.sub_usage.count_documents({}) == 0         # no new slot consumed
+    finally:
+        server.app.dependency_overrides.clear()
+
+
+# --------------------------------------------------------------------------- endpoints: checkout (A1/A2) + /me (A4)
+
+class _CheckoutSessions:
+    def __init__(self, open_ids, expired, created):
+        self._open, self.expired, self.created = open_ids, expired, created
+
+    def list(self, params):
+        from types import SimpleNamespace
+        return SimpleNamespace(data=[SimpleNamespace(id=i) for i in self._open])
+
+    def expire(self, sid):
+        from types import SimpleNamespace
+        self.expired.append(sid)
+        return SimpleNamespace(id=sid)
+
+    def create(self, params, *a):
+        from types import SimpleNamespace
+        self.created.append(params)
+        return SimpleNamespace(url="https://stripe.test/checkout")
+
+
+def _checkout_client(sub_statuses, open_ids, expired, created):
+    from types import SimpleNamespace
+    return SimpleNamespace(v1=SimpleNamespace(
+        subscriptions=SimpleNamespace(list=lambda p: SimpleNamespace(
+            data=[SimpleNamespace(status=s) for s in sub_statuses])),
+        checkout=SimpleNamespace(sessions=_CheckoutSessions(open_ids, expired, created))))
+
+
+def _wire_checkout(monkeypatch, server, db, client):
+    async def _ready():
+        return True
+
+    monkeypatch.setattr(server, "db", db)
+    monkeypatch.setattr(server, "_subscriptions_ready", _ready)
+    monkeypatch.setattr(server.limiter, "enabled", False)
+    monkeypatch.setenv("SYNC_CHECKOUT_ENABLED", "true")
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_x")
+    monkeypatch.setenv("SYNC_SITE_URL", "https://ovoxi.net")
+    monkeypatch.setattr(server.sync_orders, "stripe_client", lambda: client)
+    subs._PRICE_IDS["sub_pro_month"] = "price_pro_m"
+    db._db.buyer_profiles.insert_one({"user_id": "u", "stripe_customer_id": "cus_1"})
+    server.app.dependency_overrides[server.verify_clerk_token] = lambda: {"sub": "u", "metadata": {"role": "artist"}}
+
+
+def test_checkout_409_when_stripe_has_existing_subscription(monkeypatch):
+    # Stripe is the source of truth (A1): any of these statuses must block a new checkout,
+    # even before the subscription has mirrored into our DB.
+    import server
+    from fastapi.testclient import TestClient
+    for status in ("active", "trialing", "past_due", "unpaid"):
+        db = AsyncDB()
+        client = _checkout_client([status], [], [], [])
+        _wire_checkout(monkeypatch, server, db, client)
+        try:
+            r = TestClient(server.app).post("/api/subscriptions/checkout", json={"plan": "pro", "interval": "month"})
+            assert r.status_code == 409 and "Manage billing" in r.json()["detail"], f"{status}: {r.text}"
+        finally:
+            server.app.dependency_overrides.clear()
+
+
+def test_checkout_expires_open_sessions_and_sets_success_url(monkeypatch):
+    import server
+    from fastapi.testclient import TestClient
+    db = AsyncDB()
+    expired, created = [], []
+    client = _checkout_client([], ["cs_old1", "cs_old2"], expired, created)
+    _wire_checkout(monkeypatch, server, db, client)
+    try:
+        r = TestClient(server.app).post("/api/subscriptions/checkout", json={"plan": "pro", "interval": "month"})
+        assert r.status_code == 200, r.text
+        assert r.json()["checkout_url"] == "https://stripe.test/checkout"
+        assert expired == ["cs_old1", "cs_old2"]                 # stale sessions cleared first
+        assert created[0]["success_url"].endswith("/account?tab=subscription&checkout=success")
+        assert created[0]["cancel_url"].endswith("/account?tab=subscription")
+    finally:
+        server.app.dependency_overrides.clear()
+
+
+def test_me_returns_server_computed_loyalty_grace_and_count(monkeypatch):
+    import server
+    from fastapi.testclient import TestClient
+    db = AsyncDB()
+    db._db.subscriptions.insert_one(_sub(user_id="u", plan="pro", interval="month",
+                                         stripe_subscription_id="s1", created_at=NOW.isoformat(),
+                                         subscribed_since="2026-01-01T00:00:00+00:00",
+                                         current_period_end="2026-03-01T00:00:00+00:00", loyalty_pct=0))
+    db._db.licenses.insert_one({"source": "subscription", "owner_user_id": "u", "license_id": "OVX-9"})
+    monkeypatch.setattr(server, "db", db)
+    monkeypatch.setattr(server.limiter, "enabled", False)
+    server.app.dependency_overrides[server.verify_clerk_token] = lambda: {"sub": "u", "metadata": {"role": "artist"}}
+    try:
+        body = TestClient(server.app).get("/api/subscriptions/me").json()
+        assert body["registered_count"] == 1
+        s = body["subscription"]
+        assert s["price_cents"] == 4900 and s["next_loyalty_pct"] == 15
+        assert s["next_loyalty_price_cents"] == 4165 and s["next_loyalty_month"] == 3
+        assert s["next_loyalty_date"].startswith("2026-03-01")
+        assert s["next_payment_date"] == "2026-03-01T00:00:00+00:00"
+        assert s["grace_ends_at"] is None
+        assert s["subscribed_since"] == "2026-01-01T00:00:00+00:00"
     finally:
         server.app.dependency_overrides.clear()

@@ -205,6 +205,40 @@ def loyalty_target(subscribed_since: str, current_period_start: str) -> int:
     return 20 if next_index >= 7 else 15 if next_index >= 3 else 0
 
 
+def _add_months_iso(iso: str, months: int) -> str:
+    """ISO timestamp `months` later in UTC, clamping the day to the target month's length."""
+    import calendar
+    dt = _parse(iso)
+    base = dt.month - 1 + months
+    year, month = dt.year + base // 12, base % 12 + 1
+    return dt.replace(year=year, month=month, day=min(dt.day, calendar.monthrange(year, month)[1])).isoformat()
+
+
+def loyalty_view(plan: str, interval: str, loyalty_pct: int, subscribed_since: str) -> dict:
+    """Server-computed price and next-discount fields so the client never does loyalty math.
+    Monthly steps 0 -> 15 (month 3) -> 20 (month 7); annual plans never discount. Cents are integers."""
+    cents = PLANS.get(plan, {}).get("month_cents" if interval == "month" else "year_cents", 0)
+    pct = loyalty_pct or 0
+    out = {"price_cents": cents if interval != "month" else cents * (100 - pct) // 100,
+           "next_loyalty_pct": None, "next_loyalty_price_cents": None,
+           "next_loyalty_month": None, "next_loyalty_date": None}
+    if interval == "month" and pct < 20 and subscribed_since:
+        nxt_pct, nxt_month = (15, 3) if pct < 15 else (20, 7)
+        out["next_loyalty_pct"] = nxt_pct
+        out["next_loyalty_month"] = nxt_month
+        out["next_loyalty_price_cents"] = cents * (100 - nxt_pct) // 100
+        out["next_loyalty_date"] = _add_months_iso(subscribed_since, nxt_month - 1)
+    return out
+
+
+def grace_ends_at(sub: dict) -> str | None:
+    """When the payment grace window closes, or None outside grace (brief item 5 / SUB_GRACE_DAYS)."""
+    since = (sub or {}).get("past_due_since")
+    if sub and sub.get("status") == "past_due" and since:
+        return (_parse(since) + timedelta(days=grace_days())).isoformat()
+    return None
+
+
 # --------------------------------------------------------------------------- Stripe field accessors
 # One place for every event-payload read, resilient to the 2025-03-31 (basil) field moves.
 # Each logs ERROR (never returns silently) when a field is absent from BOTH shapes.

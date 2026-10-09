@@ -205,6 +205,7 @@ def owner_view(lic: dict, now: datetime, files=None) -> dict:
     scope = lic.get("scope") or {}
     view = public_view(lic, now)
     view.update({
+        "source": lic.get("source") or "single",
         "licensee_company": lic.get("licensee_company") or "",
         "client": (lic.get("project") or {}).get("client") or "",
         "media_summary": scope.get("media_summary"),
