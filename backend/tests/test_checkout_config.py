@@ -67,6 +67,12 @@ def test_subscriptions_flag(env, monkeypatch):
     # Server-computed loyalty monthly prices feed SubscribeModal; the client does no discount math.
     loyalty = {p["id"]: (p["month_cents_loyalty15"], p["month_cents_loyalty20"]) for p in c["plans"]}
     assert loyalty == {"creator": (1615, 1520), "pro": (4165, 3920), "business": (12665, 11920)}
+    # Scope text is the single license_scope source of truth, surfaced per plan for the pop-up.
+    import licenses
+    for p in c["plans"]:
+        want = licenses.license_scope(licenses.SUB_TYPES[p["id"]], "2026-10-08T00:00:00+00:00")
+        assert p["scope_summary"] == want["media_summary"]
+        assert p["term_label"] == want["term_label"]
 
 
 def test_subscriptions_flag_requires_prices(env, monkeypatch):
