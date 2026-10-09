@@ -88,3 +88,34 @@ export const syncApi = {
   terms: async (version) => (await axios.get(`${API}/sync/terms/${encodeURIComponent(version)}`)).data,
   quote: async (body) => (await axios.post(`${API}/sync/quotes`, body)).data,
 };
+
+// Brief 19 subscriptions: checkout, billing portal, resume, status, project registration.
+export const subscriptionsApi = {
+  me: async (getToken) =>
+    (await axios.get(`${API}/subscriptions/me`, await authed(getToken))).data,
+  checkout: async (getToken, body) =>
+    (await axios.post(`${API}/subscriptions/checkout`, body, await authed(getToken))).data.checkout_url,
+  portal: async (getToken) =>
+    (await axios.post(`${API}/subscriptions/portal`, null, await authed(getToken))).data.portal_url,
+  resume: async (getToken) =>
+    (await axios.post(`${API}/subscriptions/resume`, null, await authed(getToken))).data,
+  register: async (getToken, body) =>
+    (await axios.post(`${API}/subscriptions/register`, body, await authed(getToken))).data,
+};
+
+// Helper for any parent component: start Checkout and redirect to Stripe on success.
+// A 409 (customer already has a plan) is returned as a typed result so the caller can
+// show it in place; this does NOT redirect. Any other error propagates to the caller.
+// Keeps SubscribeModal props-only: it never imports axios.
+export const startSubscriptionCheckout = async (getToken, body) => {
+  try {
+    const url = await subscriptionsApi.checkout(getToken, body);
+    window.location.assign(url);
+    return { status: 'redirecting' };
+  } catch (err) {
+    if (err?.response?.status === 409) {
+      return { status: 'already_subscribed', message: errorMessage(err) };
+    }
+    throw err;
+  }
+};

@@ -3,7 +3,8 @@ import { SignIn } from '@clerk/clerk-react';
 import { useSearchParams } from 'react-router-dom';
 
 // Only our own paths; never an external URL, so this can't become an open redirect.
-const safeNext = (next) => (next === '/account' || next === '/vault' ? next : '/vault');
+const safeNext = (next) =>
+  (next === '/account' || next === '/vault' || /^\/sync(\/|$)/.test(next || '') ? next : '/vault');
 
 const LoginPage = () => {
   const [params] = useSearchParams();
