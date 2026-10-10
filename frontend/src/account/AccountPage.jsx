@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useUser, useAuth } from '@clerk/clerk-react';
 import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
 import { accountApi, errorMessage } from '../sync/api';
+import SubscriptionTab from './SubscriptionTab';
 
 const CHIP = {
   active: 'text-green-400 border-green-400/25 bg-green-400/[0.08]',
@@ -97,13 +98,18 @@ const LicenseCard = ({ lic, getToken }) => {
 
 export default function AccountPage() {
   const navigate = useNavigate();
+  const [params] = useSearchParams();
   const { isLoaded, isSignedIn, user } = useUser();
   const { getToken } = useAuth();
   const [data, setData] = useState(null);
   const [error, setError] = useState(false);
-  const [tab, setTab] = useState('lic');
+  const [tab, setTab] = useState(params.get('tab') === 'subscription' ? 'sub' : 'lic');
   const [q, setQ] = useState('');
+  const [licFilter, setLicFilter] = useState('all'); // 'all' | 'subscription' (set by "View my projects")
   const started = useRef(false);
+
+  // "View my projects" on the Subscription tab opens Licenses filtered to subscription projects.
+  const viewSubscriptionProjects = () => { setLicFilter('subscription'); setTab('lic'); };
 
   useEffect(() => {
     if (isLoaded && !isSignedIn) navigate('/login?next=/account', { replace: true });
@@ -118,9 +124,10 @@ export default function AccountPage() {
   const licenses = useMemo(() => data?.licenses || [], [data]);
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
-    if (!s) return licenses;
-    return licenses.filter((l) => [l.track_title, l.project_name, l.license_id].some((x) => (x || '').toLowerCase().includes(s)));
-  }, [licenses, q]);
+    return licenses.filter((l) =>
+      (licFilter !== 'subscription' || l.source === 'subscription')
+      && (!s || [l.track_title, l.project_name, l.license_id].some((x) => (x || '').toLowerCase().includes(s))));
+  }, [licenses, q, licFilter]);
 
   if (!isLoaded || (!data && !error)) {
     return <div className="flex min-h-screen items-center justify-center bg-ink"><Loader2 className="animate-spin text-electric" size={32} /></div>;
@@ -141,11 +148,7 @@ export default function AccountPage() {
           ))}
         </div>
         {tab === 'sub' ? (
-          <div className="mt-5 rounded-2xl border border-dashed border-white/10 p-7 text-center text-slate-400">
-            <p className="mb-1.5 font-medium text-white">No active subscription</p>
-            <p className="mb-4 text-sm">License unlimited projects from the full catalog, from $19 a month.</p>
-            <a href="/pricing" className="inline-block rounded-full bg-gradient-brand px-5 py-2.5 text-sm font-semibold text-white">See plans</a>
-          </div>
+          <SubscriptionTab getToken={getToken} onViewProjects={viewSubscriptionProjects} />
         ) : licenses.length === 0 ? (
           <div className="mt-5 rounded-2xl border border-dashed border-white/10 p-7 text-center text-slate-400">
             <p className="mb-1.5 font-medium text-white">No licenses yet</p>
@@ -154,6 +157,12 @@ export default function AccountPage() {
           </div>
         ) : (
           <div className="mt-5">
+            {licFilter === 'subscription' && (
+              <div className="mb-3 flex items-center gap-2 text-sm text-slate-300">
+                <span className="rounded-full border border-electric-light/50 bg-electric/[0.08] px-3 py-1 text-xs text-white">Subscription projects</span>
+                <button type="button" onClick={() => setLicFilter('all')} className="text-xs text-slate-400 hover:text-white">Clear</button>
+              </div>
+            )}
             <input type="text" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by track, project or License ID"
               className="w-full max-w-sm rounded-lg border border-white/10 bg-black px-3 py-2 text-sm text-white focus:border-electric focus:outline-none" />
             {filtered.map((l) => <LicenseCard key={l.license_id} lic={l} getToken={getToken} />)}
