@@ -3243,11 +3243,16 @@ async def sync_download_file(request: Request, token: str, file_name: str):
 # ---------------------------------------------------------------------------
 
 async def _license_files(lic: dict) -> list:
-    """[{name, label}] the owner can download, from the backing order. Empty when unavailable."""
-    order = await db.orders.find_one({"order_id": lic.get("order_id")}) if lic.get("order_id") else None
-    if not order:
-        return []
-    track = await db.track_submissions.find_one({"id": order["track_id"]}, {"_id": 0}) or {}
+    """[{name, label}] the owner can download. Subscription projects deliver from the license
+    itself (there is no order); single-track from the backing order. Empty when unavailable."""
+    if lic.get("source") == "subscription":
+        order = _license_as_order(lic)
+        track = await db.track_submissions.find_one({"id": lic.get("track_id")}, {"_id": 0}) or {}
+    else:
+        order = await db.orders.find_one({"order_id": lic.get("order_id")}) if lic.get("order_id") else None
+        if not order:
+            return []
+        track = await db.track_submissions.find_one({"id": order["track_id"]}, {"_id": 0}) or {}
     try:
         files = sync_orders.delivery_files(order, track)
     except sync_orders.DeliveryError:
@@ -3298,14 +3303,28 @@ async def account_license_file(request: Request, license_id: str, file_name: str
         raise _not_found()
     if lic.get("status") in ("refunded", "void"):
         raise HTTPException(status_code=409, detail="This license is no longer valid.")
-    order = await db.orders.find_one({"order_id": lic.get("order_id")})
-    if not order:
-        raise _not_found()
-    files = await _files_for(order)
-    if file_name not in files:
-        raise _not_found()
-    if not await sync_orders.claim_download(db, order, file_name):
-        raise HTTPException(status_code=429, detail="Download limit reached for this file.")
+    if lic.get("source") == "subscription":
+        # Re-downloading an already-registered project is free: gate on plan state only, and never
+        # claim_download or touch sub_usage. Mirrors the token path (_order_for_token).
+        access = await subscriptions.plan_access(db, lic["owner_user_id"])
+        if access["state"] not in subscriptions.ACTIVE_STATES:
+            raise HTTPException(status_code=403,
+                                detail="Your plan has ended. Projects you registered stay licensed.")
+        order = _license_as_order(lic)
+        order["track_title"] = lic.get("track_title", "")
+        order["artist_display_name"] = lic.get("artist_display_name", "")
+        files = await _files_for(order)
+        if file_name not in files:
+            raise _not_found()
+    else:
+        order = await db.orders.find_one({"order_id": lic.get("order_id")})
+        if not order:
+            raise _not_found()
+        files = await _files_for(order)
+        if file_name not in files:
+            raise _not_found()
+        if not await sync_orders.claim_download(db, order, file_name):
+            raise HTTPException(status_code=429, detail="Download limit reached for this file.")
     key = files[file_name]
     filename = sync_orders.download_filename(order, file_name, key)
     url = await asyncio.to_thread(

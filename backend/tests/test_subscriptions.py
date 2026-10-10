@@ -685,3 +685,110 @@ def test_me_returns_server_computed_loyalty_grace_and_count(monkeypatch):
         assert s["subscribed_since"] == "2026-01-01T00:00:00+00:00"
     finally:
         server.app.dependency_overrides.clear()
+
+
+# --------------------------------------------------------------------------- account downloads (Brief 19 fix)
+# "Download files" in My account for subscription projects. There is no backing order, so the
+# account path delivers from the license via _license_as_order. Re-downloads are free: they gate
+# on plan state but never claim_download or touch sub_usage.
+
+def _dl_license(**over):
+    lic = {"license_id": "OVX-DL1", "source": "subscription", "owner_user_id": "u", "track_id": "t1",
+           "status": "active", "include_stems": False, "pdf_key": "licenses/sub/OVX-DL1.pdf",
+           "terms_version": "v1", "issued_at": NOW.isoformat(), "buyer_email": "u@example.com",
+           "track_title": "Night Drive", "artist_display_name": "Kay Lune", "license_label": "Pro plan"}
+    lic.update(over)
+    return lic
+
+
+def _wire_download(monkeypatch, server, db, sub="u"):
+    from unittest.mock import MagicMock
+    r2 = MagicMock()
+    r2.generate_presigned_url.return_value = "https://r2.test/signed"
+    monkeypatch.setattr(server, "r2_client", r2)
+    monkeypatch.setattr(server, "db", db)
+    monkeypatch.setattr(server.limiter, "enabled", False)
+    server.app.dependency_overrides[server.verify_clerk_token] = lambda: {"sub": sub, "metadata": {"role": "artist"}}
+
+
+def test_license_files_lists_subscription_files(monkeypatch):
+    import server
+    db = AsyncDB()
+    db._db.track_submissions.insert_one({"id": "t1", "mastered_r2_key": "catalog/a/b/mastered/t1.wav"})
+    monkeypatch.setattr(server, "db", db)
+    names = [f["name"] for f in run(server._license_files(_dl_license()))]
+    assert "master" in names and "license" in names        # from _license_as_order + delivery_files
+
+
+def test_account_download_subscription_active_is_free(monkeypatch):
+    import server
+    from fastapi.testclient import TestClient
+    db = AsyncDB()
+    db._db.track_submissions.insert_one({"id": "t1", "mastered_r2_key": "catalog/a/b/mastered/t1.wav"})
+    db._db.licenses.insert_one(_dl_license())
+    db._db.subscriptions.insert_one(_sub(user_id="u", stripe_subscription_id="s1", created_at=NOW.isoformat()))
+    _wire_download(monkeypatch, server, db)
+    try:
+        r = TestClient(server.app).post("/api/account/licenses/OVX-DL1/files/master")
+        assert r.status_code == 200, r.text
+        assert r.json()["url"] == "https://r2.test/signed"
+        assert db._db.sub_usage.count_documents({}) == 0   # no slot consumed: re-downloads are free
+    finally:
+        server.app.dependency_overrides.clear()
+
+
+def test_account_download_subscription_unknown_file_404(monkeypatch):
+    import server
+    from fastapi.testclient import TestClient
+    db = AsyncDB()
+    db._db.track_submissions.insert_one({"id": "t1", "mastered_r2_key": "catalog/a/b/mastered/t1.wav"})
+    db._db.licenses.insert_one(_dl_license())
+    db._db.subscriptions.insert_one(_sub(user_id="u", stripe_subscription_id="s1", created_at=NOW.isoformat()))
+    _wire_download(monkeypatch, server, db)
+    try:
+        assert TestClient(server.app).post("/api/account/licenses/OVX-DL1/files/bogus").status_code == 404
+    finally:
+        server.app.dependency_overrides.clear()
+
+
+def test_account_download_subscription_plan_ended_403(monkeypatch):
+    import server
+    from fastapi.testclient import TestClient
+    db = AsyncDB()
+    db._db.track_submissions.insert_one({"id": "t1", "mastered_r2_key": "catalog/a/b/mastered/t1.wav"})
+    db._db.licenses.insert_one(_dl_license())
+    db._db.subscriptions.insert_one(_sub(user_id="u", stripe_subscription_id="s1",
+                                         created_at=NOW.isoformat(), status="canceled"))
+    _wire_download(monkeypatch, server, db)
+    try:
+        r = TestClient(server.app).post("/api/account/licenses/OVX-DL1/files/master")
+        assert r.status_code == 403
+        assert "plan has ended" in r.json()["detail"].lower()
+    finally:
+        server.app.dependency_overrides.clear()
+
+
+def test_account_download_subscription_voided_409(monkeypatch):
+    import server
+    from fastapi.testclient import TestClient
+    db = AsyncDB()
+    db._db.track_submissions.insert_one({"id": "t1", "mastered_r2_key": "catalog/a/b/mastered/t1.wav"})
+    db._db.licenses.insert_one(_dl_license(status="void"))
+    _wire_download(monkeypatch, server, db)
+    try:
+        assert TestClient(server.app).post("/api/account/licenses/OVX-DL1/files/master").status_code == 409
+    finally:
+        server.app.dependency_overrides.clear()
+
+
+def test_account_download_subscription_non_owner_404(monkeypatch):
+    import server
+    from fastapi.testclient import TestClient
+    db = AsyncDB()
+    db._db.track_submissions.insert_one({"id": "t1", "mastered_r2_key": "catalog/a/b/mastered/t1.wav"})
+    db._db.licenses.insert_one(_dl_license())
+    _wire_download(monkeypatch, server, db, sub="someone_else")
+    try:
+        assert TestClient(server.app).post("/api/account/licenses/OVX-DL1/files/master").status_code == 404
+    finally:
+        server.app.dependency_overrides.clear()
