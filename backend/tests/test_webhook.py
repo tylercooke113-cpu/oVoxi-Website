@@ -89,7 +89,7 @@ def test_completed_pays_and_fulfils(env):
     r = env.post("checkout.session.completed", session(env.order))
     assert r.status_code == 200, r.text
     o = get(env)
-    assert o["status"] == "fulfilled" and o["tax_cents"] == 420 and o["amount_total_cents"] == 2720
+    assert o["status"] == "fulfilled" and o["tax_cents"] == 420 and o["amount_total_cents"] == env.order["price_cents"] + 420
     assert o["stripe_payment_intent"] == "pi_1" and o["email_status"] == "skipped"
     assert o["license_pdf_key"] == f"licenses/{o['order_id']}/{o['license_id']}.pdf"
     assert env.puts == [(o["license_pdf_key"], b"%PDF-", "application/pdf")]
