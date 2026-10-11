@@ -38,6 +38,30 @@ Created 2026-09-30, when Phase 6 (checkout, delivery, email, admin orders) was c
 
 - `SYNC_TOKEN_SECRET`: changing it breaks every issued download link.
 
+## Subscriptions (Brief 19)
+
+Subscriptions reuse the same Stripe account, live secret key and webhook destination as the sync
+marketplace. In addition to the Stripe live items above:
+
+- [ ] Live webhook destination must also send the subscription events:
+      `customer.subscription.created`, `customer.subscription.updated`,
+      `customer.subscription.deleted`, `invoice.paid`, `invoice.payment_failed`,
+      `charge.dispute.created`, `charge.dispute.closed`.
+- [ ] Run `STRIPE_SECRET_KEY=sk_live_... python backend/scripts/stripe_subscriptions_setup.py` against
+      **live** mode to create products, prices, coupons and the Customer Portal config. **The live-mode
+      portal config must be created with `subscription_update.proration_behavior = always_invoice`** so
+      plan upgrades are billed immediately (the script already sets this). Set the printed
+      `STRIPE_PORTAL_CONFIG_ID` on Railway.
+- [ ] Flip `SUBSCRIPTIONS_ENABLED=true` on Railway only after the above.
+
+### Known items
+
+- **Proration invoice period on the revenue ledger.** `on_invoice_paid` records
+  `lines.data[0].period` on the `subscription_revenue` row. For a proration invoice
+  (`billing_reason=subscription_update`) the invoice has multiple lines, so `data[0]` can be a
+  **partial** span rather than the full billing cycle. The recorded **amounts are correct**; only the
+  period granularity is approximate. Revisit when building artist payouts.
+
 ## Optional housekeeping
 
 - [ ] Remove `backend/test_acrcloud.py` from the repo.

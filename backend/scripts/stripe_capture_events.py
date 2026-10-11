@@ -64,6 +64,41 @@ def _advance(c, clock, to_ts):
     return clock
 
 
+def capture_upgrade(c, clock, price, make_customer):
+    """Drive a mid-period creator->pro upgrade under always_invoice and write the resulting
+    subscription_update invoice.paid as its own fixture (so it does not collide with the renewal
+    invoice.paid). `price` resolves a lookup key to a price id; `make_customer(clock, card)` returns
+    a customer with a default payment method. Returns the captured event dict, or None."""
+    upg = make_customer(clock, "pm_card_visa")
+    subU = c.v1.subscriptions.create(
+        {"customer": upg.id, "items": [{"price": price("sub_creator_month")}],
+         "metadata": {"user_id": "user_capture_upgrade"}})
+    item_id = subU.to_dict()["items"]["data"][0]["id"]
+    c.v1.subscriptions.update(subU.id, {"items": [{"id": item_id, "price": price("sub_pro_month")}],
+                                        "proration_behavior": "always_invoice"})
+    print("A2 upgraded", subU.id, "creator -> pro (always_invoice)")
+    proration = None
+    for _ in range(10):                                            # the paid event may lag the update
+        time.sleep(2)
+        for ev in c.v1.events.list({"type": "invoice.paid", "limit": 20}).auto_paging_iter():
+            obj = ev.to_dict()["data"]["object"]
+            if obj.get("billing_reason") == "subscription_update" and \
+                    subs.invoice_subscription_id(obj) == subU.id:
+                proration = ev.to_dict()
+                break
+        if proration:
+            break
+    os.makedirs(FIXTURE_DIR, exist_ok=True)
+    if proration:
+        path = os.path.join(FIXTURE_DIR, "invoice.paid.proration.json")
+        with open(path, "w") as fh:
+            json.dump(_scrub(proration), fh, indent=2, sort_keys=True, default=_json_default)
+        print("wrote", os.path.relpath(path))
+    else:
+        print("A2 proration invoice.paid not captured (upgrade did not bill immediately?)")
+    return proration
+
+
 def main():
     key = os.environ.get("STRIPE_SECRET_KEY", "").strip()
     if not key.startswith(("sk_test_", "rk_test_")):
@@ -98,6 +133,10 @@ def main():
         subA = c.v1.subscriptions.create(
             {"customer": good.id, "items": [{"price": price("sub_pro_month")}],
              "metadata": {"user_id": "user_capture_a"}})
+
+        # A2. mid-period UPGRADE (creator -> pro) under always_invoice (Brief 19 production check:
+        # upgrades must charge now, not defer the proration to the next cycle).
+        capture_upgrade(c, clock, price, customer)
 
         # B. renewal payment failure: start healthy, then swap to a card that declines on charge.
         failc = customer(clock, "pm_card_visa")

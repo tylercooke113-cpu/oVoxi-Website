@@ -298,6 +298,19 @@ def test_real_invoice_accessors():
 
 
 @requires_fixtures
+def test_real_proration_invoice_is_a_subscription_update():
+    # An upgrade under always_invoice bills immediately: billing_reason is subscription_update,
+    # the invoice resolves its subscription id, and amount_paid is the positive prorated charge.
+    # Its invoice id differs from the renewal invoice, so the revenue ledger records a distinct row.
+    inv = fx_obj("invoice.paid.proration")
+    assert inv.get("billing_reason") == "subscription_update"
+    assert subs.invoice_subscription_id(inv).startswith("sub_")
+    assert int(inv.get("amount_paid") or 0) > 0
+    assert isinstance(subs.invoice_tax_cents(inv), int)
+    assert inv["id"] != fx_obj("invoice.paid")["id"]
+
+
+@requires_fixtures
 def test_charge_invoice_id_resolves_via_invoice_payments():
     # dahlia: neither charge.invoice nor payment_intent.invoice exist; resolution is the paid
     # invoice_payment for the charge's payment_intent (replayed from the recorded response).
