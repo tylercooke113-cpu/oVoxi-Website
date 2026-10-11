@@ -193,6 +193,10 @@ def test_state_matrix():
     assert subs._state(None, NOW) == "none"
     assert subs._state(_sub(), NOW) == "active"
     assert subs._state(_sub(cancel_at_period_end=True), NOW) == "ending"
+    # Portal/basil cancels set cancel_at (not cancel_at_period_end) while status stays active.
+    assert subs._state(_sub(cancel_at="2026-11-10T18:51:58+00:00"), NOW) == "ending"
+    # A cancel_at on an already-ended subscription does not revive it to "ending".
+    assert subs._state(_sub(status="canceled", cancel_at="2026-11-10T18:51:58+00:00"), NOW) == "ended"
     assert subs._state(_sub(status="canceled"), NOW) == "ended"
     assert subs._state(_sub(dispute_open=True), NOW) == "blocked_dispute"
     recent = (NOW - timedelta(days=3)).isoformat()
@@ -521,6 +525,73 @@ def test_grace_ends_at():
     assert g == expected   # past_due_since + SUB_GRACE_DAYS, read from the module (not hardcoded)
 
 
+# --------------------------------------------------------------------------- cancel/ending + resume (Brief 19 fix)
+
+def test_ending_date_prefers_cancel_at():
+    # cancel_at (portal/basil) wins; falls back to period end only for cancel_at_period_end; else None.
+    assert subs.ending_date(_sub(cancel_at="2026-11-10T18:51:58+00:00",
+                                 current_period_end="2026-12-01T00:00:00+00:00")) == "2026-11-10T18:51:58+00:00"
+    assert subs.ending_date(_sub(cancel_at_period_end=True,
+                                 current_period_end="2026-12-01T00:00:00+00:00")) == "2026-12-01T00:00:00+00:00"
+    assert subs.ending_date(_sub(current_period_end="2026-12-01T00:00:00+00:00")) is None
+    assert subs.ending_date(None) is None
+
+
+def test_resume_params_sends_only_the_field_that_is_set():
+    # A cancel_at schedule is cleared with "", not by flipping cancel_at_period_end.
+    assert subs.resume_params(_sub(cancel_at="2026-11-10T18:51:58+00:00")) == {"cancel_at": ""}
+    assert subs.resume_params(_sub(cancel_at_period_end=True)) == {"cancel_at_period_end": False}
+
+
+def test_resume_subscription_clears_cancel_at_and_remirrors():
+    # Production check 5 shape: resuming a portal cancel sends {"cancel_at": ""} to Stripe,
+    # then re-mirrors so the cleared schedule is reflected locally.
+    db = AsyncDB()
+    subs._PRICE_IDS["sub_pro_year"] = "price_pro_y"
+    fresh = {"id": "s1", "status": "active", "customer": "cus_1", "cancel_at_period_end": False,
+             "cancel_at": None, "latest_invoice": "in_1",
+             "current_period_start": 1800000000, "current_period_end": 1831536000,
+             "items": {"data": [{"price": {"id": "price_pro_y"}}]}, "metadata": {"user_id": "u"}}
+    svc = FakeSvc(retrieve=lambda _id: Box(fresh), update=lambda _id, params: Box(fresh))
+    client = FakeClient(subscriptions=svc)
+    sub_doc = {"stripe_subscription_id": "s1", "cancel_at": "2026-11-10T18:51:58+00:00",
+               "interval": "year", "status": "active", "loyalty_pct": 0}
+    db._db.subscriptions.insert_one(dict(sub_doc))
+    run(subs.resume_subscription(db, client, sub_doc, NOW))
+    assert svc.calls[0] == ("update", ("s1", {"cancel_at": ""}), {})   # exact Stripe payload shape
+    doc = db._db.subscriptions.find_one({"stripe_subscription_id": "s1"})
+    assert doc.get("cancel_at") is None and doc["cancel_at_period_end"] is False
+
+
+def test_resume_subscription_clears_cancel_at_period_end_when_cancel_at_absent():
+    db = AsyncDB()
+    subs._PRICE_IDS["sub_pro_year"] = "price_pro_y"
+    fresh = {"id": "s1", "status": "active", "customer": "cus_1", "cancel_at_period_end": False,
+             "cancel_at": None, "latest_invoice": "in_1",
+             "current_period_start": 1800000000, "current_period_end": 1831536000,
+             "items": {"data": [{"price": {"id": "price_pro_y"}}]}, "metadata": {"user_id": "u"}}
+    svc = FakeSvc(retrieve=lambda _id: Box(fresh), update=lambda _id, params: Box(fresh))
+    client = FakeClient(subscriptions=svc)
+    sub_doc = {"stripe_subscription_id": "s1", "cancel_at_period_end": True,
+               "interval": "year", "status": "active", "loyalty_pct": 0}
+    db._db.subscriptions.insert_one(dict(sub_doc))
+    run(subs.resume_subscription(db, client, sub_doc, NOW))
+    assert svc.calls[0] == ("update", ("s1", {"cancel_at_period_end": False}), {})
+
+
+@requires_fixtures
+def test_mirror_subscription_stores_cancel_at_from_real_cancel_event():
+    # The real portal-cancel event sets cancel_at and leaves cancel_at_period_end false; the mirror
+    # must store cancel_at (ISO) so _state resolves to "ending".
+    db = AsyncDB()
+    s = fx_obj("customer.subscription.updated.cancel")
+    subs._PRICE_IDS["sub_business_month"] = subs.sub_item_price_id(s)
+    doc = run(subs.mirror_subscription(db, s, NOW))
+    assert doc["cancel_at_period_end"] is False
+    assert doc["cancel_at"] is not None and doc["cancel_at"].startswith("20")
+    assert subs._state(doc, NOW) == "ending"
+
+
 def test_owner_view_includes_source():
     import licenses
     assert licenses.owner_view({"license_id": "L1", "source": "subscription", "status": "active", "scope": {}},
@@ -683,6 +754,75 @@ def test_me_returns_server_computed_loyalty_grace_and_count(monkeypatch):
         assert s["next_payment_date"] == "2026-03-01T00:00:00+00:00"
         assert s["grace_ends_at"] is None
         assert s["subscribed_since"] == "2026-01-01T00:00:00+00:00"
+    finally:
+        server.app.dependency_overrides.clear()
+
+
+def test_me_exposes_ends_at_and_ending_state_for_portal_cancel(monkeypatch):
+    import server
+    from fastapi.testclient import TestClient
+    db = AsyncDB()
+    db._db.subscriptions.insert_one(_sub(user_id="u", plan="pro", interval="month",
+                                         stripe_subscription_id="s1", created_at=NOW.isoformat(),
+                                         subscribed_since="2026-01-01T00:00:00+00:00",
+                                         current_period_end="2026-11-10T18:51:58+00:00",
+                                         cancel_at="2026-11-10T18:51:58+00:00", loyalty_pct=0))
+    monkeypatch.setattr(server, "db", db)
+    monkeypatch.setattr(server.limiter, "enabled", False)
+    server.app.dependency_overrides[server.verify_clerk_token] = lambda: {"sub": "u", "metadata": {"role": "artist"}}
+    try:
+        body = TestClient(server.app).get("/api/subscriptions/me").json()
+        assert body["state"] == "ending"
+        assert body["subscription"]["ends_at"] == "2026-11-10T18:51:58+00:00"
+        # next_payment_date is left as-is (the active-screen field); the ending screen reads ends_at.
+        assert body["subscription"]["next_payment_date"] == "2026-11-10T18:51:58+00:00"
+    finally:
+        server.app.dependency_overrides.clear()
+
+
+def test_resume_refused_when_not_ending(monkeypatch):
+    import server
+    from fastapi.testclient import TestClient
+    db = AsyncDB()
+    db._db.subscriptions.insert_one(_sub(user_id="u", plan="pro", interval="month",
+                                         stripe_subscription_id="s1", created_at=NOW.isoformat()))
+    called = []
+    monkeypatch.setattr(server, "db", db)
+    monkeypatch.setattr(server.limiter, "enabled", False)
+    monkeypatch.setattr(server.sync_orders, "stripe_client", lambda: called.append("client") or None)
+    server.app.dependency_overrides[server.verify_clerk_token] = lambda: {"sub": "u", "metadata": {"role": "artist"}}
+    try:
+        r = TestClient(server.app).post("/api/subscriptions/resume")
+        assert r.status_code == 409, r.text
+        assert called == []                       # Stripe is never touched for a non-ending plan
+    finally:
+        server.app.dependency_overrides.clear()
+
+
+def test_resume_endpoint_clears_cancel_at_and_returns_active(monkeypatch):
+    import server
+    from fastapi.testclient import TestClient
+    db = AsyncDB()
+    db._db.subscriptions.insert_one(_sub(user_id="u", plan="pro", interval="year",
+                                         stripe_subscription_id="s1", created_at=NOW.isoformat(),
+                                         subscribed_since="2026-01-01T00:00:00+00:00",
+                                         current_period_end="2027-01-01T00:00:00+00:00",
+                                         cancel_at="2026-11-10T18:51:58+00:00", loyalty_pct=0))
+    subs._PRICE_IDS["sub_pro_year"] = "price_pro_y"
+    fresh = {"id": "s1", "status": "active", "customer": "cus_1", "cancel_at_period_end": False,
+             "cancel_at": None, "latest_invoice": "in_1",
+             "current_period_start": 1800000000, "current_period_end": 1831536000,
+             "items": {"data": [{"price": {"id": "price_pro_y"}}]}, "metadata": {"user_id": "u"}}
+    svc = FakeSvc(retrieve=lambda _id: Box(fresh), update=lambda _id, params: Box(fresh))
+    monkeypatch.setattr(server, "db", db)
+    monkeypatch.setattr(server.limiter, "enabled", False)
+    monkeypatch.setattr(server.sync_orders, "stripe_client", lambda: FakeClient(subscriptions=svc))
+    server.app.dependency_overrides[server.verify_clerk_token] = lambda: {"sub": "u", "metadata": {"role": "artist"}}
+    try:
+        r = TestClient(server.app).post("/api/subscriptions/resume")
+        assert r.status_code == 200, r.text
+        assert svc.calls[0] == ("update", ("s1", {"cancel_at": ""}), {})
+        assert r.json()["state"] == "active"
     finally:
         server.app.dependency_overrides.clear()
 

@@ -183,7 +183,7 @@ export default function SubscriptionTab({ getToken, onViewProjects }) {
     return (
       <div className="mt-5">
         <div className="mb-4 rounded-xl border border-cyan/25 bg-cyan/[0.05] px-3.5 py-3 text-sm text-slate-300">
-          {SUB_COPY.endingInfo(fmtDate(sub.next_payment_date))}
+          {SUB_COPY.endingInfo(fmtDate(sub.ends_at))}
         </div>
         <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-6">
           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -191,13 +191,13 @@ export default function SubscriptionTab({ getToken, onViewProjects }) {
               <h3 className="font-heading text-xl font-semibold text-white">{SUB_COPY.planHeading(planLabel, intervalWord)}</h3>
               <div className="mt-0.5 text-sm text-slate-400">{SUB_COPY.memberSince(fmtDate(sub.subscribed_since))}</div>
             </div>
-            <Chip className="text-slate-300 border-white/10">{SUB_STATUS_LABELS.ending(fmtShort(sub.next_payment_date))}</Chip>
+            <Chip className="text-slate-300 border-white/10">{SUB_STATUS_LABELS.ending(fmtShort(sub.ends_at))}</Chip>
           </div>
           <div className="mt-4 grid grid-cols-2 gap-x-5 gap-y-3.5 text-sm sm:grid-cols-3">
             <Field label={SUB_COPY.fieldDownloadsThisMonth}>{me.month_used} of {me.month_cap}<Meter used={me.month_used} cap={me.month_cap} /></Field>
             <Field label={SUB_COPY.fieldRegisteredProjects}>{me.registered_count}</Field>
           </div>
-          <p className="mt-4 text-sm text-slate-400">{SUB_COPY.endingNote(fmtDate(sub.next_payment_date))}</p>
+          <p className="mt-4 text-sm text-slate-400">{SUB_COPY.endingNote(fmtDate(sub.ends_at))}</p>
           <div className="mt-5">
             <button type="button" disabled={busy} onClick={keepPlan}
               className="rounded-full bg-gradient-brand px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60">{SUB_COPY.endingButton}</button>

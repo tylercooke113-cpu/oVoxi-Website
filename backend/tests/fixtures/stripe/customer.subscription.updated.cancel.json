@@ -1,0 +1,216 @@
+{
+  "api_version": "2026-08-26.dahlia",
+  "created": 1791749385,
+  "data": {
+    "object": {
+      "application": null,
+      "application_fee_percent": null,
+      "automatic_tax": {
+        "disabled_reason": null,
+        "enabled": true,
+        "liability": {
+          "type": "self"
+        }
+      },
+      "billing_cycle_anchor": 1791658318,
+      "billing_cycle_anchor_config": null,
+      "billing_mode": {
+        "flexible": {
+          "proration_discounts": "included"
+        },
+        "type": "flexible",
+        "updated_at": 1791658241
+      },
+      "billing_schedules": [],
+      "billing_thresholds": null,
+      "cancel_at": 1794336718,
+      "cancel_at_period_end": false,
+      "canceled_at": 1791749384,
+      "cancellation_details": {
+        "comment": null,
+        "feedback": null,
+        "feedback_option": null,
+        "reason": "cancellation_requested"
+      },
+      "collection_method": "charge_automatically",
+      "created": 1791658318,
+      "currency": "usd",
+      "customer": "cus_VPvCl6umjPiheq",
+      "customer_account": null,
+      "days_until_due": null,
+      "default_payment_method": "pm_1UP5NBHqfblOPF0PKxIPxKzV",
+      "default_source": null,
+      "default_tax_rates": [],
+      "description": null,
+      "discounts": [],
+      "ended_at": null,
+      "id": "sub_1UP5NDHqfblOPF0Ppo9lmQRH",
+      "invoice_settings": {
+        "account_tax_ids": null,
+        "custom_fields": null,
+        "description": null,
+        "footer": null,
+        "issuer": {
+          "type": "self"
+        }
+      },
+      "items": {
+        "data": [
+          {
+            "billing_thresholds": null,
+            "created": 1791658318,
+            "current_period_end": 1794336718,
+            "current_period_start": 1791658318,
+            "current_trial": null,
+            "discounts": [],
+            "id": "si_VPvDciSTa7XhqB",
+            "metadata": {},
+            "object": "subscription_item",
+            "plan": {
+              "active": true,
+              "amount": 14900,
+              "amount_decimal": 14900,
+              "billing_scheme": "per_unit",
+              "created": 1791307671,
+              "currency": "usd",
+              "id": "price_1UNc9bHqfblOPF0Po3INm5gY",
+              "interval": "month",
+              "interval_count": 1,
+              "livemode": false,
+              "metadata": {},
+              "meter": null,
+              "nickname": null,
+              "object": "plan",
+              "product": "prod_VOOxXdV1cht7Bn",
+              "tiers_mode": null,
+              "transform_usage": null,
+              "trial_period_days": null,
+              "usage_type": "licensed"
+            },
+            "price": {
+              "active": true,
+              "billing_scheme": "per_unit",
+              "created": 1791307671,
+              "currency": "usd",
+              "custom_unit_amount": null,
+              "id": "price_1UNc9bHqfblOPF0Po3INm5gY",
+              "livemode": false,
+              "lookup_key": "sub_business_month",
+              "metadata": {},
+              "nickname": null,
+              "object": "price",
+              "product": "prod_VOOxXdV1cht7Bn",
+              "recurring": {
+                "interval": "month",
+                "interval_count": 1,
+                "meter": null,
+                "trial_period_days": null,
+                "usage_type": "licensed"
+              },
+              "tax_behavior": "exclusive",
+              "tiers_mode": null,
+              "transform_quantity": null,
+              "type": "recurring",
+              "unit_amount": 14900,
+              "unit_amount_decimal": 14900
+            },
+            "quantity": 1,
+            "subscription": "sub_1UP5NDHqfblOPF0Ppo9lmQRH",
+            "tax_rates": []
+          }
+        ],
+        "has_more": false,
+        "object": "list",
+        "total_count": 1,
+        "url": "/v1/subscription_items?subscription=sub_1UP5NDHqfblOPF0Ppo9lmQRH"
+      },
+      "latest_invoice": "in_1UP5NCHqfblOPF0PEZGmCnkY",
+      "livemode": false,
+      "managed_payments": {
+        "enabled": false
+      },
+      "metadata": {
+        "user_id": "user_3JhO0neHNW729iIhkCcrkNfMkLx"
+      },
+      "next_pending_invoice_item_invoice": null,
+      "object": "subscription",
+      "on_behalf_of": null,
+      "pause_collection": null,
+      "payment_settings": {
+        "payment_method_options": {
+          "acss_debit": null,
+          "bancontact": null,
+          "billie": null,
+          "blik": null,
+          "card": {
+            "network": null,
+            "request_three_d_secure": "automatic"
+          },
+          "customer_balance": null,
+          "konbini": null,
+          "payto": null,
+          "pix": null,
+          "sepa_debit": null,
+          "upi": null,
+          "us_bank_account": null
+        },
+        "payment_method_types": null,
+        "save_default_payment_method": "off"
+      },
+      "pending_invoice_item_interval": null,
+      "pending_setup_intent": null,
+      "pending_update": null,
+      "plan": {
+        "active": true,
+        "amount": 14900,
+        "amount_decimal": 14900,
+        "billing_scheme": "per_unit",
+        "created": 1791307671,
+        "currency": "usd",
+        "id": "price_1UNc9bHqfblOPF0Po3INm5gY",
+        "interval": "month",
+        "interval_count": 1,
+        "livemode": false,
+        "metadata": {},
+        "meter": null,
+        "nickname": null,
+        "object": "plan",
+        "product": "prod_VOOxXdV1cht7Bn",
+        "tiers_mode": null,
+        "transform_usage": null,
+        "trial_period_days": null,
+        "usage_type": "licensed"
+      },
+      "quantity": 1,
+      "schedule": null,
+      "start_date": 1791658318,
+      "status": "active",
+      "test_clock": null,
+      "transfer_data": null,
+      "trial_end": null,
+      "trial_settings": {
+        "end_behavior": {
+          "billing_cycle_anchor": "now",
+          "missing_payment_method": "create_invoice"
+        }
+      },
+      "trial_start": null
+    },
+    "previous_attributes": {
+      "cancel_at": null,
+      "canceled_at": null,
+      "cancellation_details": {
+        "reason": null
+      }
+    }
+  },
+  "id": "evt_1UPT42HqfblOPF0PUozULo48",
+  "livemode": false,
+  "object": "event",
+  "pending_webhooks": 0,
+  "request": {
+    "id": null,
+    "idempotency_key": "8334392b-5c56-464e-9625-4db56a8c412f"
+  },
+  "type": "customer.subscription.updated"
+}

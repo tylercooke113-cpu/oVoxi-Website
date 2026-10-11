@@ -2913,6 +2913,7 @@ async def _subscription_me(uid: str, now: datetime) -> dict:
             "status": sub.get("status"), "plan": sub.get("plan"), "interval": sub.get("interval"),
             "plan_label": PLANS.get(sub.get("plan"), {}).get("label"),
             "cancel_at_period_end": bool(sub.get("cancel_at_period_end")),
+            "ends_at": subscriptions.ending_date(sub),
             "loyalty_pct": sub.get("loyalty_pct") or 0,
             "subscribed_since": sub.get("subscribed_since"),
             "next_payment_date": sub.get("current_period_end"),
@@ -3030,18 +3031,14 @@ async def subscriptions_resume(request: Request, clerk_payload: dict = Depends(v
     uid = clerk_payload["sub"]
     now = datetime.now(timezone.utc)
     sub = await db.subscriptions.find_one({"user_id": uid}, sort=[("created_at", -1)])
-    if not sub or not sub.get("cancel_at_period_end"):
+    if not sub or subscriptions._state(sub, now) != "ending":
         raise HTTPException(status_code=409, detail="There is nothing to resume.")
-    if subscriptions._state(sub, now) not in ("ending", "active", "grace"):
-        raise HTTPException(status_code=409, detail="This plan cannot be resumed.")
     client = sync_orders.stripe_client()
     try:
-        await asyncio.to_thread(client.v1.subscriptions.update,
-                                sub["stripe_subscription_id"], {"cancel_at_period_end": False})
+        await subscriptions.resume_subscription(db, client, sub, now)
     except Exception as exc:
         logger.error("resume failed uid=%s error=%s", uid, exc)
         raise HTTPException(status_code=502, detail="Could not resume. Please try again.")
-    await subscriptions.on_subscription_event(db, client, sub["stripe_subscription_id"], now)
     return await _subscription_me(uid, now)
 
 

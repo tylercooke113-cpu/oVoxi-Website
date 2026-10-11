@@ -166,8 +166,23 @@ def _state(sub: dict, now: datetime) -> str:
             return "grace"
         return "blocked_payment"
     if status in ("active", "trialing"):
-        return "ending" if sub.get("cancel_at_period_end") else "active"
+        # The Billing Portal (basil API) schedules "cancel at period end" by setting cancel_at,
+        # not cancel_at_period_end, so treat either as ending. See ending_date for the end date.
+        return "ending" if sub.get("cancel_at_period_end") or sub.get("cancel_at") else "active"
     return "blocked_payment"   # incomplete / unpaid
+
+
+def ending_date(sub: dict) -> str | None:
+    """ISO end date for a subscription that is ending: cancel_at when the portal scheduled one,
+    else current_period_end when cancel_at_period_end is set, else None. Reads the mirror doc, so
+    cancel_at is already ISO."""
+    if not sub:
+        return None
+    if sub.get("cancel_at"):
+        return sub.get("cancel_at")
+    if sub.get("cancel_at_period_end"):
+        return sub.get("current_period_end")
+    return None
 
 
 async def plan_access(db, user_id: str, now: datetime = None) -> dict:
@@ -363,6 +378,7 @@ async def mirror_subscription(db, sub: dict, now, *, user_id=None, customer_id=N
     latest = latest if isinstance(latest, str) else _get(sub, "latest_invoice", "id")
     fields = {"status": sub.get("status"), "plan": plan, "interval": interval,
               "stripe_customer_id": customer_id, "cancel_at_period_end": bool(sub.get("cancel_at_period_end")),
+              "cancel_at": _iso(sub["cancel_at"]) if sub.get("cancel_at") else None,
               "current_period_start": _iso(start) if start else None,
               "current_period_end": _iso(end) if end else None,
               "latest_invoice": latest, "updated_at": now.isoformat()}
@@ -440,6 +456,22 @@ async def on_subscription_event(db, client, sub_id, now, *, user_id=None, custom
     doc = await mirror_subscription(db, sub, now, user_id=user_id, customer_id=customer_id)
     await apply_loyalty(db, client, doc, now)   # idempotent; also covers annual<->monthly switches
     return doc
+
+
+def resume_params(sub: dict) -> dict:
+    """The subscription.update payload that undoes a scheduled cancellation. Sends only the field
+    that is actually set: a cancel_at schedule (portal/basil) is cleared with "", otherwise
+    cancel_at_period_end is cleared with False. Clearing the wrong field leaves the cancel in place."""
+    if sub.get("cancel_at"):
+        return {"cancel_at": ""}
+    return {"cancel_at_period_end": False}
+
+
+async def resume_subscription(db, client, sub_doc, now):
+    """Clear a scheduled cancellation in Stripe, then re-mirror. The caller gates on _state == 'ending'."""
+    sub_id = sub_doc["stripe_subscription_id"]
+    await asyncio.to_thread(client.v1.subscriptions.update, sub_id, resume_params(sub_doc))
+    return await on_subscription_event(db, client, sub_id, now)
 
 
 async def on_checkout_completed(db, client, session, now):
