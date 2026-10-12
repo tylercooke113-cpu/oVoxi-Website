@@ -20,15 +20,17 @@ the results in Cloudflare R2 for the training-rights catalog.
 
 There is **no root `package.json`** — build each half from its own directory.
 
-### Deployment topology — verified 2026-08-27
+### Deployment topology — verified 2026-10-12
 
 Both halves auto-deploy on push. Neither is manual, and a belief that "auto-deploy is
 broken" has been wrong twice.
 
 | Platform | Deploys from | Notes |
 |---|---|---|
-| Vercel (frontend) | ⚠️ **`feat/marketing-revamp`**, not `main` | Fires on every push; four unnoticed production deploys landed in one day. **Nothing built on `main` reaches the live site until this is repointed.** |
-| Railway (backend) | assumed `main` — **verify against the deployed commit before trusting it** | |
+| Vercel (frontend) | `main` | Production Branch = `main`; fires on every push to `main`. |
+| Railway (backend) | `main` | Verify against the deployed commit before trusting it. |
+
+A push to `main` auto-deploys both halves (Vercel frontend and Railway backend); `main` is the single deploy source.
 
 `REACT_APP_NEW_MARKETING` (`frontend/src/App.js:20`) switches the `/` route between
 `HomePage` and `MarketingPage` and hides the header. Nothing else reads it. Currently
@@ -252,9 +254,10 @@ valid only under the single-replica assumption -- flag it if the service ever sc
 - `vercel.json` sets a **strict CSP**. `connect-src` allowlists only the Railway API and Clerk.
   **Any new external origin the browser must reach requires a `vercel.json` edit or it will be
   blocked in production and work fine locally.**
-- `backend/.env` locally holds `MONGO_URL`, `DB_NAME`, the five `R2_*` values, `CLERK_JWKS_URL`,
-  `CLERK_ISSUER`, `CLERK_AUTHORIZED_PARTIES`, `STEM_WEBHOOK_SECRET`, and ACRCloud credentials.
-  `.gitignore` ignores all `.env*`. Keep it that way.
+- `backend/.env` locally holds `MONGO_URL`, `DB_NAME`, the five `R2_*` values,
+  `STEM_WEBHOOK_SECRET`, and ACRCloud credentials. It does **not** hold the three `CLERK_*`
+  values (`CLERK_JWKS_URL`, `CLERK_ISSUER`, `CLERK_AUTHORIZED_PARTIES`); production reads those
+  from Railway (see the Railway table below). `.gitignore` ignores all `.env*`. Keep it that way.
 
 ### Env vars added and removed during security hardening (2026-09-22 to 2026-09-25)
 
