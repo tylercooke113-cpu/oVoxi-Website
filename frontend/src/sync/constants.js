@@ -88,6 +88,7 @@ const nf = (n) => Number(n).toLocaleString('en-US');
 export const SUB_STATUS_LABELS = {
   active: 'Active',
   past_due: 'Payment failed',
+  overdue: 'Payment overdue',
   ending: (date) => `Ends ${date}`,
 };
 
@@ -123,6 +124,10 @@ export const SUB_COPY = {
   blockedDayCap: "You've reached 50 downloads today. Try again tomorrow, or buy a single license.",
   blockedPayment: 'Your last payment failed. Update your card in My account to keep downloading.',
   blockedDispute: 'Downloads are paused while a payment dispute is open.',
+  // Brief 20 B4: SubscriptionTab blocked_payment state (Option B, decision 6). Distinct from the
+  // LicenseModal blockedPayment banner above; no grace dates in this state.
+  blockedPaymentBanner: 'Your payment is overdue and downloads are paused. Update your card soon or your plan will be cancelled. Projects you already registered stay licensed.',
+  downloadsPaused: 'Paused',
   // SubscriptionTab (mockup screens 2 to 4)
   planHeading: (plan, intervalWord) => `${plan} plan, ${intervalWord}`,
   memberSince: (date) => `Member since ${date}`,

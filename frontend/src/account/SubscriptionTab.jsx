@@ -149,8 +149,8 @@ export default function SubscriptionTab({ getToken, onViewProjects }) {
     return <><b className="font-medium text-white">{SUB_COPY.loyaltyLabel}</b> {body} {SUB_COPY.loyaltyTail(fullPrice)}</>;
   };
 
-  // Payment failed (grace, or blocked after the grace window): mockup "pastdue" screen.
-  if (state === 'grace' || state === 'blocked_payment') {
+  // Payment failed, still in the grace window: mockup "pastdue" screen.
+  if (state === 'grace') {
     return (
       <div className="mt-5">
         <div className="mb-4 rounded-xl border border-amber-400/35 bg-amber-400/[0.06] px-3.5 py-3 text-sm text-amber-200">
@@ -167,6 +167,36 @@ export default function SubscriptionTab({ getToken, onViewProjects }) {
           <div className="mt-4 grid grid-cols-2 gap-x-5 gap-y-3.5 text-sm sm:grid-cols-3">
             <Field label={SUB_COPY.fieldAmountDue}>{price}</Field>
             <Field label={SUB_COPY.fieldDownloads}>{SUB_COPY.downloadsAvailableUntil(fmtShort(sub.grace_ends_at))}</Field>
+            <Field label={SUB_COPY.fieldRegisteredProjects}>{me.registered_count}</Field>
+          </div>
+          <div className="mt-5">
+            <button type="button" disabled={busy} onClick={toPortal}
+              className="rounded-full bg-gradient-brand px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60">{SUB_COPY.graceButton}</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Payment overdue past the grace window: downloads paused (Brief 20 B4, Option B / decision 6).
+  // No grace dates in this state.
+  if (state === 'blocked_payment') {
+    return (
+      <div className="mt-5">
+        <div className="mb-4 rounded-xl border border-amber-400/35 bg-amber-400/[0.06] px-3.5 py-3 text-sm text-amber-200">
+          {SUB_COPY.blockedPaymentBanner}
+        </div>
+        <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-6">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h3 className="font-heading text-xl font-semibold text-white">{SUB_COPY.planHeading(planLabel, intervalWord)}</h3>
+              <div className="mt-0.5 text-sm text-slate-400">{SUB_COPY.memberSince(fmtDate(sub.subscribed_since))}</div>
+            </div>
+            <Chip className="text-amber-300 border-amber-400/25 bg-amber-400/[0.08]">{SUB_STATUS_LABELS.overdue}</Chip>
+          </div>
+          <div className="mt-4 grid grid-cols-2 gap-x-5 gap-y-3.5 text-sm sm:grid-cols-3">
+            <Field label={SUB_COPY.fieldAmountDue}>{price}</Field>
+            <Field label={SUB_COPY.fieldDownloads}>{SUB_COPY.downloadsPaused}</Field>
             <Field label={SUB_COPY.fieldRegisteredProjects}>{me.registered_count}</Field>
           </div>
           <div className="mt-5">
