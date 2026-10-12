@@ -34,6 +34,9 @@ export const publicApi = {
     (await axios.get(`${API}/sync/tracks/${encodeURIComponent(id)}/waveform`, await maybeAuthed(getToken, isSignedIn))).data,
   preview: async (id, getToken, isSignedIn) =>
     (await axios.post(`${API}/sync/tracks/${encodeURIComponent(id)}/preview`, null, await maybeAuthed(getToken, isSignedIn))).data,
+  // Brief 20 B1: public pricing. Token sent only when signed in, to compute `visible` for admins.
+  pricing: async (getToken, isSignedIn) =>
+    (await axios.get(`${API}/sync/pricing`, await maybeAuthed(getToken, isSignedIn))).data,
 };
 
 export const api = {

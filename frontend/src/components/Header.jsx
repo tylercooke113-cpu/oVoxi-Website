@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Link, NavLink } from 'react-router-dom';
 import { Menu, X, ChevronDown } from 'lucide-react';
-import { useUser } from '@clerk/clerk-react';
+import { useUser, useAuth } from '@clerk/clerk-react';
 import { NAV_LINKS } from '../content';
+import { publicApi } from '../sync/api';
 
 const Logo = () => (
   <Link to="/" data-testid="logo-link" className="flex items-center group">
@@ -16,9 +17,30 @@ const Logo = () => (
 
 export const Header = () => {
   const { isSignedIn } = useUser();
+  const { getToken, isSignedIn: authedIn, isLoaded } = useAuth();
   const [open, setOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [pricingVisible, setPricingVisible] = useState(() => {
+    try { return sessionStorage.getItem('ovoxi_pricing_visible') === '1'; } catch { return false; }
+  });
+
+  // B5: show "Pricing" only when /api/sync/pricing says visible for this viewer. Fetch once per
+  // page load; cache the flag in sessionStorage so the link does not flash on the next load.
+  useEffect(() => {
+    if (!isLoaded) return undefined;
+    let alive = true;
+    publicApi.pricing(getToken, authedIn)
+      .then((d) => {
+        if (!alive) return;
+        setPricingVisible(!!d.visible);
+        try { sessionStorage.setItem('ovoxi_pricing_visible', d.visible ? '1' : '0'); } catch { /* ignore */ }
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [getToken, authedIn, isLoaded]);
+
+  const navLinks = NAV_LINKS.filter((l) => !l.requiresVisible || pricingVisible);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 16);
@@ -78,7 +100,7 @@ export const Header = () => {
                       </NavLink>
                     </>
                   )}
-                  {NAV_LINKS.map((l) => (
+                  {navLinks.map((l) => (
                     <NavLink
                       key={l.to}
                       to={l.to}
@@ -131,7 +153,7 @@ export const Header = () => {
                 <Link to="/account" onClick={closeMenu} className="text-base font-medium text-slate-300 hover-text-gradient">My account</Link>
               </>
             )}
-            {NAV_LINKS.map((l) => (
+            {navLinks.map((l) => (
               <Link
                 key={l.to}
                 to={l.to}

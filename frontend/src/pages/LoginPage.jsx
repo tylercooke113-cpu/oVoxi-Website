@@ -1,14 +1,16 @@
 import React from 'react';
 import { SignIn } from '@clerk/clerk-react';
 import { useSearchParams } from 'react-router-dom';
-
-// Only our own paths; never an external URL, so this can't become an open redirect.
-const safeNext = (next) =>
-  (next === '/account' || next === '/vault' || /^\/sync(\/|$)/.test(next || '') ? next : '/vault');
+import { safeNext } from '../lib/safeNext';
 
 const LoginPage = () => {
   const [params] = useSearchParams();
-  const redirect = safeNext(params.get('next'));
+  const next = params.get('next');
+  const redirect = safeNext(next);
+  const carry = new URLSearchParams();
+  if (params.get('as') === 'buyer') carry.set('as', 'buyer');
+  if (next) carry.set('next', next);
+  const signUpUrl = `/signup${carry.toString() ? `?${carry.toString()}` : ''}`;
   return (
   <div className="min-h-screen bg-ink flex items-center justify-center px-4">
     <div className="w-full max-w-md">
@@ -20,7 +22,7 @@ const LoginPage = () => {
         routing="path"
         path="/login"
         forceRedirectUrl={redirect}
-        signUpUrl="/signup"
+        signUpUrl={signUpUrl}
         appearance={{
           variables: {
             colorPrimary: '#9B59D4',

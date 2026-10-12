@@ -18,6 +18,7 @@ import TermsPage from './pages/TermsPage';
 import ArtistPage from './sync/ArtistPage';
 import TrackSharePage from './sync/TrackSharePage';
 import LibraryPage from './sync/LibraryPage';
+import PricingPage from './sync/PricingPage';
 import SuccessPage from './sync/SuccessPage';
 import DownloadPage from './sync/DownloadPage';
 import AccountPage from './account/AccountPage';
@@ -69,6 +70,7 @@ function AppContent() {
           <Route path='/terms' element={<TermsPage />} />
           {/* PRD-03 phase 5: the library is gated server-side by SYNC_LIBRARY_ENABLED (admins always). */}
           <Route path='/sync' element={<LibraryPage />} />
+          <Route path='/pricing' element={<PricingPage />} />
           <Route path='/artist/:slug' element={<ArtistPage />} />
           <Route path='/sync/track/:id' element={<TrackSharePage />} />
           {/* PRD-03 phase 6b: public checkout result and download pages (no sign-in). */}

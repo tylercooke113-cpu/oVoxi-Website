@@ -501,3 +501,39 @@ If they fail under Pillow 11.x too, investigate whether the resize path in `prof
 holds an extra copy, or loosen the thresholds to a realistic bound.
 
 **Owner:** unassigned.
+
+---
+
+## OQ-15: Sign-in from `/artist/:slug` (LicenseModal) falls back to `/vault`
+
+**Found:** 2026-10-12, during Brief 20 Stage B (buyer sign-up path, B3).
+
+`LicenseModal`'s "Have a subscription? Sign in" link builds
+`/login?next=${loc.pathname + loc.search}`. On the artist page (`/artist/:slug`, which renders
+`TrackRow` -> `LicenseButton` -> `LicenseModal`), `next` is `/artist/<slug>`. The shared
+`safeNext` helper (`frontend/src/lib/safeNext.js`) allows only `/account`, `/vault`,
+`/sync` and `/sync/...`, and `/pricing`, so `/artist/<slug>` falls back to `/vault` after
+sign-in instead of returning to the artist page.
+
+**Pre-existing, not introduced by Brief 20.** The previous `LoginPage.safeNext` already allowed
+only `/account`, `/vault` and `/sync(/|$)`, so `/artist/<slug>` already fell back to `/vault`.
+The B3 refactor preserved that allowlist (it only added `/pricing`), so no flow regressed.
+
+**To resolve:** decide in Brief 21 (header / Vault separation) whether to add `/artist/[slug]`
+to the `safeNext` allowlist so a signed-in buyer returns to the artist page they came from.
+
+**Owner:** unassigned.
+
+---
+
+## OQ-16: A failed startup Stripe price warm leaves /pricing hiding subscriptions
+
+**Found:** 2026-10-12, during Brief 20 Stage B review.
+
+If the startup Stripe price load fails at boot, `prices_ready()` stays false and `/pricing` hides
+subscriptions until `/sync/checkout/config` or a subscription action retries. `/pricing` never
+warms by design (B1). Low probability.
+
+Possible fix: background retry of `load_prices` after a failed startup warm.
+
+**Owner:** unassigned.

@@ -10,6 +10,7 @@ export const BRAND = {
 };
 
 export const NAV_LINKS = [
+  { label: "Pricing", to: "/pricing", requiresVisible: true },
   { label: "Contact", to: "/contact" },
 ];
 
