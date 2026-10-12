@@ -80,7 +80,6 @@ const LicenseCard = ({ lic, getToken }) => {
           <div className="grid grid-cols-2 gap-x-4 gap-y-2.5 sm:grid-cols-3">
             <div><span className="block text-[11px] uppercase tracking-wide text-slate-500">Client</span>{lic.client || '—'}</div>
             <div><span className="block text-[11px] uppercase tracking-wide text-slate-500">Files</span>{(lic.files || []).map((f) => f.label).join(', ') || '—'}</div>
-            <div><span className="block text-[11px] uppercase tracking-wide text-slate-500">Terms version</span>{lic.terms_version}</div>
           </div>
           <h4 className="mt-3 mb-1.5 text-[11px] uppercase tracking-wide text-slate-500">Cue sheet information</h4>
           <table className="w-full border-collapse text-[13px]">

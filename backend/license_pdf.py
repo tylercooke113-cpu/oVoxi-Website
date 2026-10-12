@@ -147,7 +147,6 @@ def render_license_pdf(order: dict, *, track_title: str, artist_name: str,
             ("License fee", _money(order.get("price_cents"), currency)),
             ("Tax", _money(order.get("tax_cents"), currency)),
             ("Total paid", _money(order.get("amount_total_cents"), currency))]),
-        ("Terms version", order["terms_version"]),
     ]
     table = Table([[_p(k, _LABEL), _p(v)] for k, v in rows], colWidths=[1.7 * inch, 5.0 * inch])
     table.setStyle(TableStyle([

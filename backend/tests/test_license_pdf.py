@@ -25,8 +25,17 @@ def test_renders_all_prd_fields():
     text = text_of(pdf)
     for expected in ("OVX-7K2M9Q4XRT", "September 29, 2026", "Dana Buyer", "dana@example.com",
                      "Night Drive", "Kay Lune", "Creator Pro", "$60.00 USD", "$4.20 USD", "$64.20 USD",
-                     "draft-0", "PLACEHOLDER TERMS"):
+                     "PLACEHOLDER TERMS"):
         assert expected in text, expected
+
+
+def test_terms_version_row_removed_but_terms_text_remains():
+    # Brief 20 B9: the certificate no longer prints the "Terms version" metadata row, but still
+    # prints the License Terms text that terms_version selects (here the draft-0 body).
+    text = text_of(render_license_pdf(ORDER, track_title="Night Drive", artist_name="Kay Lune"))
+    assert "Terms version" not in text
+    assert "License terms" in text          # the terms section heading still renders
+    assert "PLACEHOLDER TERMS" in text      # the body chosen by order["terms_version"]
 
 
 def test_test_mode_watermark_only_in_test():
