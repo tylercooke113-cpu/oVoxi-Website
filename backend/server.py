@@ -2566,6 +2566,35 @@ async def sync_checkout_config(request: Request, viewer: Optional[dict] = Depend
     return cfg
 
 
+@api_router.get("/sync/pricing")
+@limiter.limit("60/minute")
+async def sync_pricing(request: Request, viewer: Optional[dict] = Depends(optional_clerk)):
+    """Public pricing for the Pricing page (Brief 20 B1). Read-only: no Stripe call and no
+    price-cache warming. Plan prices come from the PLANS constants and single-track prices
+    from sync_orders; subscriptions_enabled mirrors the checkout rule but only reads the
+    already-loaded price cache (startup and the admin checkout config warm it)."""
+    _, is_admin = _viewer(viewer)
+    plans = [{
+        "id": pid, "label": p["label"],
+        "month_cents": p["month_cents"], "year_cents": p["year_cents"],
+        "month_cap": p["month_cap"], "day_cap": SUB_DAY_CAP,
+        "month_cents_loyalty15": subscriptions.loyalty_price_cents(p["month_cents"], 15),
+        "month_cents_loyalty20": subscriptions.loyalty_price_cents(p["month_cents"], 20),
+    } for pid, p in PLANS.items()]
+    singles = [{
+        "id": tid, "label": label,
+        "price_cents": sync_orders.price_cents(tid, "1y" if tid in sync_orders.TERM_OPTIONS else None),
+        "by_quote": False,
+    } for tid, (label, _, _) in sync_orders.TIERS.items()]
+    singles.append({"id": "enterprise", "label": "Enterprise", "price_cents": None, "by_quote": True})
+    return {
+        "visible": _public_pages_enabled() or is_admin,
+        "subscriptions_enabled": sync_orders.subscriptions_enabled() and subscriptions.prices_ready(),
+        "plans": plans,
+        "singles": singles,
+    }
+
+
 @api_router.get("/sync/terms/{version}")
 @limiter.limit("60/minute")
 async def sync_terms(request: Request, version: str):
