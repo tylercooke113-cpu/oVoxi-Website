@@ -1528,7 +1528,7 @@ async def agreement_pdf(request: Request, clerk_payload: dict = Depends(require_
 # ---------------------------------------------------------------------------
 
 @api_router.post("/upload/presign")
-@limiter.limit("5/minute")
+@limiter.limit("20/minute")
 async def presign_upload(request: Request, payload: PresignRequest, clerk_payload: dict = Depends(require_artist)):
     if os.environ.get("UPLOADS_ENABLED", "true") != "true":
         raise HTTPException(status_code=503, detail="Uploads are temporarily paused")
@@ -1547,7 +1547,7 @@ async def presign_upload(request: Request, payload: PresignRequest, clerk_payloa
 
     if _role(clerk_payload) != "admin":
         MAX_UPLOADS_PER_DAY = int(os.environ.get("MAX_UPLOADS_PER_DAY", "20"))
-        MAX_OPEN_SUBMISSIONS = int(os.environ.get("MAX_OPEN_SUBMISSIONS", "5"))
+        MAX_OPEN_SUBMISSIONS = int(os.environ.get("MAX_OPEN_SUBMISSIONS", "15"))
         uid = clerk_payload["sub"]
         since = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
         one_hour_ago = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
@@ -1662,7 +1662,7 @@ async def presign_upload(request: Request, payload: PresignRequest, clerk_payloa
 
 
 @api_router.post("/upload/complete")
-@limiter.limit("5/minute")
+@limiter.limit("20/minute")
 async def complete_upload(request: Request, payload: CompleteUploadRequest, clerk_payload: dict = Depends(require_artist)):
     if os.environ.get("UPLOADS_ENABLED", "true") != "true":
         raise HTTPException(status_code=503, detail="Uploads are temporarily paused")
