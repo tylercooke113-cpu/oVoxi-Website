@@ -5,6 +5,7 @@ import json
 import os
 import logging
 import re
+import secrets
 import subprocess
 import tempfile
 import time
@@ -33,9 +34,11 @@ from sync_constants import (
     MOODS, MAX_MOODS, VOCALS, SAMPLE_DECLARATIONS, CONTENT_ID_ANSWERS,
     DISTRIBUTORS, PRO_ORGS, IPI_PATTERN, MUSICAL_KEYS, BPM_MIN, BPM_MAX, COUNTRIES,
     PLANS, SUB_DAY_CAP,
+    COSIGN_TOKEN_TTL_DAYS, COSIGN_MAX_RESENDS, COSIGN_RESEND_COOLDOWN_MIN,
 )
 from consent_ledger import record_grants, record_withdrawals, GRANT_VERSION
 import artist_agreement
+import cosign
 from profile_photo import (
     MAX_PHOTO_BYTES, PHOTO_CONTENT_TYPES, PHOTO_SIZES, PhotoRejected, REJECT_MESSAGE, process_photo,
 )
@@ -54,7 +57,7 @@ from sync_vault import (
     INSTAGRAM_URL, SPOTIFY_ARTIST_URL, is_legacy, metadata_patch_fields,
     slugify_profile, vault_track_view,
 )
-from rights import TrackRightsIn, build_rights
+from rights import TrackRightsIn, build_rights, EMAIL_PATTERN as RIGHTS_EMAIL_PATTERN
 from clearance import evaluate as evaluate_clearance
 from metadata_reconcile import reconcile as reconcile_metadata
 from starlette.middleware.cors import CORSMiddleware
@@ -1180,6 +1183,51 @@ class CompleteUploadRequest(BaseModel):
     submission_id: str
 
 
+class CosignPreviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    entity_type: Literal["individual", "company"] = "individual"
+    legal_name: str = Field(default="", max_length=120)
+    signer_name: Optional[str] = Field(default=None, max_length=120)
+    signer_title: Optional[str] = Field(default=None, max_length=120)
+
+
+class CosignSignRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    entity_type: Literal["individual", "company"]
+    legal_name: str = Field(..., min_length=1, max_length=120)
+    signer_name: Optional[str] = Field(default=None, max_length=120)
+    signer_title: Optional[str] = Field(default=None, max_length=120)
+    typed_signature: str = Field(..., min_length=1, max_length=120)
+    adult_confirmed: bool
+    text_sha256: str = Field(..., min_length=64, max_length=64)
+
+    @model_validator(mode="after")
+    def _check(self):
+        if not self.adult_confirmed:
+            raise ValueError("Confirm you are 18 or older.")
+        if self.entity_type == "company" and not (self.signer_name and self.signer_title):
+            raise ValueError("A company signature needs a signer name and title.")
+        return self
+
+
+class CosignDeclineRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    reason: Optional[str] = Field(default=None, max_length=500)
+
+
+class CosignEmailUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    email: str = Field(..., max_length=254)
+
+    @field_validator("email")
+    @classmethod
+    def _email(cls, v):
+        v = (v or "").strip().lower()
+        if not RIGHTS_EMAIL_PATTERN.fullmatch(v):
+            raise ValueError("Enter a valid email.")
+        return v
+
+
 class AppealPresignRequest(BaseModel):
     submission_id: str = Field(..., min_length=1, max_length=100)
     artist_name: str = Field(..., min_length=1, max_length=120)
@@ -1651,6 +1699,16 @@ async def presign_upload(request: Request, payload: PresignRequest, clerk_payloa
         payload.rights, intake=payload.sync_intake,
         clerk_user_id=clerk_user_id, now_iso=now_iso,
     )
+    # Co-owner sign-off (Brief 22 C2). A track needs every non-uploader rights holder to
+    # sign before it can be licensed. The absence of these fields is what grandfathers
+    # tracks uploaded before this shipped.
+    has_coowner = any(
+        not p.get("is_self")
+        for side in ("writers", "publishers", "master_owners")
+        for p in (doc['rights'].get(side) or [])
+    )
+    doc['cosign_required'] = has_coowner
+    doc['cosign_status'] = "pending" if has_coowner else "not_required"
     await db.track_submissions.insert_one(doc)
 
     return {
@@ -1698,6 +1756,15 @@ async def complete_upload(request: Request, payload: CompleteUploadRequest, cler
 
     await _set_status(payload.submission_id, "uploaded")
     logger.info("Queued for processing submission=%s", payload.submission_id)
+
+    # Co-owner Consent requests (Brief 22 C3). Safe to repeat: existing requests are
+    # left alone, and an email failure never fails the upload.
+    if sub.get("cosign_required"):
+        try:
+            await _dispatch_cosign_requests(sub)
+        except Exception as exc:
+            logger.error("cosign dispatch failed for %s: %s", payload.submission_id, exc)
+
     return {"status": "uploaded", "submission_id": payload.submission_id}
 
 
@@ -1709,8 +1776,11 @@ async def get_vault_tracks(request: Request, clerk_payload: dict = Depends(verif
         {'clerk_user_id': clerk_user_id},
         {'_id': 0, 'id': 1, 'artist_name': 1, 'track_name': 1, 'genre': 1,
          'upload_date': 1, 'status': 1, 'stem_paths': 1, 'mastered_r2_key': 1,
-         'consent': 1, 'metadata': 1, 'sync_status': 1, 'checks': 1, 'on_sync_profile': 1},
+         'consent': 1, 'metadata': 1, 'sync_status': 1, 'checks': 1, 'on_sync_profile': 1,
+         'cosign_required': 1, 'cosign_status': 1},
     ).sort('upload_date', -1).to_list(1000)
+
+    cosign_by_track = await _cosign_views_for_tracks([s.get('id') for s in subs])
 
     def _presign_get(key: str) -> str:
         return r2_client.generate_presigned_url(
@@ -1748,9 +1818,454 @@ async def get_vault_tracks(request: Request, clerk_payload: dict = Depends(verif
             'status': s.get('status'),
             'stem_urls': stem_urls,
             'mastered_url': mastered_url,
+            'cosign': cosign_by_track.get(s.get('id'), []),
             **vault_track_view(s),
         })
     return result
+
+
+# ---------------------------------------------------------------------------
+# Co-owner Consent (Brief 22, Part C)
+# ---------------------------------------------------------------------------
+
+REPLY_TO_COSIGN = "tyler@ovoxi.net"
+COSIGN_LINK_BASE = "https://ovoxi.net/cosign"
+
+
+def _hash_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _new_cosign_token() -> tuple:
+    token = secrets.token_urlsafe(32)
+    return token, _hash_token(token)
+
+
+def _cosign_expired(req: dict, now: datetime) -> bool:
+    exp = req.get("token_expires_at")
+    if not exp:
+        return False
+    try:
+        return datetime.fromisoformat(exp) < now
+    except ValueError:
+        return False
+
+
+def _cosign_uses(sub: dict) -> list:
+    consent = sub.get("consent") or {}
+    uses = []
+    if consent.get("ai_training"):
+        uses.append("AI training")
+    if consent.get("sync"):
+        uses.append("Sync licensing")
+    return uses
+
+
+def _uploader_name(sub: dict) -> str:
+    return (sub.get("rights") or {}).get("self_legal_name") or sub.get("artist_name") or ""
+
+
+def _cosign_interests_by_email(sub: dict) -> dict:
+    """email -> list of interest dicts, one per non-self rights row with that email."""
+    rights = sub.get("rights") or {}
+    by_email: dict = {}
+    for side in ("writers", "publishers", "master_owners"):
+        for p in (rights.get(side) or []):
+            if p.get("is_self"):
+                continue
+            email = (p.get("email") or "").strip().lower()
+            if not email:
+                continue
+            by_email.setdefault(email, []).append({
+                "side": side, "legal_name": p.get("legal_name"),
+                "role": p.get("role"), "share_bp": p.get("share_bp"),
+            })
+    return by_email
+
+
+async def _uploader_agreement_version(sub: dict) -> str:
+    aid = sub.get("agreement_id")
+    if aid:
+        a = await db.artist_agreements.find_one({"id": aid}, {"_id": 0, "version": 1})
+        if a and a.get("version"):
+            return a["version"]
+    return artist_agreement.current_version()
+
+
+async def _uploader_email(sub: dict) -> Optional[str]:
+    uid = (sub or {}).get("clerk_user_id")
+    if not uid:
+        return None
+    try:
+        return (await fetch_clerk_user(uid)).get("email")
+    except Exception:
+        return None
+
+
+async def _send_cosign_request(req: dict, token: str, uploader_name: str,
+                               work_title: str, interests: list, uses: list) -> None:
+    """Send the invite and record it. Never raises; a failure leaves sent_at null so the
+    Vault shows "Not sent"."""
+    link = f"{COSIGN_LINK_BASE}/{token}"
+    subject, html, text = cosign.request_email(
+        uploader_name=uploader_name, work_title=work_title,
+        interests=interests, uses=uses, link=link)
+    try:
+        result = await send_email(to=req["email"], subject=subject, html=html, text=text,
+                                  reply_to=REPLY_TO_COSIGN,
+                                  idempotency_key=f"cosign-req-{req['id']}-{req.get('send_count', 0)}")
+    except Exception as exc:
+        logger.warning("cosign invite send raised for %s: %s", req["id"], exc)
+        return
+    if result.get("status") == "sent":
+        now = datetime.now(timezone.utc).isoformat()
+        await db.cosign_requests.update_one(
+            {"id": req["id"]},
+            {"$set": {"sent_at": now, "last_sent_at": now}, "$inc": {"send_count": 1}})
+    else:
+        logger.warning("cosign invite not sent req=%s status=%s", req["id"], result.get("status"))
+
+
+async def _dispatch_cosign_requests(sub: dict) -> None:
+    """Create one request per unique co-owner email and email each. Idempotent: an
+    existing (track_id, email) request is left untouched, so a repeated complete is safe."""
+    track_id = sub["id"]
+    uploader_name = _uploader_name(sub)
+    uses = _cosign_uses(sub)
+    now = datetime.now(timezone.utc)
+    for email, interests in _cosign_interests_by_email(sub).items():
+        existing = await db.cosign_requests.find_one(
+            {"track_id": track_id, "email": email}, {"_id": 0, "id": 1})
+        if existing:
+            continue
+        token, token_hash = _new_cosign_token()
+        req = {
+            "id": str(uuid.uuid4()), "track_id": track_id,
+            "uploader_clerk_user_id": sub.get("clerk_user_id"),
+            "email": email, "interests": interests,
+            "token_sha256": token_hash,
+            "token_expires_at": (now + timedelta(days=COSIGN_TOKEN_TTL_DAYS)).isoformat(),
+            "status": "pending", "created_at": now.isoformat(),
+            "sent_at": None, "send_count": 0, "last_sent_at": None,
+            "signed_at": None, "typed_signature": None, "entity_type": None,
+            "signer_name": None, "signer_title": None, "legal_name": None,
+            "ip": None, "consent_version": cosign.current_version(),
+            "text_sha256": None, "pdf_key": None,
+            "declined_at": None, "decline_reason": None,
+        }
+        try:
+            await db.cosign_requests.insert_one(req)
+        except DuplicateKeyError:
+            continue  # created concurrently
+        await _send_cosign_request(req, token, uploader_name, sub.get("track_name"), interests, uses)
+
+
+async def _cosign_views_for_tracks(track_ids: list) -> dict:
+    """track_id -> list of public cosign rows for the Vault (never token data)."""
+    ids = [t for t in track_ids if t]
+    if not ids:
+        return {}
+    reqs = await db.cosign_requests.find(
+        {"track_id": {"$in": ids}},
+        {"_id": 0, "id": 1, "track_id": 1, "interests": 1, "email": 1, "status": 1,
+         "sent_at": 1, "signed_at": 1, "declined_at": 1},
+    ).to_list(1000)
+    out: dict = {}
+    for r in reqs:
+        names = []
+        for it in (r.get("interests") or []):
+            n = it.get("legal_name")
+            if n and n not in names:
+                names.append(n)
+        out.setdefault(r["track_id"], []).append({
+            "request_id": r["id"], "legal_names": names, "email": r.get("email"),
+            "status": r.get("status"), "sent_at": r.get("sent_at"),
+            "signed_at": r.get("signed_at"), "declined_at": r.get("declined_at"),
+        })
+    return out
+
+
+async def _email_cosign_complete(sub: dict) -> None:
+    from xml.sax.saxutils import escape
+    track = sub.get("track_name") or "your track"
+    body = f'Everyone has signed for "{track}". It can now be licensed.'
+    to = await _uploader_email(sub)
+    if to:
+        await send_email(to=to, subject=f'Everyone signed for "{track}"',
+                         html=f"<p>{escape(body)}</p>", text=body, reply_to=REPLY_TO_COSIGN,
+                         idempotency_key=f"cosign-complete-{sub['id']}")
+
+
+async def _email_cosign_declined(req: dict, sub: dict) -> None:
+    from xml.sax.saxutils import escape
+    track = (sub or {}).get("track_name") or "your track"
+    names = ", ".join(dict.fromkeys(
+        it.get("legal_name") for it in (req.get("interests") or []) if it.get("legal_name"))
+    ) or req.get("email")
+    body = (f'{names} declined to sign for "{track}". The song stays off the catalog. '
+            "Check the splits and contact them.")
+    for to in filter(None, [await _uploader_email(sub), REPLY_TO_COSIGN]):
+        await send_email(to=to, subject=f'A co-owner declined to sign for "{track}"',
+                         html=f"<p>{escape(body)}</p>", text=body, reply_to=REPLY_TO_COSIGN,
+                         idempotency_key=f"cosign-declined-{req['id']}-{to}")
+
+
+async def _refresh_cosign_status(track_id: str) -> None:
+    """Roll the per-request statuses up to the track, re-run clearance, and tell the
+    uploader when the last signature lands."""
+    reqs = await db.cosign_requests.find(
+        {"track_id": track_id}, {"_id": 0, "status": 1}).to_list(1000)
+    statuses = [r.get("status") for r in reqs]
+    if any(s == "declined" for s in statuses):
+        new_status = "declined"
+    elif statuses and all(s == "signed" for s in statuses):
+        new_status = "complete"
+    else:
+        new_status = "pending"
+    sub = await db.track_submissions.find_one(
+        {"id": track_id}, {"_id": 0, "id": 1, "cosign_status": 1, "track_name": 1, "clerk_user_id": 1})
+    if not sub:
+        return
+    prev = sub.get("cosign_status")
+    if prev != new_status:
+        await db.track_submissions.update_one({"id": track_id}, {"$set": {"cosign_status": new_status}})
+    await _run_clearance(track_id)
+    if new_status == "complete" and prev != "complete":
+        try:
+            await _email_cosign_complete(sub)
+        except Exception as exc:
+            logger.warning("cosign complete email failed for %s: %s", track_id, exc)
+
+
+async def _cosign_request_for_token(token: str) -> Optional[dict]:
+    return await db.cosign_requests.find_one({"token_sha256": _hash_token(token)}, {"_id": 0})
+
+
+async def _cosign_public_payload(req: dict, now: datetime, *, entity_type="individual",
+                                 legal_name=None, signer_name="", signer_title="") -> dict:
+    sub = await db.track_submissions.find_one({"id": req["track_id"]}, {"_id": 0})
+    if not sub:
+        raise HTTPException(status_code=404,
+                            detail="This link has expired or is not valid. Ask the artist to resend it.")
+    aa_version = await _uploader_agreement_version(sub)
+    name = legal_name if legal_name is not None else (
+        req["interests"][0]["legal_name"] if req.get("interests") else "")
+    values = cosign.build_values(
+        now=now, entity_type=entity_type, legal_name=name, coowner_email=req["email"],
+        uploader_name=_uploader_name(sub), artist_agreement_version=aa_version,
+        work_title=sub.get("track_name"), work_artist=sub.get("artist_name"),
+        work_id=sub.get("id"), interests=req["interests"],
+        signer_name=signer_name or "", signer_title=signer_title or "")
+    text = cosign.render_text(values)
+    agreement_text = artist_agreement.load_template(aa_version)
+    return {
+        "track_title": sub.get("track_name"),
+        "artist_name": sub.get("artist_name"),
+        "uploader_name": _uploader_name(sub),
+        "interests": req["interests"],
+        "uses": _cosign_uses(sub),
+        "consent_version": cosign.current_version(),
+        "consent_blocks": cosign.blocks(text),
+        "text_sha256": cosign.text_sha256(text),
+        "agreement_version": aa_version,
+        "agreement_blocks": artist_agreement.blocks(agreement_text),
+    }
+
+
+def _cosign_resolved(req: dict):
+    if req["status"] in ("signed", "declined"):
+        raise HTTPException(status_code=409, detail={
+            "status": req["status"], "date": req.get("signed_at") or req.get("declined_at")})
+
+
+@api_router.get("/cosign/{token}")
+@limiter.limit("10/minute")
+async def cosign_get(request: Request, token: str):
+    req = await _cosign_request_for_token(token)
+    now = datetime.now(timezone.utc)
+    if not req or _cosign_expired(req, now):
+        raise HTTPException(status_code=404,
+                            detail="This link has expired or is not valid. Ask the artist to resend it.")
+    _cosign_resolved(req)
+    return await _cosign_public_payload(req, now)
+
+
+@api_router.post("/cosign/{token}/preview")
+@limiter.limit("10/minute")
+async def cosign_preview(request: Request, token: str, payload: CosignPreviewRequest):
+    req = await _cosign_request_for_token(token)
+    now = datetime.now(timezone.utc)
+    if not req or _cosign_expired(req, now):
+        raise HTTPException(status_code=404,
+                            detail="This link has expired or is not valid. Ask the artist to resend it.")
+    _cosign_resolved(req)
+    data = await _cosign_public_payload(
+        req, now, entity_type=payload.entity_type, legal_name=payload.legal_name,
+        signer_name=payload.signer_name or "", signer_title=payload.signer_title or "")
+    return {"consent_blocks": data["consent_blocks"], "text_sha256": data["text_sha256"]}
+
+
+@api_router.post("/cosign/{token}/sign")
+@limiter.limit("10/minute")
+async def cosign_sign(request: Request, token: str, payload: CosignSignRequest):
+    req = await _cosign_request_for_token(token)
+    now = datetime.now(timezone.utc)
+    if not req or _cosign_expired(req, now):
+        raise HTTPException(status_code=404,
+                            detail="This link has expired or is not valid. Ask the artist to resend it.")
+    _cosign_resolved(req)
+
+    norm = lambda s: " ".join(s.split()).casefold()
+    expected = payload.signer_name if payload.entity_type == "company" else payload.legal_name
+    if norm(payload.typed_signature) != norm(expected or ""):
+        raise HTTPException(status_code=422, detail="Type your full name exactly as entered above.")
+
+    sub = await db.track_submissions.find_one({"id": req["track_id"]}, {"_id": 0})
+    if not sub:
+        raise HTTPException(status_code=404,
+                            detail="This link has expired or is not valid. Ask the artist to resend it.")
+    aa_version = await _uploader_agreement_version(sub)
+    values = cosign.build_values(
+        now=now, entity_type=payload.entity_type, legal_name=payload.legal_name,
+        coowner_email=req["email"], uploader_name=_uploader_name(sub),
+        artist_agreement_version=aa_version, work_title=sub.get("track_name"),
+        work_artist=sub.get("artist_name"), work_id=sub.get("id"), interests=req["interests"],
+        signer_name=payload.signer_name or "", signer_title=payload.signer_title or "")
+    text = cosign.render_text(values)
+    text_hash = cosign.text_sha256(text)
+    if text_hash != payload.text_sha256:
+        raise HTTPException(status_code=409, detail="The document changed. Please review it again.")
+
+    signed_at = now.isoformat()
+    ip = get_real_client_ip(request)
+    sig = {"request_id": req["id"], "version": cosign.current_version(), "work_id": sub.get("id"),
+           "text_sha256": text_hash, "signed_at": signed_at,
+           "typed_signature": " ".join(payload.typed_signature.split()),
+           "entity_type": payload.entity_type, "legal_name": payload.legal_name,
+           "signer_name": payload.signer_name or "", "signer_title": payload.signer_title or "",
+           "coowner_email": req["email"], "ip": ip}
+    pdf = await asyncio.to_thread(cosign.render_pdf, text, sig)
+    pdf_key = f"cosigns/{req['track_id']}/{req['id']}.pdf"
+    try:
+        await asyncio.to_thread(r2_client.put_object, Bucket=R2_BUCKET, Key=pdf_key, Body=pdf,
+                                ContentType="application/pdf")
+    except Exception as exc:
+        logger.error("cosign PDF upload failed for %s: %s", req["id"], exc)
+        raise HTTPException(status_code=503, detail="Could not save your signature. Please try again.")
+
+    updated = await db.cosign_requests.update_one(
+        {"id": req["id"], "status": "pending"},
+        {"$set": {"status": "signed", "signed_at": signed_at, "typed_signature": sig["typed_signature"],
+                  "entity_type": payload.entity_type, "signer_name": payload.signer_name,
+                  "signer_title": payload.signer_title, "legal_name": payload.legal_name,
+                  "ip": ip, "consent_version": cosign.current_version(),
+                  "text_sha256": text_hash, "pdf_key": pdf_key}})
+    if updated.matched_count == 0:
+        raise HTTPException(status_code=409, detail={"status": "signed", "date": signed_at})
+
+    subject, html, body = cosign.signed_copy_email(work_title=sub.get("track_name"))
+    try:
+        await send_email(to=req["email"], subject=subject, html=html, text=body,
+                         attachments=[("oVoxi-Co-owner-Consent.pdf", pdf)],
+                         reply_to=REPLY_TO_COSIGN, idempotency_key=f"cosign-signed-{req['id']}")
+    except Exception as exc:
+        logger.warning("cosign signed-copy email failed for %s: %s", req["id"], exc)
+
+    await _refresh_cosign_status(req["track_id"])
+    return {"status": "signed"}
+
+
+@api_router.post("/cosign/{token}/decline")
+@limiter.limit("10/minute")
+async def cosign_decline(request: Request, token: str, payload: CosignDeclineRequest):
+    req = await _cosign_request_for_token(token)
+    now = datetime.now(timezone.utc)
+    if not req or _cosign_expired(req, now):
+        raise HTTPException(status_code=404,
+                            detail="This link has expired or is not valid. Ask the artist to resend it.")
+    _cosign_resolved(req)
+    declined_at = now.isoformat()
+    updated = await db.cosign_requests.update_one(
+        {"id": req["id"], "status": "pending"},
+        {"$set": {"status": "declined", "declined_at": declined_at, "decline_reason": payload.reason}})
+    if updated.matched_count == 0:
+        raise HTTPException(status_code=409, detail={"status": "declined", "date": declined_at})
+    sub = await db.track_submissions.find_one(
+        {"id": req["track_id"]}, {"_id": 0, "track_name": 1, "clerk_user_id": 1})
+    try:
+        await _email_cosign_declined(req, sub)
+    except Exception as exc:
+        logger.warning("cosign decline email failed for %s: %s", req["id"], exc)
+    await _refresh_cosign_status(req["track_id"])
+    return {"status": "declined"}
+
+
+@api_router.post("/vault/tracks/{track_id}/cosign/{request_id}/resend")
+@limiter.limit("30/minute")
+async def cosign_resend(request: Request, track_id: str, request_id: str,
+                        clerk_payload: dict = Depends(require_artist)):
+    sub = await _owned_track(track_id, clerk_payload)
+    req = await db.cosign_requests.find_one(
+        {"id": request_id, "track_id": track_id}, {"_id": 0})
+    if not req:
+        raise HTTPException(status_code=404, detail="Request not found")
+    if req["status"] != "pending":
+        raise HTTPException(status_code=409, detail="This request is already resolved.")
+    now = datetime.now(timezone.utc)
+    if max(req.get("send_count", 0) - 1, 0) >= COSIGN_MAX_RESENDS:
+        raise HTTPException(status_code=429, detail="This invite has been resent the maximum number of times.")
+    last = req.get("last_sent_at")
+    if last and (now - datetime.fromisoformat(last)) < timedelta(minutes=COSIGN_RESEND_COOLDOWN_MIN):
+        raise HTTPException(status_code=429, detail="You can resend this invite once an hour.")
+    token, token_hash = _new_cosign_token()
+    await db.cosign_requests.update_one({"id": request_id}, {"$set": {
+        "token_sha256": token_hash,
+        "token_expires_at": (now + timedelta(days=COSIGN_TOKEN_TTL_DAYS)).isoformat()}})
+    await _send_cosign_request({**req, "token_sha256": token_hash}, token, _uploader_name(sub),
+                               sub.get("track_name"), req["interests"], _cosign_uses(sub))
+    return {"status": "sent"}
+
+
+@api_router.patch("/vault/tracks/{track_id}/cosign/{request_id}")
+@limiter.limit("30/minute")
+async def cosign_edit_email(request: Request, track_id: str, request_id: str,
+                            payload: CosignEmailUpdate, clerk_payload: dict = Depends(require_artist)):
+    sub = await _owned_track(track_id, clerk_payload)
+    req = await db.cosign_requests.find_one(
+        {"id": request_id, "track_id": track_id}, {"_id": 0})
+    if not req:
+        raise HTTPException(status_code=404, detail="Request not found")
+    if req["status"] != "pending":
+        raise HTTPException(status_code=409, detail="This request is already resolved.")
+    new_email = payload.email
+    dupe = await db.cosign_requests.find_one(
+        {"track_id": track_id, "email": new_email, "id": {"$ne": request_id}}, {"_id": 0, "id": 1})
+    if dupe:
+        raise HTTPException(status_code=409, detail="Another co-owner on this track already has that email.")
+    old_email = req["email"]
+    now = datetime.now(timezone.utc)
+    token, token_hash = _new_cosign_token()
+    await db.cosign_requests.update_one({"id": request_id}, {"$set": {
+        "email": new_email, "token_sha256": token_hash,
+        "token_expires_at": (now + timedelta(days=COSIGN_TOKEN_TTL_DAYS)).isoformat()}})
+    await _update_rights_email(track_id, old_email, new_email)
+    await _send_cosign_request({**req, "email": new_email, "token_sha256": token_hash}, token,
+                               _uploader_name(sub), sub.get("track_name"),
+                               req["interests"], _cosign_uses(sub))
+    return {"status": "sent", "email": new_email}
+
+
+async def _update_rights_email(track_id: str, old_email: str, new_email: str) -> None:
+    doc = await db.track_submissions.find_one({"id": track_id}, {"_id": 0, "rights": 1})
+    rights = (doc or {}).get("rights") or {}
+    changed = False
+    for side in ("writers", "publishers", "master_owners"):
+        for p in (rights.get(side) or []):
+            if (p.get("email") or "").strip().lower() == old_email:
+                p["email"] = new_email
+                changed = True
+    if changed:
+        await db.track_submissions.update_one({"id": track_id}, {"$set": {"rights": rights}})
 
 
 # ---------------------------------------------------------------------------
@@ -3501,6 +4016,8 @@ async def create_indexes():
         await db.artist_agreements.create_index([("id", 1)], unique=True)
         await db.artist_agreements.create_index([("user_id", 1), ("signed_at", -1)])
         await db.artist_legal_profiles.create_index([("user_id", 1)], unique=True)
+        await db.cosign_requests.create_index([("token_sha256", 1)], unique=True)
+        await db.cosign_requests.create_index([("track_id", 1), ("email", 1)], unique=True)
         await sync_orders.ensure_indexes(db)
         await licenses.ensure_indexes(db)
         await subscriptions.ensure_indexes(db)

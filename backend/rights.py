@@ -9,8 +9,13 @@ from typing import List, Optional
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from sync_constants import (
-    IPI_PATTERN, MAX_PARTIES, PRO_ORGS, PUBLISHER_ROLES, TOTAL_BP, WRITER_ROLES,
+    EMAIL_MAX_LENGTH, IPI_PATTERN, MAX_PARTIES, PRO_ORGS, PUBLISHER_ROLES,
+    TOTAL_BP, WRITER_ROLES,
 )
+
+# A deliberately permissive check: one @, a dot in the domain, no spaces. We only
+# need enough to send a signing link; delivery is the real test. No new dependency.
+EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 SIDE_LABELS = {
     "writers": "Writers",
@@ -33,6 +38,17 @@ class RightsPartyIn(BaseModel):
     role: Optional[str] = None
     society: Optional[str] = None
     ipi_name_number: Optional[str] = None
+    email: Optional[str] = Field(default=None, max_length=EMAIL_MAX_LENGTH)
+
+    @field_validator("email")
+    @classmethod
+    def _email(cls, v):
+        if v in (None, ""):
+            return None
+        v = v.strip().lower()
+        if not EMAIL_PATTERN.fullmatch(v):
+            raise ValueError("Enter a valid email.")
+        return v
 
     @field_validator("legal_name")
     @classmethod
@@ -92,6 +108,7 @@ class TrackRightsIn(BaseModel):
             if self.writers or self.publishers or self.master_owners:
                 raise ValueError("Leave the splits empty when you own 100%.")
             return self
+        self_cf = self.self_legal_name.casefold()
         for side, label in SIDE_LABELS.items():
             parties = getattr(self, side)
             if not 1 <= len(parties) <= MAX_PARTIES:
@@ -107,17 +124,23 @@ class TrackRightsIn(BaseModel):
             for p in parties:
                 if p.role is not None and p.role not in ALLOWED_ROLES[side]:
                     raise ValueError(f"Invalid role for {label.lower()}.")
+                # Every rights holder who is not the uploader must have an email, so we
+                # can send them the Co-owner Consent to sign (Brief 22 C1).
+                if p.legal_name.casefold() != self_cf and not p.email:
+                    raise ValueError(f"Add an email for {p.legal_name} so they can sign.")
         return self
 
 
 def _party(p: RightsPartyIn, side: str, self_name: str) -> dict:
+    is_self = p.legal_name.casefold() == self_name.casefold()
     return {
         "legal_name": p.legal_name,
         "ipi_name_number": p.ipi_name_number,
         "society": p.society,
         "role": p.role if side != "master_owners" else None,
         "share_bp": p.share_bp,
-        "is_self": p.legal_name.casefold() == self_name.casefold(),
+        "is_self": is_self,
+        "email": None if is_self else p.email,
     }
 
 
@@ -140,14 +163,16 @@ def build_rights(rights: TrackRightsIn, *, intake, clerk_user_id: str, now_iso: 
                 "role": DEFAULT_ROLES["writers"],
                 "share_bp": TOTAL_BP,
                 "is_self": True,
+                "email": None,
             }],
             "publishers": [{
                 "legal_name": name, "ipi_name_number": None, "society": None,
                 "role": DEFAULT_ROLES["publishers"], "share_bp": TOTAL_BP, "is_self": True,
+                "email": None,
             }],
             "master_owners": [{
                 "legal_name": name, "ipi_name_number": None, "society": None,
-                "role": None, "share_bp": TOTAL_BP, "is_self": True,
+                "role": None, "share_bp": TOTAL_BP, "is_self": True, "email": None,
             }],
         }
     else:

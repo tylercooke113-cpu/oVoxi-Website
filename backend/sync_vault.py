@@ -45,6 +45,8 @@ def vault_track_view(doc: dict) -> dict:
         "sync_reasons": failed_reasons(doc) if sync_on else [],
         "on_sync_profile": bool(doc.get("on_sync_profile")) if sync_on else False,
         "delisted_by_admin": doc.get("sync_delisted_by_admin") is True,
+        "cosign_required": doc.get("cosign_required") is True,
+        "cosign_status": doc.get("cosign_status"),
     }
 
 

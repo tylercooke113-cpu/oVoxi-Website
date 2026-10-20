@@ -96,6 +96,7 @@ class FakeCollection:
     def find(self, flt=None, proj=None):
         rows = [self._project(d, proj) for d in self.docs if self._match(d, flt or {})]
         cursor = MagicMock()
+        cursor.to_list = AsyncMock(return_value=rows)
         cursor.sort.return_value.to_list = AsyncMock(return_value=rows)
         return cursor
 
@@ -106,6 +107,7 @@ def db(monkeypatch):
     fake.track_submissions = FakeCollection([track()])
     fake.consent_events = FakeCollection()
     fake.sync_profiles = FakeCollection()
+    fake.cosign_requests = FakeCollection()
     # vault consent grant now reads the artist agreement (Stage A gate); unsigned by default.
     fake.artist_agreements.find_one = AsyncMock(return_value=None)
     monkeypatch.setattr(server, "db", fake)

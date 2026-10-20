@@ -26,9 +26,11 @@ def manual(**overrides):
     body = {
         "owns_everything": False,
         "self_legal_name": "Tyler Example",
-        "writers": [party("Tyler Example", 3334, role="CA"), party("Jordan Producer", 3333),
-                    party("Sam Writer", 3333)],
-        "publishers": [party("Tyler Example", 5000), party("Beat Co Publishing LLC", 5000)],
+        "writers": [party("Tyler Example", 3334, role="CA"),
+                    party("Jordan Producer", 3333, email="jordan@example.com"),
+                    party("Sam Writer", 3333, email="sam@example.com")],
+        "publishers": [party("Tyler Example", 5000),
+                       party("Beat Co Publishing LLC", 5000, email="beatco@example.com")],
         "master_owners": [party("Tyler Example", 10000)],
         "attested": True,
     }
@@ -174,6 +176,49 @@ def test_attestation_stamped_by_server():
 
 
 # ---------------------------------------------------------------------------
+# Co-owner emails (Brief 22 C1)
+# ---------------------------------------------------------------------------
+
+def test_non_self_row_needs_email():
+    body = manual(writers=[party("Tyler Example", 5000),
+                           party("Jordan Producer", 5000)])  # no email on the co-writer
+    rejects(body, "Add an email for Jordan Producer so they can sign")
+
+
+def test_self_row_needs_no_email():
+    # Every row is the uploader; no emails required.
+    body = manual(
+        writers=[party("Tyler Example", 10000)],
+        publishers=[party("Tyler Example", 10000)],
+        master_owners=[party("Tyler Example", 10000)],
+    )
+    doc = build_rights(TrackRightsIn(**body), intake=AFFILIATED, clerk_user_id="u1", now_iso="t")
+    assert all(p["email"] is None for side in ("writers", "publishers", "master_owners")
+               for p in doc[side])
+
+
+def test_bad_email_rejected():
+    rejects(manual(master_owners=[party("Tyler Example", 5000),
+                                  party("Co Owner", 5000, email="not-an-email")]),
+            "Enter a valid email")
+
+
+def test_email_lowercased_and_stored_on_non_self_only():
+    body = manual(master_owners=[party("Tyler Example", 5000),
+                                 party("Co Owner", 5000, email="  CoOwner@Example.COM ")])
+    doc = build_rights(TrackRightsIn(**body), intake=AFFILIATED, clerk_user_id="u1", now_iso="t")
+    owners = {p["legal_name"]: p for p in doc["master_owners"]}
+    assert owners["Tyler Example"]["email"] is None
+    assert owners["Co Owner"]["email"] == "coowner@example.com"
+
+
+def test_owns_everything_needs_no_email():
+    body = {"owns_everything": True, "self_legal_name": "Tyler Example", "attested": True}
+    doc = build_rights(TrackRightsIn(**body), intake=AFFILIATED, clerk_user_id="u1", now_iso="t")
+    assert doc["writers"][0]["email"] is None
+
+
+# ---------------------------------------------------------------------------
 # Presign wiring
 # ---------------------------------------------------------------------------
 
@@ -190,6 +235,23 @@ def test_presign_stores_manual_rights(client, fake_db):
     assert [p["share_bp"] for p in doc["rights"]["writers"]] == [3334, 3333, 3333]
     assert doc["rights"]["attested_by_clerk_user_id"] == "user_test"
     assert doc["rights"]["attested_at"]
+
+
+def test_presign_sets_cosign_required_with_coowners(client, fake_db):
+    resp = post(client, sync_upload())  # manual() lists co-writers/publisher
+    assert resp.status_code == 200, resp.text
+    doc = inserted_doc(fake_db)
+    assert doc["cosign_required"] is True
+    assert doc["cosign_status"] == "pending"
+
+
+def test_presign_not_required_when_self_only(client, fake_db):
+    body = sync_upload(rights={"owns_everything": True, "self_legal_name": "Test Person", "attested": True})
+    resp = post(client, body)
+    assert resp.status_code == 200, resp.text
+    doc = inserted_doc(fake_db)
+    assert doc["cosign_required"] is False
+    assert doc["cosign_status"] == "not_required"
 
 
 def test_presign_stores_expanded_shortcut(client, fake_db):

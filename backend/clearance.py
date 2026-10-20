@@ -69,6 +69,19 @@ def check_pro(doc: dict) -> dict:
     return _fail("pro")
 
 
+def check_cosign(doc: dict) -> dict:
+    # Grandfather rule: tracks uploaded before co-owner sign-off shipped have no
+    # cosign_required field, so they pass untouched.
+    if doc.get("cosign_required") is not True:
+        return _ok()
+    status = doc.get("cosign_status")
+    if status == "complete":
+        return _ok()
+    if status == "declined":
+        return _fail("cosign_declined")
+    return _fail("cosign_pending")
+
+
 def check_metadata(doc: dict) -> dict:
     meta = doc.get("metadata") or {}
     missing = []
@@ -101,6 +114,7 @@ CHECKS = (
     ("samples", check_samples),
     ("content_id", check_content_id),
     ("pro", check_pro),
+    ("cosign", check_cosign),
     ("metadata", check_metadata),
 )
 

@@ -36,6 +36,23 @@ TOTAL_BP = 10000  # basis points, 100.00%
 WRITER_ROLES = ("CA", "C", "A", "AR", "AD", "TR")
 PUBLISHER_ROLES = ("E", "AM", "SE", "PA")
 
+# Human labels for the role codes above. Must stay in step with the label text in
+# frontend/src/sync/constants.js. Used to render co-owner interest lines (cosign.py).
+WRITER_ROLE_LABELS = {
+    "CA": "Composer & lyricist", "C": "Composer", "A": "Lyricist",
+    "AR": "Arranger", "AD": "Adaptor", "TR": "Translator",
+}
+PUBLISHER_ROLE_LABELS = {
+    "E": "Original publisher", "AM": "Administrator",
+    "SE": "Sub-publisher", "PA": "Income participant",
+}
+
+# Co-owner Consent (Brief 22, Part C).
+COSIGN_TOKEN_TTL_DAYS = 30
+COSIGN_MAX_RESENDS = 5          # total times one request's link may be resent
+COSIGN_RESEND_COOLDOWN_MIN = 60  # minimum minutes between resends of one request
+EMAIL_MAX_LENGTH = 254
+
 # Detected metadata (PRD-03 4.4). Must match infra/modal/audio_analysis.py.
 PITCHES = ("C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B")
 MUSICAL_KEYS = tuple(f"{p} {m}" for m in ("major", "minor") for p in PITCHES)

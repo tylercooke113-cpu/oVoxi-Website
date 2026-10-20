@@ -1,0 +1,91 @@
+# Co-owner Consent and License
+
+THIS CO-OWNER CONSENT AND LICENSE (the "Consent") is dated the {{consent_date}} (the "Effective Date").
+
+BETWEEN:
+
+{{coowner_party}}, email {{coowner_email}} (the "Co-owner"),
+
+AND
+
+OVOXI, Inc., a Delaware corporation, of 6 Catherine Court, Milford CT 06460 (the "Licensee")
+
+(individually the "Party" and collectively the "Parties").
+
+## Background
+
+A. {{uploader_name}} (the "Uploader") uploaded the work identified in Section 1 to the Licensee's website and services at ovoxi.net (the "Platform") and listed the Co-owner as a holder of rights in it.
+
+B. The Uploader has accepted the Licensee's AI Training and Sync Licensing Agreement, version {{artist_agreement_version}} (the "Artist Agreement"). The full text of the Artist Agreement was made available to the Co-owner with this Consent.
+
+C. The Licensee does not license a work until every rights holder listed for it on the Platform has given their consent.
+
+IN CONSIDERATION OF the Licensee's payment of the Co-owner's share of the Revenue Share and the mutual covenants in this Consent, the Parties agree as follows:
+
+## 1. The Work and the Co-owner's Interest
+
+1.1 "Work" means the musical composition and sound recording titled "{{work_title}}", credited to {{work_artist}}, Platform ID {{work_id}}, together with its audio files, Stems and metadata.
+
+1.2 The Platform records the Co-owner's interest in the Work as follows (the "Interest"):
+
+{{interests}}
+
+1.3 Capitalized terms used but not defined in this Consent have the meanings given in the Artist Agreement.
+
+## 2. Grant of License
+
+2.1 The Co-owner grants to the Licensee, for the Co-owner's Interest in the Work, the License described in Section 3 of the Artist Agreement, on the terms of the Artist Agreement, as if the Co-owner were the Licensor and the Work were its only Licensed Work, with the changes set out in Section 4 of this Consent. The License is exclusive for the AI Training Field of Use and non-exclusive for the Sync Field of Use, and applies to each field of use only while that use is opted in for the Work on the Platform.
+
+2.2 The Co-owner authorizes the Uploader to select and change the Opted-In Uses for the Work on the Platform, and to make or withdraw the elections described in Sections 3.2 and 3.4 of the Artist Agreement for the Work, and agrees to be bound by those selections and elections as they are recorded on the Platform. The Licensee shall give the Co-owner the notice described in Section 3.4(c) of the Artist Agreement for any Exclusive Buyout of the Work.
+
+2.3 All rights not expressly granted are reserved to the Co-owner.
+
+## 3. Revenue Share
+
+3.1 The Licensee will pay the Co-owner the Co-owner's share of the Revenue Share attributable to the Work, calculated from the ownership splits recorded for the Work on the Platform, in the same way as for every other rights holder of the Work. For the purposes of Section 7.4 of the Artist Agreement, the Co-owner is a co-owner registered on the Platform from the Effective Date.
+
+3.2 Before making the first payment, the Licensee will contact the Co-owner at the email address above to collect the tax form required by Section 8.4 of the Artist Agreement and the Co-owner's payment details. Amounts owed to the Co-owner accrue until those details are received and are then paid under Section 8.1 of the Artist Agreement.
+
+3.3 Section 8 of the Artist Agreement applies to payments to the Co-owner, except that statements are delivered to the Co-owner by email.
+
+## 4. How the Artist Agreement Applies to the Co-owner
+
+4.1 "Licensed Works" means only the Work.
+
+4.2 In place of Section 5 of the Artist Agreement, the Licensee may use the Co-owner's name only to credit and identify the Co-owner as a rights holder of the Work, including in the Work's metadata and in deliveries to Sublicensees. The Licensee shall not use the Co-owner's name, image or likeness for any other purpose without the Co-owner's prior written consent.
+
+4.3 The term of this Consent begins on the Effective Date and continues for an initial term of 12 months, then renews automatically from month to month until either Party gives the other sixty (60) days' written notice to terminate it. Notice may be given at any time, but termination under this Section 4.3 takes effect no earlier than the end of the initial term. Sections 12.2, 12.3 and 12.5 of the Artist Agreement also apply. The limit on withdrawals in Section 12.4 of the Artist Agreement does not apply to the Co-owner.
+
+4.4 Because the Licensee licenses a work only while every listed rights holder has consented, termination of this Consent by either Party is a Removal of the Work, and Section 13 of the Artist Agreement applies to it.
+
+4.5 If the Artist Agreement ends, or the Uploader withdraws the Work, this Consent ends for the Work at the same time, and Section 13 of the Artist Agreement applies.
+
+4.6 Notices to the Co-owner are sent to the email address above, or to a later address the Co-owner gives the Licensee in writing. Notices to the Licensee are sent to tyler@ovoxi.net.
+
+## 5. Representations and Warranties
+
+5.1 The Co-owner represents and warrants that:
+
+- (a) the Co-owner owns or controls the Interest and has the right to grant this Consent for it;
+
+- (b) the Interest, as recorded in Section 1.2, is accurate;
+
+- (c) the Co-owner has not granted, and will not grant, rights in the Interest to any third party that conflict with the License, including exclusive rights held by a record label, publisher, distributor or music library; and
+
+- (d) the representations and warranties in Section 9.1 of the Artist Agreement are true as they relate to the Co-owner's Interest and the Co-owner's contribution to the Work.
+
+5.2 The Co-owner represents that it is at least eighteen (18) years of age and has reached the age of majority where it lives. If the Co-owner is a company, the individual signing represents that they are authorized to sign this Consent on its behalf.
+
+5.3 The Co-owner shall promptly notify the Licensee of any claim concerning the Work, or any fact that makes a representation in Section 5.1 untrue.
+
+## 6. General
+
+6.1 Sections 6, 10, 11, 13, 14, 15, 16 and 17 of the Artist Agreement apply to this Consent, reading "Agreement" as this Consent together with the provisions of the Artist Agreement it incorporates, "Licensor" as the Co-owner, and "Licensed Works" as the Work.
+
+6.2 This Consent may be executed electronically. Electronic and click-to-accept signatures are binding and are considered to be original signatures, in accordance with the federal Electronic Signatures in Global and National Commerce Act and the Connecticut Uniform Electronic Transactions Act. The Licensee will keep a record of the acceptance, including the date and time, the email address the signing link was sent to, the IP address, the version of this Consent and a fingerprint of its text.
+
+6.3 This Consent, together with the provisions of the Artist Agreement it incorporates, is the entire agreement between the Parties about the Work. If this Consent conflicts with the Artist Agreement, this Consent prevails.
+
+The Parties have executed this Co-owner Consent and License on the {{consent_date}}.
+
+{{SIGNATURE_BLOCK}}

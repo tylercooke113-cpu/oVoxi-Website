@@ -56,12 +56,46 @@ def test_all_checks_pass_is_cleared():
     r = evaluate(cleared_doc())
     assert r["sync_status"] == "cleared"
     assert all(c["result"] == "pass" for c in r["checks"].values())
-    assert set(r["checks"]) == {"splits", "fingerprint", "samples", "content_id", "pro", "metadata"}
+    assert set(r["checks"]) == {"splits", "fingerprint", "samples", "content_id", "pro", "cosign", "metadata"}
 
 
 def test_ai_only_is_not_evaluated():
     assert evaluate(cleared_doc(consent={"ai_training": True, "sync": False})) is None
     assert evaluate({"id": SID}) is None
+
+
+# ---------------------------------------------------------------------------
+# Co-owner sign-off clearance (Brief 22 C6)
+# ---------------------------------------------------------------------------
+
+def test_cosign_grandfathered_doc_passes():
+    # No cosign_required field: a track uploaded before sign-off shipped.
+    r = evaluate(cleared_doc())
+    assert r["checks"]["cosign"]["result"] == "pass"
+    assert r["sync_status"] == "cleared"
+
+
+def test_cosign_not_required_passes():
+    r = evaluate(cleared_doc(cosign_required=False))
+    assert r["checks"]["cosign"]["result"] == "pass"
+
+
+def test_cosign_complete_passes():
+    r = evaluate(cleared_doc(cosign_required=True, cosign_status="complete"))
+    assert r["checks"]["cosign"]["result"] == "pass"
+    assert r["sync_status"] == "cleared"
+
+
+def test_cosign_pending_fails():
+    r = evaluate(cleared_doc(cosign_required=True, cosign_status="pending"))
+    assert r["checks"]["cosign"] == {"result": "fail", "reason": "cosign_pending"}
+    assert r["sync_status"] == "needs_docs"
+
+
+def test_cosign_declined_fails():
+    r = evaluate(cleared_doc(cosign_required=True, cosign_status="declined"))
+    assert r["checks"]["cosign"] == {"result": "fail", "reason": "cosign_declined"}
+    assert r["sync_status"] == "needs_docs"
 
 
 def test_conflict_wins_over_everything():
