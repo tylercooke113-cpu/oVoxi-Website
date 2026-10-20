@@ -298,11 +298,11 @@ const RightsSection = ({ value, onChange, disabled }) => {
                       className={FIELD_CLASS}
                     />
                   </div>
-                  <div className="grid grid-cols-[1fr_96px] gap-2">
+                  <div className="grid grid-cols-[minmax(0,1fr)_96px] gap-2">
                     <div className="space-y-1">
                       <span className="text-[11px] text-slate-500">Role</span>
                       <Select value={w.role} onValueChange={(v) => setWriter(i, { role: v })} disabled={disabled}>
-                        <SelectTrigger className="border-white/10 bg-ink text-white focus:ring-electric">
+                        <SelectTrigger className="min-w-0 border-white/10 bg-ink text-white focus:ring-electric [&>span]:truncate">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent className="border-white/10 bg-ink-2 text-white">
@@ -452,7 +452,7 @@ const RightsSection = ({ value, onChange, disabled }) => {
               const ownerSelf = isSelf(o, selfCf);
               return (
                 <div key={i} className="space-y-3 rounded-xl border border-white/10 p-3">
-                  <div className="grid grid-cols-[1fr_96px_36px] gap-2">
+                  <div className="grid grid-cols-[minmax(0,1fr)_96px_36px] gap-2">
                     <div className="space-y-1">
                       <span className="text-[11px] text-slate-500">Legal name</span>
                       <Input
