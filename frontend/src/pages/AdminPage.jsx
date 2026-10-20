@@ -34,6 +34,19 @@ const StatusBadge = ({ status }) => {
   );
 };
 
+// Brief 22 C6: co-owner sign-off state. Tyler must not deliver a Pending or Declined
+// track to any AI dataset.
+const CosignBadge = ({ status, required }) => {
+  if (!required) return <span className="text-xs text-slate-600">Not required</span>;
+  const map = {
+    complete: ['text-green-400', 'Complete'],
+    declined: ['text-red-400', 'Declined'],
+    pending:  ['text-amber-400', 'Pending'],
+  };
+  const [color, label] = map[status] || map.pending;
+  return <span className={`text-xs font-medium ${color}`}>{label}</span>;
+};
+
 const AdminPage = () => {
   const { isLoaded, isSignedIn, getToken } = useAuth();
   const [tab, setTab] = useState('submissions');
@@ -180,7 +193,7 @@ const AdminPage = () => {
                     <table className="w-full text-left text-sm">
                       <thead>
                         <tr className="border-b border-white/10 bg-white/[0.02]">
-                          {['Artist', 'Track', 'Genre', 'Date', 'Status', 'Mastered', 'Stems'].map((h) => (
+                          {['Artist', 'Track', 'Genre', 'Date', 'Status', 'Co-sign', 'Mastered', 'Stems'].map((h) => (
                             <th
                               key={h}
                               className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-400 whitespace-nowrap"
@@ -221,6 +234,9 @@ const AdminPage = () => {
                                   {s.error}
                                 </p>
                               )}
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              <CosignBadge status={s.cosign_status} required={s.cosign_required} />
                             </td>
                             <td className="px-4 py-3">
                               {s.mastered_url ? (

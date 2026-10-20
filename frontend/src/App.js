@@ -15,6 +15,7 @@ import VaultPage from './pages/VaultPage';
 import AppealPage from './pages/AppealPage';
 import PrivacyPage from './pages/PrivacyPage';
 import TermsPage from './pages/TermsPage';
+import CosignPage from './pages/CosignPage';
 import ArtistPage from './sync/ArtistPage';
 import TrackSharePage from './sync/TrackSharePage';
 import LibraryPage from './sync/LibraryPage';
@@ -68,6 +69,7 @@ function AppContent() {
           <Route path='/appeal/:submissionId' element={<AppealPage />} />
           <Route path='/privacy' element={<PrivacyPage />} />
           <Route path='/terms' element={<TermsPage />} />
+          <Route path='/cosign/:token' element={<CosignPage />} />
           {/* PRD-03 phase 5: the library is gated server-side by SYNC_LIBRARY_ENABLED (admins always). */}
           <Route path='/sync' element={<LibraryPage />} />
           <Route path='/pricing' element={<PricingPage />} />

@@ -44,6 +44,10 @@ export const api = {
     (await axios.patch(`${API}/vault/tracks/${id}/metadata`, body, await authed(getToken))).data,
   changeConsent: async (getToken, id, body) =>
     (await axios.post(`${API}/vault/tracks/${id}/consent`, body, await authed(getToken))).data,
+  cosignResend: async (getToken, trackId, requestId) =>
+    (await axios.post(`${API}/vault/tracks/${trackId}/cosign/${requestId}/resend`, null, await authed(getToken))).data,
+  cosignEditEmail: async (getToken, trackId, requestId, email) =>
+    (await axios.patch(`${API}/vault/tracks/${trackId}/cosign/${requestId}`, { email }, await authed(getToken))).data,
   getProfile: async (getToken) =>
     (await axios.get(`${API}/sync/profile`, await authed(getToken))).data,
   putProfile: async (getToken, body) =>

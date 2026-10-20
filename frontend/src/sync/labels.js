@@ -11,6 +11,8 @@ const SIMPLE = {
   samples: 'Confirm your samples answer',
   content_id: 'Registered in YouTube Content ID (not eligible for sync)',
   pro: 'Add your PRO and IPI, or mark not affiliated',
+  cosign_pending: 'Waiting for co-owners to sign',
+  cosign_declined: 'A co-owner declined to sign',
   not_scanned: 'Still processing',
 };
 

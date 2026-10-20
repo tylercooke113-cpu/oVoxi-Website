@@ -76,6 +76,107 @@ const ValueEditor = ({ field, initial, busy, onSave, onCancel }) => {
   );
 };
 
+const COSIGN_STATUS = {
+  signed: ['Signed', 'text-green-400'],
+  declined: ['Declined', 'text-red-400'],
+  pending: ['Waiting', 'text-amber-400'],
+};
+
+const fmtDate = (iso) => {
+  if (!iso) return '';
+  try { return new Date(iso).toLocaleDateString(); } catch { return ''; }
+};
+
+// Brief 22 C6: co-owner signing status in the Vault, with resend and edit-email.
+const CosignBlock = ({ track, getToken, onUpdated }) => {
+  const [busy, setBusy] = useState(null);     // request_id currently acting
+  const [editing, setEditing] = useState(null); // request_id being edited
+  const [draft, setDraft] = useState('');
+  const rows = track.cosign || [];
+
+  const refresh = (patch) => onUpdated({ ...track, ...patch });
+
+  const resend = async (req) => {
+    setBusy(req.request_id);
+    try {
+      await api.cosignResend(getToken, track.id, req.request_id);
+      toast.success('Invite resent.');
+      refresh({ cosign: rows.map((x) => (x.request_id === req.request_id
+        ? { ...x, sent_at: new Date().toISOString() } : x)) });
+    } catch (err) { toast.error(errorMessage(err)); } finally { setBusy(null); }
+  };
+
+  const saveEmail = async (req) => {
+    const email = draft.trim();
+    setBusy(req.request_id);
+    try {
+      await api.cosignEditEmail(getToken, track.id, req.request_id, email);
+      toast.success('Email updated and invite resent.');
+      refresh({ cosign: rows.map((x) => (x.request_id === req.request_id
+        ? { ...x, email, sent_at: new Date().toISOString() } : x)) });
+      setEditing(null);
+    } catch (err) { toast.error(errorMessage(err)); } finally { setBusy(null); }
+  };
+
+  if (!track.cosign_required) return null;
+
+  return (
+    <div className="md:col-span-3 border-t border-white/10 pt-4" data-testid={`vault-cosign-${track.id}`}>
+      <p className="mb-2 text-[11px] uppercase tracking-[0.14em] text-slate-500">Co-owner signatures</p>
+      {rows.length === 0 ? (
+        <p className="text-xs text-slate-500">No co-owner invites yet.</p>
+      ) : (
+        <ul className="space-y-2">
+          {rows.map((req) => {
+            const [label, color] = COSIGN_STATUS[req.status] || COSIGN_STATUS.pending;
+            const date = req.signed_at || req.declined_at || req.sent_at;
+            const pending = req.status === 'pending';
+            const acting = busy === req.request_id;
+            return (
+              <li key={req.request_id} className="rounded-lg border border-white/10 bg-ink p-3 text-sm">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="truncate text-white">{(req.legal_names || []).join(', ') || req.email}</p>
+                    <p className="truncate text-xs text-slate-500">{req.email}</p>
+                  </div>
+                  <span className={`text-xs font-medium ${color}`}>
+                    ● {label}{date ? ` · ${fmtDate(date)}` : ''}
+                  </span>
+                </div>
+                {pending && !req.sent_at && (
+                  <p className="mt-1 text-xs text-amber-400">Not sent</p>
+                )}
+                {pending && editing === req.request_id ? (
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <Input
+                      type="email"
+                      aria-label="Co-owner email"
+                      value={draft}
+                      onChange={(e) => setDraft(e.target.value)}
+                      className="h-8 w-56 border-white/10 bg-ink text-white"
+                    />
+                    <SmallBtn primary disabled={acting || !draft.trim()} onClick={() => saveEmail(req)}>Save</SmallBtn>
+                    <SmallBtn disabled={acting} onClick={() => setEditing(null)}>Cancel</SmallBtn>
+                  </div>
+                ) : pending && (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <SmallBtn disabled={acting} onClick={() => resend(req)}>
+                      {acting ? <Loader2 size={12} className="animate-spin" /> : 'Resend'}
+                    </SmallBtn>
+                    <SmallBtn disabled={acting} onClick={() => { setDraft(req.email || ''); setEditing(req.request_id); }}>
+                      Edit email
+                    </SmallBtn>
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+};
+
 const SyncStatus = ({ track }) => {
   if (!track.consent.sync) {
     return (
@@ -264,6 +365,8 @@ const TrackSyncPanel = ({ track, getToken, onUpdated, status }) => {
         <p className="mb-2 text-[11px] uppercase tracking-[0.14em] text-slate-500">Sync library</p>
         <SyncStatus track={track} />
       </div>
+
+      <CosignBlock track={track} getToken={getToken} onUpdated={onUpdated} />
 
       <Modal open={!!confirm} onClose={() => !busy && setConfirm(null)} title={modalTitle}>
         {addingSync ? (
