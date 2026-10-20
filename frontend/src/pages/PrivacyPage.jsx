@@ -3,7 +3,15 @@ import { PageHero } from '../components/PageHero';
 import { Reveal } from '../components/Reveal';
 import { BRAND } from '../content';
 
-const LAST_UPDATED = 'August 21, 2026';
+const LAST_UPDATED = 'October 20, 2026';
+
+const UL = 'list-disc space-y-1.5 pl-6 marker:text-slate-600';
+
+const MailLink = () => (
+  <a href={`mailto:${BRAND.email}`} className="text-cyan hover:underline">
+    {BRAND.email}
+  </a>
+);
 
 const SECTIONS = [
   {
@@ -11,15 +19,26 @@ const SECTIONS = [
     body: (
       <>
         <p>
-          {BRAND.name} ("{BRAND.name}", "we", "us", or "our") operates {BRAND.domain} and related
-          services that acquire training and licensing rights to artist music catalogs and connect
-          those catalogs with AI platforms and enterprise licensees. This Privacy Policy explains
-          what information we collect, how we use it, and the choices you have.
+          {BRAND.name} ("{BRAND.name}", "we", "us" or "our") is OVOXI, Inc., a Delaware corporation,
+          of 6 Catherine Court, Milford CT 06460. We operate {BRAND.domain}.
         </p>
         <p>
-          This policy applies to visitors of our website, artists who submit or upload catalog
-          material, and AI companies or enterprise buyers who inquire about licensing.
+          Through the site, artists license their music to us for AI training and for sync, and we
+          license that music to AI companies and to buyers who use it in videos, ads, films, games
+          and other media.
         </p>
+        <p>
+          This policy explains what personal information we collect, why, who we share it with, and
+          the choices you have. It covers:
+        </p>
+        <ul className={UL}>
+          <li>visitors to our site;</li>
+          <li>artists who apply, sign our agreements and upload music;</li>
+          <li>co-writers, publishers and other rights holders whom an artist lists on a song;</li>
+          <li>buyers who create an account, license music or subscribe; and</li>
+          <li>anyone who contacts us.</li>
+        </ul>
+        <p>We are the controller of the personal information described in this policy.</p>
       </>
     ),
   },
@@ -27,25 +46,85 @@ const SECTIONS = [
     heading: '2. Information We Collect',
     body: (
       <>
-        <p>We collect information in the following ways:</p>
         <p>
-          <strong className="text-white">Information you provide directly.</strong> This includes
-          your name, email address, company, and message content when you submit our contact form;
-          identity and payment details (such as name, address, and banking or payout information)
-          when you apply to our catalog acquisition program; and the audio files, metadata, and
-          chain-of-title documentation you upload when submitting tracks.
+          <strong className="text-white">Account information.</strong> When you create an account,
+          our sign-in provider collects your name, email address and password, or the details from
+          the Google account you sign in with. We do not see or store your password.
+        </p>
+        <p>
+          <strong className="text-white">Artist information.</strong> When you apply, sign the
+          Artist Agreement and upload music, we collect:
+        </p>
+        <ul className={UL}>
+          <li>your artist name, legal name, postal address and country;</li>
+          <li>whether you sign as an individual or for a company;</li>
+          <li>
+            the audio files you upload, together with track details such as title, genre, mood,
+            vocals, BPM and key;
+          </li>
+          <li>your performing rights organization and IPI number;</li>
+          <li>your distributor and Content ID status;</li>
+          <li>what you tell us about samples;</li>
+          <li>the ownership splits for each song;</li>
+          <li>your profile photo and biography, if you add them; and</li>
+          <li>for payments, your tax form and payment details.</li>
+        </ul>
+        <p>
+          <strong className="text-white">Rights holder information.</strong> When an artist lists
+          co-writers, publishers or master owners on a song, the artist gives us each person's or
+          company's legal name, role, ownership share and email address, and may give their
+          performing rights organization and IPI number. When a rights holder signs or declines our
+          Co-owner Consent, we also collect the name they type, their title if they sign for a
+          company, and the record described under "Signature records" below.
+        </p>
+        <p>
+          <strong className="text-white">Buyer information.</strong> When you license music or
+          subscribe, we collect:
+        </p>
+        <ul className={UL}>
+          <li>your name and email address;</li>
+          <li>your company, if you give one;</li>
+          <li>the projects you register a license for; and</li>
+          <li>your billing country and address where needed for tax.</li>
+        </ul>
+        <p>
+          Payments are processed by Stripe. Stripe collects your card or other payment details
+          directly, and we do not receive or store your full card number. We receive limited payment
+          information from Stripe, such as the payment status and your billing country.
+        </p>
+        <p>
+          <strong className="text-white">Signature records.</strong> When you sign the Artist
+          Agreement or a Co-owner Consent, or accept our license terms, we keep a record of what you
+          signed: the date and time, your account or the email address the signing link was sent to,
+          your IP address, the document version, and a fingerprint of the document text. We also
+          keep a PDF copy of each signed agreement.
+        </p>
+        <p>
+          <strong className="text-white">Messages and requests.</strong> When you use our contact or
+          quote forms or email us, we collect your name, email address, company and what you write to
+          us.
         </p>
         <p>
           <strong className="text-white">Information collected automatically.</strong> When you use
-          our site we may collect standard technical data such as IP address, browser type, device
-          information, pages visited, and timestamps, typically through server logs and analytics
-          tooling.
+          our site we collect technical information such as:
+        </p>
+        <ul className={UL}>
+          <li>your IP address and approximate location;</li>
+          <li>your browser and device type;</li>
+          <li>the pages you visit, and the date and time of each visit; and</li>
+          <li>the actions you take on the site.</li>
+        </ul>
+        <p>
+          We use this information to run, secure and improve the site. We use PostHog for product
+          analytics and session replay. Session replay records how you move through and interact
+          with our pages so that we can find and fix problems. We configure it to mask what you type
+          into form fields.
         </p>
         <p>
-          <strong className="text-white">Information from third parties.</strong> Where relevant to
-          verifying ownership and clearing a catalog for licensing, we may receive information from
-          performing rights organizations, distributors, or rights-verification services (for
-          example, ACRCloud) to confirm chain of title and detect existing licenses or conflicts.
+          <strong className="text-white">Information from other sources.</strong> To confirm who
+          owns a song and to detect existing claims, we may check uploaded audio with ACRCloud's
+          audio fingerprinting service. We may also receive information from performing rights
+          organizations, distributors and other rights holders.
         </p>
       </>
     ),
@@ -54,67 +133,122 @@ const SECTIONS = [
     heading: '3. How We Use Information',
     body: (
       <>
-        <p>We use the information we collect to:</p>
+        <p>We use personal information to:</p>
+        <ul className={UL}>
+          <li>create and secure your account;</li>
+          <li>
+            review artist applications and process uploads, including mastering, separating songs
+            into stems, and checking ownership;
+          </li>
+          <li>
+            prepare, sign and keep records of the Artist Agreement, Co-owner Consents and licenses;
+          </li>
+          <li>
+            email rights holders whom an artist has listed, to ask for their consent to license the
+            song;
+          </li>
+          <li>list cleared music in our catalog with credit to the artist and rights holders;</li>
+          <li>license music to buyers and AI companies, and issue license certificates;</li>
+          <li>
+            process payments and subscriptions, and calculate, report and pay revenue shares;
+          </li>
+          <li>
+            send emails about your account, uploads, agreements, licenses, payments and
+            subscription; we do not send marketing emails without your permission;
+          </li>
+          <li>answer your messages and quote requests;</li>
+          <li>prevent fraud and abuse, enforce our agreements, and keep the site secure; and</li>
+          <li>meet our legal, tax and accounting obligations.</li>
+        </ul>
+      </>
+    ),
+  },
+  {
+    heading: '4. Music, Splits and AI Training',
+    body: (
+      <>
         <p>
-          Evaluate and process artist catalog submissions, including mastering, stem separation,
-          and chain-of-title verification; administer rights-grant agreements and calculate and pay
-          mechanical royalty or licensing-revenue splits owed to artists; respond to inquiries from
-          artists, AI companies, and enterprise licensing buyers; operate, secure, and improve our
-          website and internal tools; and comply with legal, tax, and accounting obligations tied to
-          licensing and royalty administration.
+          We use the music an artist uploads only within the rights granted in the signed Artist
+          Agreement and any Co-owner Consents for that song. We license a song for AI training or
+          for sync only when the artist has opted it into that use.
         </p>
         <p>
-          We do not sell personal information to third parties for their own independent marketing
-          purposes.
+          For songs uploaded from October 20, 2026, we license a song that has more than one rights
+          holder only after every rights holder the artist listed has signed a Co-owner Consent.
+        </p>
+        <p>
+          We keep records linking each license to the songs it covers, so that revenue shares can be
+          calculated, paid and audited. We do not use your personal information, beyond the credits
+          attached to your music, to train AI models.
         </p>
       </>
     ),
   },
   {
-    heading: '4. Music, Catalog Data, and AI Training Use',
+    heading: '5. How We Share Information',
     body: (
       <>
         <p>
-          When an artist submits a catalog to {BRAND.name}, the audio recordings, associated
-          metadata, and any chain-of-title documentation are used strictly in accordance with the
-          terms of that artist's signed rights-grant agreement. Any licensing of a track to an AI
-          platform for model training, or to an enterprise buyer for other licensed use, occurs only
-          under the scope of rights the artist has granted, and any associated licensing revenue is
-          split with the artist as set out in that agreement and in our Terms of Service.
+          We do not sell your personal information. We do not share it for targeted advertising.
         </p>
         <p>
-          We maintain records tying each licensed generation or use back to the underlying track so
-          that royalty and revenue-split payouts can be calculated and audited.
+          <strong className="text-white">Service providers.</strong> We share information with
+          providers who process it for us under contract:
+        </p>
+        <ul className={UL}>
+          <li>Clerk (sign-in and accounts);</li>
+          <li>Stripe (payments, subscriptions and tax);</li>
+          <li>Resend (email delivery);</li>
+          <li>Cloudflare (file storage);</li>
+          <li>MongoDB Atlas (database);</li>
+          <li>Railway and Vercel (hosting);</li>
+          <li>Modal (audio processing);</li>
+          <li>ACRCloud (audio fingerprinting); and</li>
+          <li>PostHog (analytics and session replay).</li>
+        </ul>
+        <p>
+          <strong className="text-white">Buyers and AI companies.</strong> We share the music, its
+          metadata and the credits for each song with the buyers and AI companies who license it.
+          Buyers can see the artist credit on their license certificate. Anyone can check whether a
+          license is valid on our verification page.
+        </p>
+        <p>
+          <strong className="text-white">Rights holders on the same song.</strong> The artist who
+          uploads a song sees the names, shares and signing status of the rights holders they
+          listed. A rights holder who receives a signing link sees the song, the uploader's name and
+          their own share.
+        </p>
+        <p>
+          <strong className="text-white">Professional advisers and authorities.</strong> We share
+          information with our accountants, lawyers and auditors. We also share it with authorities
+          when the law requires it, or when needed to protect our rights or the safety of others.
+        </p>
+        <p>
+          <strong className="text-white">Business transfers.</strong> If we are involved in a
+          merger, financing, acquisition or sale of assets, information may be transferred as part of
+          that deal. It stays subject to this policy.
         </p>
       </>
     ),
   },
   {
-    heading: '5. Sharing of Information',
+    heading: '6. How Long We Keep Information',
     body: (
       <>
-        <p>We may share information with:</p>
+        <p>We keep account information while your account is open.</p>
         <p>
-          Service providers who help us operate the business, such as hosting, payment processing,
-          email delivery, and audio-fingerprinting or rights-verification vendors, under obligations
-          to protect that data; AI platforms and enterprise licensees, limited to what is necessary
-          to license and attribute use of a specific track under an active agreement; professional
-          advisors such as our accountants and legal counsel; and regulators or authorities where
-          required by law, or in connection with a merger, financing, or sale of the business.
+          We keep signed agreements, signature records, licenses, payment records and the music
+          records tied to them while the agreement or license is in force, and afterward for as long
+          as we need them for legal, tax and accounting purposes or to resolve disputes. Licenses
+          granted to buyers can continue after an artist leaves, so the records behind them are kept
+          for the life of those licenses.
         </p>
-      </>
-    ),
-  },
-  {
-    heading: '6. Data Retention',
-    body: (
-      <>
         <p>
-          We retain personal information and catalog records for as long as needed to administer
-          active rights-grant agreements and pay royalties, and thereafter as required to satisfy
-          legal, tax, and accounting obligations or to resolve disputes. Where an artist's
-          application is not accepted into the catalog, we retain submitted materials only as long
-          as necessary to process that decision, unless the artist asks us to delete it sooner.
+          If an application is not accepted, or an upload was never licensed, we will delete the
+          audio when you ask us to, unless we need it for one of those purposes.
+        </p>
+        <p>
+          Analytics and session replay data is kept for the period set in PostHog and then deleted.
         </p>
       </>
     ),
@@ -123,59 +257,111 @@ const SECTIONS = [
     heading: '7. Your Choices and Rights',
     body: (
       <>
+        <p>Depending on where you live, you may have the right to:</p>
+        <ul className={UL}>
+          <li>know what personal information we hold about you and get a copy of it;</li>
+          <li>correct it;</li>
+          <li>delete it;</li>
+          <li>object to or limit how we use it; and</li>
+          <li>withdraw a consent you gave.</li>
+        </ul>
         <p>
-          Depending on where you live, you may have rights to access, correct, delete, or receive a
-          copy of the personal information we hold about you, and to object to or restrict certain
-          processing. You can exercise these rights, or ask any question about this policy, by
-          emailing{' '}
-          <a href={`mailto:${BRAND.email}`} className="text-cyan hover:underline">
-            {BRAND.email}
-          </a>
-          . Because catalog and royalty records are also part of a binding rights-grant agreement,
-          some information cannot be deleted while that agreement remains active without affecting
-          our ability to pay you correctly.
+          California residents have the right to know, delete and correct, and to not be treated
+          differently for using these rights. Residents of the European Economic Area and the United
+          Kingdom have the rights set out in the GDPR, including the right to complain to their local
+          data protection authority.
+        </p>
+        <p>
+          To make a request, email <MailLink />. We will verify the request before acting on it,
+          usually by confirming it comes from the email address on your account. You may use an
+          authorized agent where the law allows.
+        </p>
+        <p>
+          Some information cannot be deleted while an agreement or license is in force. This includes
+          signature records and the credits and splits for licensed music. Deleting it would stop us
+          from honoring the license or paying the people owed. We will tell you if this applies to
+          your request.
+        </p>
+        <p>
+          You can unsubscribe from any non-essential email using the link in it. You can also block
+          or delete cookies in your browser settings, though parts of the site may not work without
+          them.
         </p>
       </>
     ),
   },
   {
-    heading: '8. Security',
+    heading: '8. Legal Bases (EEA and UK)',
+    body: (
+      <>
+        <p>Where the GDPR applies, we rely on these legal bases:</p>
+        <ul className={UL}>
+          <li>
+            <strong className="text-white">Performing a contract with you:</strong> accounts,
+            uploads, agreements, licenses and payments.
+          </li>
+          <li>
+            <strong className="text-white">Our legitimate interests:</strong> keeping the site
+            secure, preventing fraud, improving the site with analytics, checking song ownership,
+            and contacting rights holders an artist has listed so that we can get their consent.
+          </li>
+          <li>
+            <strong className="text-white">Meeting legal obligations:</strong> tax and accounting.
+          </li>
+          <li>
+            <strong className="text-white">Your consent:</strong> where we ask for it.
+          </li>
+        </ul>
+      </>
+    ),
+  },
+  {
+    heading: '9. International Transfers',
     body: (
       <p>
-        We use reasonable administrative, technical, and organizational safeguards designed to
-        protect the information we hold. No method of transmission or storage is completely secure,
-        and we cannot guarantee absolute security.
+        We are based in the United States and our providers store and process information in the
+        United States. If you are outside the United States, your information is transferred there.
+        Where the law requires it, we rely on safeguards such as the European Commission's standard
+        contractual clauses.
       </p>
     ),
   },
   {
-    heading: '9. Children',
+    heading: '10. Security',
     body: (
       <p>
-        Our services are not directed to children under 16, and we do not knowingly collect
-        personal information from them. If you believe a child has provided us with personal
-        information, please contact us so we can address it.
+        We protect personal information with measures that include encrypted connections, private
+        file storage, access limited to the people who need it, and signed links that expire. No
+        method of storage or transmission is completely secure, and we cannot guarantee absolute
+        security.
       </p>
     ),
   },
   {
-    heading: '10. Changes to This Policy',
+    heading: '11. Children',
     body: (
       <p>
-        We may update this Privacy Policy from time to time. If we make material changes, we will
-        update the "Last updated" date below and, where appropriate, provide additional notice.
+        Our services are for people aged 18 and over. We do not knowingly collect personal
+        information from anyone under 18. If you believe a child has given us personal information,
+        contact us and we will delete it.
       </p>
     ),
   },
   {
-    heading: '11. Contact Us',
+    heading: '12. Changes to This Policy',
     body: (
       <p>
-        Questions about this Privacy Policy can be sent to{' '}
-        <a href={`mailto:${BRAND.email}`} className="text-cyan hover:underline">
-          {BRAND.email}
-        </a>
-        .
+        We may update this policy. When we make material changes, we will update the "Last updated"
+        date above, and where appropriate we will also notify you by email or on the site.
+      </p>
+    ),
+  },
+  {
+    heading: '13. Contact Us',
+    body: (
+      <p>
+        For questions about this policy or your information, email <MailLink /> or write to OVOXI,
+        Inc., 6 Catherine Court, Milford CT 06460.
       </p>
     ),
   },
@@ -192,16 +378,7 @@ const PrivacyPage = () => (
 
     <section className="bg-ink py-20 lg:py-28">
       <div className="mx-auto max-w-3xl px-6 lg:px-8">
-        <Reveal>
-          <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-6 text-sm leading-relaxed text-slate-400 md:p-8">
-            This page is a general-purpose Privacy Policy template for {BRAND.name} and has not yet
-            been reviewed by legal counsel. Please have an attorney familiar with music rights,
-            data privacy, and AI training-data regulation review it before this page is relied on
-            for compliance purposes.
-          </div>
-        </Reveal>
-
-        <div className="mt-12 space-y-12">
+        <div className="space-y-12">
           {SECTIONS.map((s) => (
             <Reveal key={s.heading}>
               <h2 className="font-heading text-xl font-semibold text-white sm:text-2xl">
