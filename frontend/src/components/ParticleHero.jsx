@@ -164,7 +164,7 @@ export default function ParticleHero() {
             margin: 0,
           }}
         >
-          OVOXI is the only catalog company built exclusively for emerging artists. We prepare your music for AI platforms — and pay you when it licenses.
+          OVOXI is the only catalog company built exclusively for emerging artists. We prepare your music for AI platforms and pay you when it licenses.
         </p>
       </div>
     </div>
