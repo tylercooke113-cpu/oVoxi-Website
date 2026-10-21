@@ -84,6 +84,8 @@ export const accountApi = {
     (await axios.get(`${API}/account/licenses/${encodeURIComponent(id)}/certificate`, await authed(getToken))).data.url,
   file: async (getToken, id, name) =>
     (await axios.post(`${API}/account/licenses/${encodeURIComponent(id)}/files/${encodeURIComponent(name)}`, null, await authed(getToken))).data.url,
+  buyerAccess: async (getToken) =>
+    (await axios.post(`${API}/account/buyer-access`, null, await authed(getToken))).data,
 };
 
 export const verifyApi = {

@@ -6,6 +6,7 @@ import { Loader2, Music2, ExternalLink, RefreshCw, CheckCircle2, XCircle } from 
 import { Link } from 'react-router-dom';
 import TrackSyncPanel from '../sync/TrackSyncPanel';
 import SyncProfileTab from '../sync/SyncProfileTab';
+import { accountFlags } from '../lib/account';
 import { useAgreementStatus } from '../agreement/useAgreementStatus';
 import { openAgreementPdf, formatSignedDate } from '../agreement/agreementApi';
 import AgreementModal from '../agreement/AgreementModal';
@@ -110,6 +111,7 @@ const VaultPage = () => {
 
   if (!isLoaded) return null;
   if (!isSignedIn) return <Navigate to="/login" replace />;
+  if (accountFlags(user, isSignedIn).isBuyerOnly) return <Navigate to="/account" replace />;
 
   return (
     <div className="min-h-screen bg-ink pt-24 pb-16 px-6">

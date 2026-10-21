@@ -2,7 +2,8 @@
 // paths are allowed; anything else falls back to /vault so a crafted `next` can
 // never become an open redirect. Used by LoginPage, SignUpPage and the Pricing page.
 
-const ALLOWED = [/^\/account$/, /^\/vault$/, /^\/sync(\/|$)/, /^\/pricing(\?|$)/];
+const ALLOWED = [/^\/account$/, /^\/vault$/, /^\/sync(\/|\?|$)/, /^\/pricing(\?|$)/,
+  /^\/artist\/[a-z0-9-]+(\/|\?|$)/];
 
 export const safeNext = (next) => {
   if (typeof next !== 'string') return '/vault';

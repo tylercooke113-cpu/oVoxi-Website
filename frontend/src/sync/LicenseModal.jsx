@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import Modal from './Modal';
 import { errorMessage, subscriptionsApi, accountApi } from './api';
@@ -33,7 +32,6 @@ const nextMonthUtc = () => {
 };
 
 const LicenseModal = ({ track, config, onClose, refreshConfig, getToken, isSignedIn }) => {
-  const loc = useLocation();
   const [cfg, setCfg] = useState(config);
   const tierMap = useMemo(() => Object.fromEntries(cfg.tiers.map((t) => [t.id, t])), [cfg]);
   const [sel, setSel] = useState('digital');
@@ -199,12 +197,6 @@ const LicenseModal = ({ track, config, onClose, refreshConfig, getToken, isSigne
   return (
     <Modal open title={`License "${track.track_name}"`} onClose={busy ? () => {} : onClose}>
       <p className="-mt-2 mb-4 text-sm text-slate-400">{track.artist_display_name}</p>
-
-      {!isSignedIn && config.subscriptions_enabled && (
-        <p className="mb-4 rounded-xl border border-cyan/25 bg-cyan/[0.05] px-3 py-2 text-sm text-slate-300">
-          Have a subscription? <Link to={`/login?next=${encodeURIComponent(loc.pathname + loc.search)}`} className="text-cyan hover:underline">Sign in</Link> to use this track with your plan.
-        </p>
-      )}
 
       {hasPlan && (
         <>

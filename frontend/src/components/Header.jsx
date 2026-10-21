@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Link, NavLink } from 'react-router-dom';
-import { Menu, X, ChevronDown } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { Menu, X } from 'lucide-react';
 import { useUser, useAuth } from '@clerk/clerk-react';
-import { NAV_LINKS } from '../content';
 import { publicApi } from '../sync/api';
+import { accountFlags } from '../lib/account';
+import BuyerAccessModal from './BuyerAccessModal';
 
 const Logo = () => (
   <Link to="/" data-testid="logo-link" className="flex items-center group">
@@ -16,17 +17,22 @@ const Logo = () => (
 );
 
 export const Header = () => {
-  const { isSignedIn } = useUser();
+  const { isSignedIn, user } = useUser();
   const { getToken, isSignedIn: authedIn, isLoaded } = useAuth();
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
-  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [buyerPrompt, setBuyerPrompt] = useState(false);
   const [pricingVisible, setPricingVisible] = useState(() => {
     try { return sessionStorage.getItem('ovoxi_pricing_visible') === '1'; } catch { return false; }
   });
+  const [catalogVisible, setCatalogVisible] = useState(() => {
+    try { return sessionStorage.getItem('ovoxi_library_visible') === '1'; } catch { return false; }
+  });
 
-  // B5: show "Pricing" only when /api/sync/pricing says visible for this viewer. Fetch once per
-  // page load; cache the flag in sessionStorage so the link does not flash on the next load.
+  // B5 / Brief 23 C1: the Pricing and catalog links follow /api/sync/pricing. `visible` gates
+  // Pricing; `library_visible` (SYNC_LIBRARY_ENABLED or admin) gates the catalog links. Fetch
+  // once per load; cache the flags so links do not flash on the next load.
   useEffect(() => {
     if (!isLoaded) return undefined;
     let alive = true;
@@ -34,13 +40,15 @@ export const Header = () => {
       .then((d) => {
         if (!alive) return;
         setPricingVisible(!!d.visible);
-        try { sessionStorage.setItem('ovoxi_pricing_visible', d.visible ? '1' : '0'); } catch { /* ignore */ }
+        setCatalogVisible(!!d.library_visible);
+        try {
+          sessionStorage.setItem('ovoxi_pricing_visible', d.visible ? '1' : '0');
+          sessionStorage.setItem('ovoxi_library_visible', d.library_visible ? '1' : '0');
+        } catch { /* ignore */ }
       })
       .catch(() => {});
     return () => { alive = false; };
   }, [getToken, authedIn, isLoaded]);
-
-  const navLinks = NAV_LINKS.filter((l) => !l.requiresVisible || pricingVisible);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 16);
@@ -48,15 +56,62 @@ export const Header = () => {
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
-  useEffect(() => {
-    const handler = (e) => {
-      if (!e.target.closest('[data-dropdown]')) setDropdownOpen(false);
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, []);
-
   const closeMenu = () => setOpen(false);
+  const openPrompt = () => { setOpen(false); setBuyerPrompt(true); };
+
+  const f = accountFlags(user, isSignedIn);
+  const showVault = f.showVault;
+  const showAccount = f.showAccount;
+  const showPricing = (f.isBuyerOnly || f.isAdmin) && pricingVisible;
+  // Catalog link: a direct link for buyers/admins/artists-with-access; a "Browse" button that
+  // opens the buyer-access prompt for an artist without access. Both gated by catalogVisible.
+  const browsePrompt = catalogVisible && isSignedIn && f.isArtist && !f.hasBuyerAccess && !f.isAdmin;
+  const catalogLink = catalogVisible && isSignedIn && !browsePrompt;
+  const browseSignedOut = catalogVisible && !isSignedIn;
+
+  const linkCls = 'text-sm font-medium text-slate-300 hover-text-gradient transition-colors';
+  const gradientCls = 'rounded-full bg-gradient-brand px-5 py-2 text-sm font-semibold text-white transition-all hover:shadow-[0_0_24px_rgba(180,79,212,0.6)]';
+
+  // One render of the nav items, reused for desktop (row) and mobile (column).
+  const items = (mobile) => {
+    const cls = mobile ? 'text-base font-medium text-slate-300 hover-text-gradient' : linkCls;
+    const click = mobile ? closeMenu : undefined;
+    return (
+      <>
+        {showVault && (
+          <Link to="/vault" onClick={click} data-testid="nav-vault" className={cls}>My Vault</Link>
+        )}
+        {browseSignedOut && (
+          <Link to="/sync" onClick={click} data-testid="nav-browse"
+            className={mobile ? `${gradientCls} text-center` : gradientCls}>Browse OVOXI Catalog</Link>
+        )}
+        {browsePrompt && (
+          <button type="button" onClick={openPrompt} data-testid="nav-browse" className={`${cls} text-left`}>
+            Browse OVOXI Catalog
+          </button>
+        )}
+        {catalogLink && (
+          <Link to="/sync" onClick={click} data-testid="nav-catalog" className={cls}>OVOXI Catalog</Link>
+        )}
+        {showPricing && (
+          <Link to="/pricing" onClick={click} data-testid="nav-pricing" className={cls}>Pricing</Link>
+        )}
+        {showAccount && (
+          <Link to="/account" onClick={click} data-testid="nav-account" className={cls}>My account</Link>
+        )}
+        {isSignedIn && (
+          <Link to="/contact" onClick={click} data-testid="nav-contact" className={cls}>Contact</Link>
+        )}
+        {!isSignedIn && (
+          <>
+            <Link to="/signup" onClick={click} data-testid="header-artist-cta" className={cls}>Join as Artist</Link>
+            <Link to="/contact?interest=ai_company" onClick={click} data-testid="header-partnership-cta"
+              className={mobile ? `${gradientCls} text-center` : gradientCls}>Request Partnership</Link>
+          </>
+        )}
+      </>
+    );
+  };
 
   return (
     <header
@@ -67,70 +122,10 @@ export const Header = () => {
     >
       <div className="mx-auto max-w-7xl px-6 lg:px-8">
         <div className="flex h-16 items-center justify-between">
+          <Logo />
 
-          <div className="flex items-center gap-3">
-            <Logo />
-            <div className="relative" data-dropdown>
-              <button
-                onClick={() => setDropdownOpen((v) => !v)}
-                className="flex items-center gap-1.5 text-sm font-medium text-slate-400 hover:text-white transition-colors"
-              >
-                <ChevronDown
-                  size={16}
-                  className={`transition-transform duration-200 ${dropdownOpen ? 'rotate-180' : ''}`}
-                />
-              </button>
-              {dropdownOpen && (
-                <div className="absolute top-full left-0 mt-2 w-48 rounded-xl border border-white/10 bg-black/95 backdrop-blur-xl py-2 shadow-xl">
-                  {isSignedIn && (
-                    <>
-                      <NavLink
-                        to='/vault'
-                        onClick={() => setDropdownOpen(false)}
-                        className='block px-4 py-2.5 text-sm text-slate-300 hover:text-white hover-text-gradient transition-colors'
-                      >
-                        My Vault
-                      </NavLink>
-                      <NavLink
-                        to='/account'
-                        onClick={() => setDropdownOpen(false)}
-                        className='block px-4 py-2.5 text-sm text-slate-300 hover:text-white hover-text-gradient transition-colors'
-                      >
-                        My account
-                      </NavLink>
-                    </>
-                  )}
-                  {navLinks.map((l) => (
-                    <NavLink
-                      key={l.to}
-                      to={l.to}
-                      data-testid={`nav-${l.label.toLowerCase()}`}
-                      onClick={() => setDropdownOpen(false)}
-                      className="block px-4 py-2.5 text-sm text-slate-300 hover:text-white hover-text-gradient transition-colors"
-                    >
-                      {l.label}
-                    </NavLink>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="hidden md:flex items-center gap-3">
-            <Link
-              to="/signup"
-              data-testid="header-artist-cta"
-              className="text-sm font-medium text-slate-300 hover-text-gradient transition-colors"
-            >
-              Join as Artist
-            </Link>
-            <Link
-              to="/contact?interest=ai_company"
-              data-testid="header-partnership-cta"
-              className="rounded-full bg-gradient-brand px-5 py-2 text-sm font-semibold text-white transition-all hover:shadow-[0_0_24px_rgba(180,79,212,0.6)]"
-            >
-              Request Partnership
-            </Link>
+          <div className="hidden md:flex items-center gap-5">
+            {items(false)}
           </div>
 
           <button
@@ -147,33 +142,16 @@ export const Header = () => {
       {open && (
         <div data-testid="mobile-menu" className="md:hidden bg-black/95 backdrop-blur-xl border-b border-white/10">
           <div className="px-6 py-4 flex flex-col gap-4">
-            {isSignedIn && (
-              <>
-                <Link to="/vault" onClick={closeMenu} className="text-base font-medium text-slate-300 hover-text-gradient">My Vault</Link>
-                <Link to="/account" onClick={closeMenu} className="text-base font-medium text-slate-300 hover-text-gradient">My account</Link>
-              </>
-            )}
-            {navLinks.map((l) => (
-              <Link
-                key={l.to}
-                to={l.to}
-                onClick={closeMenu}
-                data-testid={`mobile-nav-${l.label.toLowerCase()}`}
-                className="text-base font-medium text-slate-300 hover-text-gradient"
-              >
-                {l.label}
-              </Link>
-            ))}
-            <Link
-              to="/contact?interest=ai_company"
-              onClick={closeMenu}
-              data-testid="mobile-partnership-cta"
-              className="mt-2 rounded-full bg-gradient-brand px-5 py-2.5 text-center text-sm font-semibold text-white"
-            >
-              Request Partnership
-            </Link>
+            {items(true)}
           </div>
         </div>
+      )}
+
+      {buyerPrompt && (
+        <BuyerAccessModal
+          onClose={() => setBuyerPrompt(false)}
+          onGranted={() => { setBuyerPrompt(false); navigate('/sync'); }}
+        />
       )}
     </header>
   );

@@ -71,6 +71,7 @@ function AppContent() {
           <Route path='/terms' element={<TermsPage />} />
           <Route path='/cosign/:token' element={<CosignPage />} />
           {/* PRD-03 phase 5: the library is gated server-side by SYNC_LIBRARY_ENABLED (admins always). */}
+          <Route path='/catalog' element={<Navigate to='/sync' replace />} />
           <Route path='/sync' element={<LibraryPage />} />
           <Route path='/pricing' element={<PricingPage />} />
           <Route path='/artist/:slug' element={<ArtistPage />} />

@@ -109,6 +109,12 @@ const LibraryInner = () => {
   const clearAll = () => setParams(new URLSearchParams(params.get('sort') ? { sort: params.get('sort') } : {}), { replace: true });
 
   useEffect(() => {
+    const prev = document.title;
+    document.title = 'OVOXI Catalog | OVOXI';
+    return () => { document.title = prev; };
+  }, []);
+
+  useEffect(() => {
     if (!isLoaded) return undefined;
     let alive = true;
     setState((s) => ({ ...s, loading: true, error: false }));

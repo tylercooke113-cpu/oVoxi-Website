@@ -4,6 +4,8 @@ import { useUser, useAuth } from '@clerk/clerk-react';
 import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
 import { accountApi, errorMessage } from '../sync/api';
+import { accountFlags } from '../lib/account';
+import BuyerAccessModal from '../components/BuyerAccessModal';
 import SubscriptionTab from './SubscriptionTab';
 
 const CHIP = {
@@ -127,6 +129,16 @@ export default function AccountPage() {
       (licFilter !== 'subscription' || l.source === 'subscription')
       && (!s || [l.track_title, l.project_name, l.license_id].some((x) => (x || '').toLowerCase().includes(s))));
   }, [licenses, q, licFilter]);
+
+  // An artist without buyer access gets the prompt, not the account page (Brief 23 C3).
+  const f = accountFlags(user, isSignedIn);
+  if (isLoaded && isSignedIn && f.isArtist && !f.hasBuyerAccess && !f.isAdmin) {
+    return (
+      <div className="min-h-screen bg-ink">
+        <BuyerAccessModal onClose={() => navigate('/vault')} onGranted={() => {}} />
+      </div>
+    );
+  }
 
   if (!isLoaded || (!data && !error)) {
     return <div className="flex min-h-screen items-center justify-center bg-ink"><Loader2 className="animate-spin text-electric" size={32} /></div>;
