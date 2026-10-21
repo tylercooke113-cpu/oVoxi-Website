@@ -17,7 +17,7 @@ ADMIN = {"sub": "user_admin", "metadata": {"role": "admin"}}
 PLAN_KEYS = {"id", "label", "month_cents", "year_cents", "month_cap", "day_cap",
              "month_cents_loyalty15", "month_cents_loyalty20"}
 SINGLE_KEYS = {"id", "label", "price_cents", "by_quote"}
-TOP_KEYS = {"visible", "subscriptions_enabled", "plans", "singles"}
+TOP_KEYS = {"visible", "library_visible", "subscriptions_enabled", "plans", "singles"}
 
 
 @pytest.fixture

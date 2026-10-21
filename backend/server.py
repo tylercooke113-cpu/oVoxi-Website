@@ -1403,6 +1403,24 @@ async def fetch_clerk_user(user_id: str) -> dict:
             "email_verified": verified}
 
 
+async def set_clerk_public_metadata(user_id: str, patch: dict) -> None:
+    """Merge keys into a user's Clerk public_metadata via the Backend API. Clerk merges the
+    top-level public_metadata keys, so existing keys (e.g. role) are preserved."""
+    if not CLERK_SECRET_KEY:
+        raise HTTPException(status_code=503, detail="Account update is not configured.")
+    try:
+        async with httpx.AsyncClient(timeout=10) as c:
+            r = await c.patch(f"https://api.clerk.com/v1/users/{quote(user_id, safe='')}/metadata",
+                              headers={"Authorization": f"Bearer {CLERK_SECRET_KEY}"},
+                              json={"public_metadata": patch})
+    except Exception as exc:
+        logger.warning("Clerk metadata update failed: %s", type(exc).__name__)
+        raise HTTPException(status_code=503, detail="Could not update your account. Please try again.")
+    if r.status_code != 200:
+        logger.warning("Clerk metadata update returned %s", r.status_code)
+        raise HTTPException(status_code=503, detail="Could not update your account. Please try again.")
+
+
 async def _current_agreement(uid: str) -> Optional[dict]:
     return await db.artist_agreements.find_one(
         {"user_id": uid, "version": artist_agreement.current_version()},
@@ -3104,6 +3122,7 @@ async def sync_pricing(request: Request, viewer: Optional[dict] = Depends(option
     singles.append({"id": "enterprise", "label": "Enterprise", "price_cents": None, "by_quote": True})
     return {
         "visible": _public_pages_enabled() or is_admin,
+        "library_visible": _library_enabled() or is_admin,
         "subscriptions_enabled": sync_orders.subscriptions_enabled() and subscriptions.prices_ready(),
         "plans": plans,
         "singles": singles,
@@ -3818,6 +3837,15 @@ async def account_licenses(request: Request, clerk_payload: dict = Depends(verif
     docs = await db.licenses.find({"owner_user_id": uid}, {"_id": 0}).sort("issued_at", -1).to_list(500)
     out = [licenses.owner_view(lic, now, files=await _license_files(lic)) for lic in docs]
     return {"licenses": out, "linking": linking}
+
+
+@api_router.post("/account/buyer-access")
+@limiter.limit("5/minute")
+async def account_buyer_access(request: Request, clerk_payload: dict = Depends(verify_clerk_token)):
+    """Grant the signed-in user buyer access by setting public_metadata.buyer = true
+    (decision 5). Merges, so an artist's role is preserved; safe to call more than once."""
+    await set_clerk_public_metadata(clerk_payload["sub"], {"buyer": True})
+    return {"buyer": True}
 
 
 @api_router.get("/account/licenses/{license_id}/certificate")
