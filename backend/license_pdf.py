@@ -60,6 +60,7 @@ _DRAFT0 = [{"type": "para", "text": t} for t in (
 TERMS = {
     "draft-0": _DRAFT0,
     "v1": _parse_terms((TERMS_DIR / "license_v1.txt").read_text(encoding="utf-8")),
+    "v2": _parse_terms((TERMS_DIR / "license_v2.txt").read_text(encoding="utf-8")),
 }
 
 _BASE = ParagraphStyle("base", fontName="Helvetica", fontSize=10, leading=14, textColor=INK, alignment=TA_LEFT)

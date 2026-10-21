@@ -94,9 +94,11 @@ def _r2(monkeypatch):
 
 def _artist_client(monkeypatch, role="artist"):
     monkeypatch.setattr(server.limiter, "enabled", False)
-    server.app.dependency_overrides[server.require_artist] = lambda: {
-        "sub": "user_test", "metadata": {"role": role},
-    }
+    payload = {"sub": "user_test", "metadata": {"role": role}}
+    # Agreement endpoints now depend on verify_clerk_token (Brief 23 E3); uploads keep
+    # require_artist. Override both so the signed-in artist works on either.
+    server.app.dependency_overrides[server.require_artist] = lambda: payload
+    server.app.dependency_overrides[server.verify_clerk_token] = lambda: payload
     return TestClient(server.app)
 
 
@@ -378,6 +380,36 @@ def _presign(client):
 
 def _events(fake_db):
     return fake_db.consent_events.insert_many.await_args.args[0]
+
+
+# Brief 23 E3: a pending account (signed in, no artist role) can reach the agreement
+# endpoints but still cannot upload. Override only verify_clerk_token so require_artist runs.
+def test_agreement_status_accepts_pending_user(fake_db, clerk, monkeypatch):
+    monkeypatch.setattr(server.limiter, "enabled", False)
+    server.app.dependency_overrides[server.verify_clerk_token] = lambda: {"sub": "pending_user", "metadata": {}}
+    try:
+        r = TestClient(server.app).get("/api/agreement/status")
+        assert r.status_code == 200, r.text
+        assert r.json()["signed"] is False and r.json()["required"] is True
+    finally:
+        server.app.dependency_overrides.clear()
+
+
+def test_presign_refuses_pending_user(fake_db, clerk, monkeypatch):
+    monkeypatch.setattr(server.limiter, "enabled", False)
+    _r2(monkeypatch)
+    server.app.dependency_overrides[server.verify_clerk_token] = lambda: {"sub": "pending_user", "metadata": {}}
+    try:
+        r = TestClient(server.app).post("/api/upload/presign", json=PRESIGN_BODY)
+        assert r.status_code == 403, r.text
+    finally:
+        server.app.dependency_overrides.clear()
+
+
+def test_supports_buyouts_v3_true():
+    # Reads the real backend/agreements/*.txt (no agreements_dir override).
+    assert artist_agreement.supports_buyouts("v3") is True
+    assert artist_agreement.supports_buyouts("v1") is False
 
 
 def test_presign_enforced_unsigned_artist_403(client, fake_db, monkeypatch):

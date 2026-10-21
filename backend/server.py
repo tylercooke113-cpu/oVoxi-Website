@@ -1448,7 +1448,7 @@ def _agreement_values(fields: dict, *, email: str, uid: str, now: datetime) -> d
 
 @api_router.get("/agreement/status")
 @limiter.limit("30/minute")
-async def agreement_status(request: Request, clerk_payload: dict = Depends(require_artist)):
+async def agreement_status(request: Request, clerk_payload: dict = Depends(verify_clerk_token)):
     uid = clerk_payload["sub"]
     version = artist_agreement.current_version()
     signed = await _current_agreement(uid)
@@ -1491,7 +1491,7 @@ async def _agreement_prefill(uid: str) -> dict:
 @api_router.post("/agreement/preview")
 @limiter.limit("20/minute")
 async def agreement_preview(request: Request, payload: AgreementFields,
-                            clerk_payload: dict = Depends(require_artist)):
+                            clerk_payload: dict = Depends(verify_clerk_token)):
     uid = clerk_payload["sub"]
     version = artist_agreement.current_version()
     user = await fetch_clerk_user(uid)
@@ -1505,7 +1505,7 @@ async def agreement_preview(request: Request, payload: AgreementFields,
 @api_router.post("/agreement/sign")
 @limiter.limit("5/minute")
 async def agreement_sign(request: Request, payload: AgreementSignRequest,
-                         clerk_payload: dict = Depends(require_artist)):
+                         clerk_payload: dict = Depends(verify_clerk_token)):
     uid = clerk_payload["sub"]
     version = artist_agreement.current_version()
     if await _current_agreement(uid):
@@ -1576,7 +1576,7 @@ async def agreement_sign(request: Request, payload: AgreementSignRequest,
 
 @api_router.get("/agreement/pdf")
 @limiter.limit("20/minute")
-async def agreement_pdf(request: Request, clerk_payload: dict = Depends(require_artist)):
+async def agreement_pdf(request: Request, clerk_payload: dict = Depends(verify_clerk_token)):
     doc = await db.artist_agreements.find_one(
         {"user_id": clerk_payload["sub"]}, {"_id": 0, "pdf_key": 1}, sort=[("signed_at", -1)])
     if not doc:
@@ -3132,7 +3132,10 @@ async def sync_pricing(request: Request, viewer: Optional[dict] = Depends(option
 @api_router.get("/sync/terms/{version}")
 @limiter.limit("60/minute")
 async def sync_terms(request: Request, version: str):
-    """Public License Terms blocks for a version. Not behind the public-pages flag."""
+    """Public License Terms blocks for a version. "current" resolves to the active
+    SYNC_TERMS_VERSION. Not behind the public-pages flag."""
+    if version == "current":
+        version = sync_orders.terms_version()
     blocks = LICENSE_TERMS.get(version)
     if not blocks:
         raise HTTPException(status_code=404, detail="Unknown terms version")

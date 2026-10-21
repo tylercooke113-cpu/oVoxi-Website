@@ -29,6 +29,15 @@ def test_renders_all_prd_fields():
         assert expected in text, expected
 
 
+# Brief 23 E2: v2 is in the terms table; a certificate renders both v1 and v2 terms.
+def test_renders_v1_and_v2_terms():
+    assert "v1" in TERMS and "v2" in TERMS and TERMS["v2"]
+    for version, marker in (("v1", "oVoxi Music License Terms"), ("v2", "OVOXI Music License Terms")):
+        text = text_of(render_license_pdf({**ORDER, "terms_version": version},
+                                           track_title="Night Drive", artist_name="Kay Lune"))
+        assert marker in text, version
+
+
 def test_terms_version_row_removed_but_terms_text_remains():
     # Brief 20 B9: the certificate no longer prints the "Terms version" metadata row, but still
     # prints the License Terms text that terms_version selects (here the draft-0 body).
