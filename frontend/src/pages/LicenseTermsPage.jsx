@@ -8,7 +8,7 @@ export default function LicenseTermsPage() {
   const [error, setError] = useState(false);
 
   useEffect(() => {
-    syncApi.terms('v1').then((d) => setBlocks(d.blocks)).catch(() => setError(true));
+    syncApi.terms('current').then((d) => setBlocks(d.blocks)).catch(() => setError(true));
   }, []);
 
   return (

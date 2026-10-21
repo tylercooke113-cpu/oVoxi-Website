@@ -109,6 +109,12 @@ const VaultPage = () => {
     fetchTracks();
   }, [fetchTracks]);
 
+  // Brief 23 E4: open the agreement straight away for a signed-in non-buyer who needs to sign
+  // (as the upload page does). Buyers are redirected below; this also guards against the flash.
+  useEffect(() => {
+    if (needsSignature && !accountFlags(user, isSignedIn).isBuyerOnly) setAgreementOpen(true);
+  }, [needsSignature, user, isSignedIn]);
+
   if (!isLoaded) return null;
   if (!isSignedIn) return <Navigate to="/login" replace />;
   if (accountFlags(user, isSignedIn).isBuyerOnly) return <Navigate to="/account" replace />;
