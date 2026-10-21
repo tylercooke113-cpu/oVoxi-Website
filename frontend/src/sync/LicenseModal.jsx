@@ -43,6 +43,11 @@ const LicenseModal = ({ track, config, onClose, refreshConfig, getToken, isSigne
   const [errors, setErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
 
+  // AI training tab (Brief 23 D): shown only when the track is opted into AI training.
+  const aiAvailable = !!track.ai_training;
+  const [tab, setTab] = useState('sync');
+  const [aiContact, setAiContact] = useState(false);
+
   // Subscription plan path (Brief 19 item 10).
   const subsActive = isSignedIn && !!config.subscriptions_enabled;
   const [meState, setMeState] = useState(subsActive ? 'loading' : 'none'); // loading | ready | error | none
@@ -197,6 +202,37 @@ const LicenseModal = ({ track, config, onClose, refreshConfig, getToken, isSigne
   return (
     <Modal open title={`License "${track.track_name}"`} onClose={busy ? () => {} : onClose}>
       <p className="-mt-2 mb-4 text-sm text-slate-400">{track.artist_display_name}</p>
+
+      {aiAvailable && (
+        <div className="mb-4 flex gap-1 border-b border-white/10" role="tablist">
+          {[['sync', 'Sync'], ['ai', 'AI training']].map(([k, l]) => (
+            <button key={k} type="button" role="tab" aria-selected={tab === k} data-testid={`license-tab-${k}`}
+              onClick={() => setTab(k)}
+              className={`-mb-px border-b-2 px-4 py-2 text-sm ${tab === k ? 'border-electric text-white' : 'border-transparent text-slate-400 hover:text-white'}`}>
+              {l}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {tab === 'ai' ? (
+        <div data-testid="license-ai-tab">
+          <p className="text-sm text-slate-300">
+            License this song to train AI models. Personal, Research and Commercial licenses, single songs or up to 10,000, plus monthly plans, are coming soon.
+          </p>
+          {aiContact ? (
+            <QuoteForm kind="ai_training" track={track}
+              message={`AI training license for "${track.track_name}" by ${track.artist_display_name}`}
+              onDone={() => {}} />
+          ) : (
+            <button type="button" onClick={() => setAiContact(true)} data-testid="ai-contact-sales"
+              className="mt-4 rounded-full bg-gradient-brand px-6 py-2.5 text-sm font-semibold text-white">
+              Contact sales
+            </button>
+          )}
+        </div>
+      ) : (
+      <>
 
       {hasPlan && (
         <>
@@ -366,6 +402,8 @@ const LicenseModal = ({ track, config, onClose, refreshConfig, getToken, isSigne
             </form>
           )}
         </>
+      )}
+      </>
       )}
     </Modal>
   );

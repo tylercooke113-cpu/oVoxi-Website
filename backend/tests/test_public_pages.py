@@ -231,7 +231,7 @@ def test_public_page_content(env):
     assert t == {"id": TID, "track_name": "Night Drive", "artist_display_name": "Tyler Example",
                  "artist_slug": "tyler-example", "genre": "R&B", "moods": ["Chill"], "vocals": "vocal",
                  "bpm": 90.0, "key": "C major", "duration_s": 184.0,
-                 "has_preview": True, "has_waveform": True, "buyout_allowed": False}
+                 "has_preview": True, "has_waveform": True, "buyout_allowed": False, "ai_training": True}
     assert body["viewer"] == {"is_owner": False, "is_admin": False, "public": True}
     assert_nothing_private(client.get(TRACK).json())
 
@@ -318,3 +318,12 @@ def test_public_view_buyout_allowed():
     missing = public_track_view(listed_track(consent={"sync": True}), None)
     assert on["buyout_allowed"] is True
     assert off["buyout_allowed"] is False and missing["buyout_allowed"] is False
+
+
+# Brief 23 D: ai_training drives the License pop-up's AI tab; it reflects consent.ai_training.
+def test_public_view_ai_training():
+    on = public_track_view(listed_track(consent={"sync": True, "ai_training": True}), None)
+    off = public_track_view(listed_track(consent={"sync": True, "ai_training": False}), None)
+    missing = public_track_view(listed_track(consent={"sync": True}), None)
+    assert on["ai_training"] is True
+    assert off["ai_training"] is False and missing["ai_training"] is False

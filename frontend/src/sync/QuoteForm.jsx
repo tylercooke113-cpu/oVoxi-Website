@@ -7,11 +7,11 @@ const BUDGETS = ['Under $5,000', '$5,000 to $25,000', '$25,000 to $100,000', 'Ov
 const input = 'h-10 w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 text-sm text-white placeholder:text-slate-600 focus:border-electric focus:outline-none';
 
 // Self-contained so Brief 20's Pricing page can reuse it with no track.
-export default function QuoteForm({ kind, track, onDone }) {
+export default function QuoteForm({ kind, track, onDone, message }) {
   const [f, setF] = useState({
     name: '', company: '', email: '',
     use: kind === 'buyout' ? 'Exclusive buyout' : 'National TV campaign',
-    territory: '', term: '', budget: BUDGETS[1], details: '', website: '',
+    territory: '', term: '', budget: BUDGETS[1], details: message || '', website: '',
   });
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);

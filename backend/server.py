@@ -1135,7 +1135,7 @@ class RegisterRequest(BaseModel):
 
 class QuoteRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    kind: Literal["enterprise", "buyout"]
+    kind: Literal["enterprise", "buyout", "ai_training"]
     track_id: Optional[str] = Field(default=None, max_length=64)
     name: str = Field(min_length=1, max_length=120)
     company: str = Field(default="", max_length=120)
