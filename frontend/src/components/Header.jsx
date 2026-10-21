@@ -62,7 +62,9 @@ export const Header = () => {
   const f = accountFlags(user, isSignedIn);
   const showVault = f.showVault;
   const showAccount = f.showAccount;
-  const showPricing = (f.isBuyerOnly || f.isAdmin) && pricingVisible;
+  // Pricing: signed-out visitors and buyers/admins see it (when visible); artists without
+  // buyer access do not. Contact stays available to everyone.
+  const showPricing = pricingVisible && (!isSignedIn || f.isAdmin || f.hasBuyerAccess);
   // Catalog link: a direct link for buyers/admins/artists-with-access; a "Browse" button that
   // opens the buyer-access prompt for an artist without access. Both gated by catalogVisible.
   const browsePrompt = catalogVisible && isSignedIn && f.isArtist && !f.hasBuyerAccess && !f.isAdmin;
@@ -99,9 +101,7 @@ export const Header = () => {
         {showAccount && (
           <Link to="/account" onClick={click} data-testid="nav-account" className={cls}>My account</Link>
         )}
-        {isSignedIn && (
-          <Link to="/contact" onClick={click} data-testid="nav-contact" className={cls}>Contact</Link>
-        )}
+        <Link to="/contact" onClick={click} data-testid="nav-contact" className={cls}>Contact</Link>
         {!isSignedIn && (
           <>
             <Link to="/signup" onClick={click} data-testid="header-artist-cta" className={cls}>Join as Artist</Link>

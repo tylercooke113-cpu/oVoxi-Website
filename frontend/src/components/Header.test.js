@@ -46,9 +46,10 @@ beforeEach(() => {
   mockPricing = jest.fn().mockResolvedValue({ visible: true, library_visible: true });
 });
 
-test('signed out: Browse, Join, Request Partnership; no vault/account', async () => {
+test('signed out: Browse, Pricing, Contact, Join, Request Partnership; no vault/account', async () => {
   const got = ids(await renderHeader());
-  expect(got).toEqual(expect.arrayContaining(['nav-browse', 'header-artist-cta', 'header-partnership-cta']));
+  expect(got).toEqual(expect.arrayContaining(
+    ['nav-browse', 'nav-pricing', 'nav-contact', 'header-artist-cta', 'header-partnership-cta']));
   expect(got).not.toContain('nav-vault');
   expect(got).not.toContain('nav-account');
 });
@@ -60,18 +61,19 @@ test('catalog hidden: signed-out sees no Browse button', async () => {
   expect(got).toEqual(expect.arrayContaining(['header-artist-cta', 'header-partnership-cta']));
 });
 
-test('artist without buyer access: My Vault + Browse (prompt), no catalog/account', async () => {
+test('artist without buyer access: My Vault + Browse (prompt), no catalog/account/pricing', async () => {
   mockSignedIn = true; mockUser = user({ role: 'artist' });
   const got = ids(await renderHeader());
-  expect(got).toEqual(expect.arrayContaining(['nav-vault', 'nav-browse']));
+  expect(got).toEqual(expect.arrayContaining(['nav-vault', 'nav-browse', 'nav-contact']));
   expect(got).not.toContain('nav-catalog');
   expect(got).not.toContain('nav-account');
+  expect(got).not.toContain('nav-pricing');
 });
 
-test('artist with buyer access: My Vault, OVOXI Catalog, My account', async () => {
+test('artist with buyer access: My Vault, OVOXI Catalog, Pricing, My account', async () => {
   mockSignedIn = true; mockUser = user({ role: 'artist', buyer: true });
   const got = ids(await renderHeader());
-  expect(got).toEqual(expect.arrayContaining(['nav-vault', 'nav-catalog', 'nav-account']));
+  expect(got).toEqual(expect.arrayContaining(['nav-vault', 'nav-catalog', 'nav-pricing', 'nav-account']));
   expect(got).not.toContain('nav-browse');
 });
 
