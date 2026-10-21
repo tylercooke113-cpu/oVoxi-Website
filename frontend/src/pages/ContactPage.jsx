@@ -54,7 +54,7 @@ const ContactPage = () => {
         website: form.website,
       });
       setDone(true);
-      toast.success("Thanks — we've received your inquiry.");
+      toast.success("Thanks, we've received your inquiry.");
     } catch (err) {
       toast.error('Something went wrong. Please try again or email us directly.');
     } finally {

@@ -158,8 +158,8 @@ const AppealPage = () => {
             File a Copyright Appeal
           </h1>
           <p className="mt-3 text-sm leading-relaxed text-slate-400">
-            Upload proof of ownership — a signed license, publishing agreement, or original session
-            files — for our team to review.
+            Upload proof of ownership, such as a signed license, publishing agreement, or original session
+            files, for our team to review.
           </p>
         </div>
 
@@ -178,7 +178,7 @@ const AppealPage = () => {
           <div className="space-y-2">
             <Label className="text-slate-300">
               Proof Document *{' '}
-              <span className="text-slate-500">(PDF, JPG, PNG, DOC, DOCX — max 20 MB)</span>
+              <span className="text-slate-500">(PDF, JPG, PNG, DOC, DOCX, max 20 MB)</span>
             </Label>
             <div
               onClick={() => !isUploading && fileRef.current?.click()}

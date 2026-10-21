@@ -103,7 +103,7 @@ const ApplyTracksPage = () => {
     <div data-testid="apply-tracks-page">
       <PageHero
         testid="apply-tracks-hero"
-        label="Artist Application — Step 2 of 2"
+        label="Artist Application: Step 2 of 2"
         title="Upload Your Catalog"
         subtitle={
           email

@@ -60,7 +60,7 @@ const ApplyPage = () => {
     <div data-testid="apply-page">
       <PageHero
         testid="apply-hero"
-        label="Artist Application — Step 1 of 2"
+        label="Artist Application: Step 1 of 2"
         title="Apply to Join OVOXI"
         subtitle="Tell us about yourself and your sound. We review every application."
       />
@@ -157,7 +157,7 @@ const ApplyPage = () => {
                 ) : (
                   <ArrowRight size={16} />
                 )}
-                {submitting ? 'Saving…' : 'Next — Upload Your Tracks'}
+                {submitting ? 'Saving…' : 'Next: Upload Your Tracks'}
               </button>
             </form>
           </Reveal>

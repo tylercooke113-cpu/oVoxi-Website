@@ -169,8 +169,8 @@ const TermsPage = () => (
           <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-6 text-sm leading-relaxed text-slate-400 md:p-8">
             This page is a general-purpose Terms of Service template for {BRAND.name} and has not
             yet been reviewed by legal counsel. Please have an attorney familiar with music rights,
-            licensing, and AI training-data agreements review it — especially the rights-grant and
-            royalty-split language — before this page is relied on as binding.
+            licensing, and AI training-data agreements review it, especially the rights-grant and
+            royalty-split language, before this page is relied on as binding.
           </div>
         </Reveal>
 
