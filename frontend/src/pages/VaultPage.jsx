@@ -77,6 +77,7 @@ const VaultPage = () => {
   const { getToken } = useAuth();
   const [tracks, setTracks] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [tracksLoaded, setTracksLoaded] = useState(false);   // latches true after the first fetch
   const [searchParams] = useSearchParams();
   const [tab, setTab] = useState(searchParams.get('tab') === 'profile' ? 'profile' : 'tracks');
   const updateTrack = useCallback((t) => setTracks((all) => all.map((x) => (x.id === t.id ? t : x))), []);
@@ -99,6 +100,7 @@ const VaultPage = () => {
       console.error('Failed to fetch tracks', err);
     } finally {
       setLoading(false);
+      setTracksLoaded(true);
     }
   }, [isLoaded, isSignedIn, getToken]);
 
@@ -161,7 +163,8 @@ const VaultPage = () => {
         </div>
 
         {tab === 'profile' ? (
-          <SyncProfileTab getToken={getToken} tracks={tracks} />
+          <SyncProfileTab getToken={getToken} tracks={tracks}
+            role={user?.publicMetadata?.role} tracksLoaded={tracksLoaded} />
         ) : loading ? (
           <div className="flex justify-center py-20">
             <Loader2 className="animate-spin text-electric" size={32} />

@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
+import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
 import { Input } from '../components/ui/input';
@@ -17,6 +18,10 @@ const MAX_PHOTO = 10 * 1024 * 1024;
 const EMPTY = { display_name: '', bio: '', location: '', spotify_url: '', instagram_url: '' };
 const FIELD = 'border-white/10 bg-ink text-white placeholder:text-slate-600 focus-visible:ring-electric';
 
+// Blur-state copy (Brief 23 Part A).
+const PENDING_COPY = "Your account is pending approval. Once you're approved, upload your first track to set up your sync profile.";
+const EMPTY_TRACKS_COPY = 'Upload your first track to customize your sync profile.';
+
 const previewSlug = (name) =>
   name.normalize('NFKD').replace(/[^\x00-\x7F]/g, '').toLowerCase()
     .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'artist';
@@ -31,17 +36,25 @@ const statusOf = (t) => {
   return ['text-cyan', 'Processing'];
 };
 
-const SyncProfileTab = ({ getToken, tracks }) => {
+const SyncProfileTab = ({ getToken, tracks, role, tracksLoaded }) => {
   const [form, setForm] = useState(EMPTY);
   const [slug, setSlug] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [photoUrl, setPhotoUrl] = useState(null);
   const [photoBusy, setPhotoBusy] = useState(false);
   const fileRef = useRef(null);
 
+  const canUseProfile = role === 'artist' || role === 'admin';
+  const hasTracks = tracks.length > 0;
+  const showProfile = canUseProfile && hasTracks;   // the normal, editable tab
+
   useEffect(() => {
+    // Decide nothing until the Vault reports its tracks. Only an approved artist or admin
+    // with at least one track may call the profile API; a pending account would get 403.
+    if (!tracksLoaded || !showProfile) return;
     let alive = true;
+    setLoading(true);
     (async () => {
       try {
         const p = await api.getProfile(getToken);
@@ -52,13 +65,13 @@ const SyncProfileTab = ({ getToken, tracks }) => {
           setForm({ ...EMPTY, ...Object.fromEntries(Object.keys(EMPTY).map((k) => [k, p[k] || ''])) });
         }
       } catch (err) {
-        toast.error(errorMessage(err, 'Could not load your profile.'));
+        if (alive) toast.error(errorMessage(err, 'Could not load your profile.'));
       } finally {
         if (alive) setLoading(false);
       }
     })();
     return () => { alive = false; };
-  }, [getToken]);
+  }, [tracksLoaded, showProfile, getToken]);
 
   const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
 
@@ -105,12 +118,17 @@ const SyncProfileTab = ({ getToken, tracks }) => {
 
   const syncTracks = tracks.filter((t) => !t.legacy && t.consent?.sync);
 
-  if (loading) {
-    return <div className="flex justify-center py-16"><Loader2 className="animate-spin text-electric" size={28} /></div>;
-  }
+  const spinner = (
+    <div className="flex justify-center py-16" data-testid="vault-sync-profile">
+      <Loader2 className="animate-spin text-electric" size={28} />
+    </div>
+  );
 
-  return (
-    <div className="flex flex-col gap-4" data-testid="vault-sync-profile">
+  // Wait for the Vault's tracks before deciding which state to show.
+  if (!tracksLoaded) return spinner;
+
+  const profileForm = (
+    <div className="flex flex-col gap-4">
       {!slug && (
         <p className="text-sm text-slate-400">Submit your music to your sync library. Start with your profile.</p>
       )}
@@ -197,6 +215,31 @@ const SyncProfileTab = ({ getToken, tracks }) => {
             </div>
           );
         })}
+      </div>
+    </div>
+  );
+
+  if (showProfile) {
+    if (loading) return spinner;
+    return <div data-testid="vault-sync-profile">{profileForm}</div>;
+  }
+
+  // Pending account, or approved artist with no tracks yet: blurred, inert backdrop with a card.
+  return (
+    <div className="relative" data-testid="vault-sync-profile">
+      <div aria-hidden="true" inert className="pointer-events-none select-none opacity-40 blur-sm">
+        {profileForm}
+      </div>
+      <div className="absolute inset-0 flex items-center justify-center p-4">
+        <div className="w-full max-w-sm rounded-2xl border border-white/10 bg-ink/85 p-6 text-center shadow-xl">
+          <p className="text-sm text-slate-300">{canUseProfile ? EMPTY_TRACKS_COPY : PENDING_COPY}</p>
+          {canUseProfile && (
+            <Link to="/upload"
+              className="mt-4 inline-block rounded-full bg-gradient-brand px-6 py-2.5 text-sm font-semibold text-white">
+              Upload a track
+            </Link>
+          )}
+        </div>
       </div>
     </div>
   );
