@@ -68,7 +68,7 @@ export default function VerifyPage() {
             </div>
           ))}
         </div>
-        <div className="px-6 py-4 text-xs text-slate-500">Verified by oVoxi at ovoxi.net/verify</div>
+        <div className="px-6 py-4 text-xs text-slate-500">Verified by OVOXI at ovoxi.net/verify</div>
       </>
     );
   }
@@ -77,7 +77,7 @@ export default function VerifyPage() {
     <div className="mx-auto max-w-xl px-4 pb-20 pt-28">
       <div className="mb-6 text-center">
         <h1 className="font-heading text-2xl font-semibold text-white">License verification</h1>
-        <p className="mt-1 text-sm text-slate-400">Check that an oVoxi music license is real and active.</p>
+        <p className="mt-1 text-sm text-slate-400">Check that an OVOXI music license is real and active.</p>
       </div>
       {card && <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.02]">{card}</div>}
       <form onSubmit={submit} className="mt-5 flex gap-2">

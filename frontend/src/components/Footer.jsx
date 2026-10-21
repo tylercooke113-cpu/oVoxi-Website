@@ -24,7 +24,7 @@ export const Footer = () => (
       <div className="grid grid-cols-1 gap-12 md:grid-cols-3">
         <div>
           <div className="flex items-center">
-            <img src={BRAND.logo} alt="oVoxi" className="h-10 w-auto" />
+            <img src={BRAND.logo} alt="OVOXI" className="h-10 w-auto" />
           </div>
           <a
             href={`mailto:${BRAND.email}`}
@@ -57,7 +57,7 @@ export const Footer = () => (
 
       <div className="mt-14 flex flex-col items-center justify-between gap-4 border-t border-white/10 pt-8 sm:flex-row">
         <p className="text-xs text-slate-500">
-          © {new Date().getFullYear()} oVoxi · {BRAND.domain}
+          © {new Date().getFullYear()} OVOXI · {BRAND.domain}
         </p>
         <div className="flex items-center gap-6 text-xs text-slate-500">
           <Link to="/privacy" data-testid="footer-link-privacy" className="hover:text-slate-300 transition-colors">

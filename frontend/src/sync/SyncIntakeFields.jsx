@@ -75,7 +75,7 @@ const SyncIntakeFields = ({ value, onChange, disabled }) => {
           ))}
         </RadioGroup>
         <p className="text-xs text-slate-500">
-          Songs in Content ID are not listed in the sync library, because buyers' videos would be claimed.
+          Songs in Content ID are not listed in the OVOXI Catalog, because buyers' videos would be claimed.
         </p>
       </div>
 

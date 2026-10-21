@@ -15,7 +15,7 @@ const LoginPage = () => {
   <div className="min-h-screen bg-ink flex items-center justify-center px-4">
     <div className="w-full max-w-md">
       <div className="mb-8 text-center">
-        <img src="/logo.png" alt="oVoxi" className="h-12 w-auto mx-auto mb-6" />
+        <img src="/logo.png" alt="OVOXI" className="h-12 w-auto mx-auto mb-6" />
         <p className="text-slate-400 text-sm">Welcome back. Access your vault.</p>
       </div>
       <SignIn

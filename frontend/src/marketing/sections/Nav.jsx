@@ -12,7 +12,7 @@ export default function Nav() {
     <nav className="fixed top-0 left-0 right-0 z-50 border-b border-ovx-line bg-black/80 backdrop-blur-sm">
       <div className="max-w-[1440px] mx-auto px-6 md:px-[120px] h-16 flex items-center justify-between">
         <span className="font-display font-extrabold text-white text-xl tracking-tight select-none">
-          oVoxi
+          OVOXI
         </span>
         <div className="flex items-center gap-8">
           <button

@@ -61,7 +61,7 @@ const ApplyPage = () => {
       <PageHero
         testid="apply-hero"
         label="Artist Application — Step 1 of 2"
-        title="Apply to Join oVoxi"
+        title="Apply to Join OVOXI"
         subtitle="Tell us about yourself and your sound. We review every application."
       />
 

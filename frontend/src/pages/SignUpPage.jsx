@@ -16,7 +16,7 @@ const SignUpPage = () => {
   <div className="min-h-screen bg-ink flex items-center justify-center px-4">
     <div className="w-full max-w-md">
       <div className="mb-8 text-center">
-        <img src="/logo.png" alt="oVoxi" className="h-12 w-auto mx-auto mb-6" />
+        <img src="/logo.png" alt="OVOXI" className="h-12 w-auto mx-auto mb-6" />
         {isBuyer ? (
           <>
             <h1 className="font-heading text-2xl font-semibold text-white">Create your buyer account</h1>

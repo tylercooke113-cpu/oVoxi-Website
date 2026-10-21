@@ -263,7 +263,7 @@ const LicenseModal = ({ track, config, onClose, refreshConfig, getToken, isSigne
             )}
             <label className="mt-3 flex cursor-pointer items-start gap-2.5 text-sm text-slate-300">
               <input type="checkbox" checked={planAgreed} onChange={(e) => { setPlanAgreed(e.target.checked); setPlanErrors({}); }} className="mt-1 accent-[#B44FD4]" />
-              <span>I'll publish this project within 6 months, under the <a href={cfg.terms_url} target="_blank" rel="noreferrer" className="text-cyan hover:underline">oVoxi Music License Terms</a>.</span>
+              <span>I'll publish this project within 6 months, under the <a href={cfg.terms_url} target="_blank" rel="noreferrer" className="text-cyan hover:underline">OVOXI Music License Terms</a>.</span>
             </label>
             {planErrors.terms && <p className="mt-1 text-xs text-red-300">{planErrors.terms}</p>}
             {planErrors.form && <p className="mt-3 rounded-xl border border-red-400/30 bg-red-400/[0.06] px-3 py-2 text-xs text-red-200">{planErrors.form}</p>}
@@ -359,7 +359,7 @@ const LicenseModal = ({ track, config, onClose, refreshConfig, getToken, isSigne
               </div>
               <label className="mt-3 flex cursor-pointer items-start gap-2.5 text-sm text-slate-300">
                 <input type="checkbox" checked={agreed} onChange={(e) => { setAgreed(e.target.checked); setErrors({}); touchSingle(); }} className="mt-1 accent-[#B44FD4]" />
-                <span>I agree to the <a href={cfg.terms_url} target="_blank" rel="noreferrer" className="text-cyan hover:underline">oVoxi Music License Terms</a>.</span>
+                <span>I agree to the <a href={cfg.terms_url} target="_blank" rel="noreferrer" className="text-cyan hover:underline">OVOXI Music License Terms</a>.</span>
               </label>
               {errors.terms && <p className="mt-1 text-xs text-red-300">{errors.terms}</p>}
               {errors.form && <p className="mt-3 rounded-xl border border-red-400/30 bg-red-400/[0.06] px-3 py-2 text-xs text-red-200">{errors.form}</p>}

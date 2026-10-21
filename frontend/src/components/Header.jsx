@@ -9,7 +9,7 @@ const Logo = () => (
   <Link to="/" data-testid="logo-link" className="flex items-center group">
     <img
       src="/logo.png"
-      alt="oVoxi"
+      alt="OVOXI"
       className="h-10 w-auto transition-opacity group-hover:opacity-80"
     />
   </Link>

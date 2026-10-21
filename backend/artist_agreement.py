@@ -174,7 +174,7 @@ def render_pdf(text: str, sig: dict) -> bytes:
     buf = BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=LETTER, leftMargin=0.9 * inch, rightMargin=0.9 * inch,
                             topMargin=0.9 * inch, bottomMargin=0.9 * inch,
-                            title="oVoxi Artist Agreement", author="OVOXI, Inc.")
+                            title="OVOXI Artist Agreement", author="OVOXI, Inc.")
     doc.agreement_id = sig["agreement_id"]
     story = []
     for b in blocks(text):
@@ -194,11 +194,11 @@ def render_pdf(text: str, sig: dict) -> bytes:
 # ---------------------------------------------------------------------------
 
 def agreement_email(*, name: str, signed_date: str) -> tuple:
-    subject = "Your signed oVoxi Artist Agreement"
-    text = (f"Hi {name},\n\nThanks for signing the oVoxi Artist Agreement on {signed_date}. "
+    subject = "Your signed OVOXI Artist Agreement"
+    text = (f"Hi {name},\n\nThanks for signing the OVOXI Artist Agreement on {signed_date}. "
             "Your signed copy is attached. You can also download it any time from your Vault.\n\n"
-            "Questions? Reply to this email.\n\noVoxi")
-    html = (f"<p>Hi {escape(name)},</p><p>Thanks for signing the oVoxi Artist Agreement on "
+            "Questions? Reply to this email.\n\nOVOXI")
+    html = (f"<p>Hi {escape(name)},</p><p>Thanks for signing the OVOXI Artist Agreement on "
             f"{escape(signed_date)}. Your signed copy is attached. You can also download it any "
-            "time from your Vault.</p><p>Questions? Reply to this email.</p><p>oVoxi</p>")
+            "time from your Vault.</p><p>Questions? Reply to this email.</p><p>OVOXI</p>")
     return subject, html, text

@@ -127,7 +127,7 @@ def render_pdf(text: str, sig: dict) -> bytes:
     buf = BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=LETTER, leftMargin=0.9 * inch, rightMargin=0.9 * inch,
                             topMargin=0.9 * inch, bottomMargin=0.9 * inch,
-                            title="oVoxi Co-owner Consent", author="OVOXI, Inc.")
+                            title="OVOXI Co-owner Consent", author="OVOXI, Inc.")
     doc.agreement_id = sig["request_id"]
     story = []
     for b in blocks(text):
@@ -153,35 +153,35 @@ def request_email(*, uploader_name: str, work_title: str, interests: list, uses:
     uses_line = " and ".join(uses) if uses else "AI training and sync"
     interest_lines = format_interests(interests)
     text = (
-        f"{uploader_name} uploaded \"{work_title}\" to oVoxi and listed you as a rights holder.\n\n"
+        f"{uploader_name} uploaded \"{work_title}\" to OVOXI and listed you as a rights holder.\n\n"
         f"Your interest in the song:\n{interest_lines}\n\n"
-        "oVoxi licenses songs for AI training and sync only when every rights holder agrees. "
+        "OVOXI licenses songs for AI training and sync only when every rights holder agrees. "
         f"This song is opted into: {uses_line}.\n\n"
         f"Review and sign: {link}\n\n"
         "This link expires in 30 days.\n\n"
-        "If you don't know this song, you can ignore this email or decline on the page.\n\noVoxi"
+        "If you don't know this song, you can ignore this email or decline on the page.\n\nOVOXI"
     )
     rows = "".join(f"<li>{escape(l)}</li>" for l in interest_lines.split("\n") if l)
     html = (
-        f"<p>{escape(uploader_name)} uploaded &quot;{escape(work_title)}&quot; to oVoxi and listed "
+        f"<p>{escape(uploader_name)} uploaded &quot;{escape(work_title)}&quot; to OVOXI and listed "
         "you as a rights holder.</p>"
         f"<p>Your interest in the song:</p><ul>{rows}</ul>"
-        "<p>oVoxi licenses songs for AI training and sync only when every rights holder agrees. "
+        "<p>OVOXI licenses songs for AI training and sync only when every rights holder agrees. "
         f"This song is opted into: {escape(uses_line)}.</p>"
         f'<p><a href="{escape(link, {chr(34): "&quot;"})}" style="display:inline-block;'
         "background:#7B5EA7;color:#fff;text-decoration:none;padding:12px 22px;border-radius:999px;"
         'font-size:14px">Review and sign</a></p>'
         "<p>This link expires in 30 days.</p>"
-        "<p>If you don't know this song, you can ignore this email or decline on the page.</p><p>oVoxi</p>"
+        "<p>If you don't know this song, you can ignore this email or decline on the page.</p><p>OVOXI</p>"
     )
     return subject, html, text
 
 
 def signed_copy_email(*, work_title: str) -> tuple:
-    subject = f'Your signed oVoxi Co-owner Consent for "{work_title}"'
-    text = (f'Thanks for signing the oVoxi Co-owner Consent for "{work_title}". '
-            "Your signed copy is attached.\n\nQuestions? Reply to this email.\n\noVoxi")
+    subject = f'Your signed OVOXI Co-owner Consent for "{work_title}"'
+    text = (f'Thanks for signing the OVOXI Co-owner Consent for "{work_title}". '
+            "Your signed copy is attached.\n\nQuestions? Reply to this email.\n\nOVOXI")
     from xml.sax.saxutils import escape
-    html = (f'<p>Thanks for signing the oVoxi Co-owner Consent for &quot;{escape(work_title)}&quot;. '
-            "Your signed copy is attached.</p><p>Questions? Reply to this email.</p><p>oVoxi</p>")
+    html = (f'<p>Thanks for signing the OVOXI Co-owner Consent for &quot;{escape(work_title)}&quot;. '
+            "Your signed copy is attached.</p><p>Questions? Reply to this email.</p><p>OVOXI</p>")
     return subject, html, text

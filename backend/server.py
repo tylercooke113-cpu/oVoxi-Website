@@ -1549,7 +1549,7 @@ async def agreement_sign(request: Request, payload: AgreementSignRequest,
     subject, html, body = artist_agreement.agreement_email(
         name=fields["legal_name"], signed_date=now.strftime("%B %d, %Y"))
     result = await send_email(to=user["email"], subject=subject, html=html, text=body,
-                              attachments=[("oVoxi-Artist-Agreement.pdf", pdf)],
+                              attachments=[("OVOXI-Artist-Agreement.pdf", pdf)],
                               idempotency_key=f"agreement-{agreement_id}")
     logger.info("Agreement %s email: %s", agreement_id, result["status"])
 
@@ -1566,7 +1566,7 @@ async def agreement_pdf(request: Request, clerk_payload: dict = Depends(require_
     url = await asyncio.to_thread(
         r2_client.generate_presigned_url, "get_object",
         Params={"Bucket": R2_BUCKET, "Key": doc["pdf_key"],
-                "ResponseContentDisposition": 'attachment; filename="oVoxi-Artist-Agreement.pdf"'},
+                "ResponseContentDisposition": 'attachment; filename="OVOXI-Artist-Agreement.pdf"'},
         ExpiresIn=300)
     return {"url": url}
 
@@ -2166,7 +2166,7 @@ async def cosign_sign(request: Request, token: str, payload: CosignSignRequest):
     subject, html, body = cosign.signed_copy_email(work_title=sub.get("track_name"))
     try:
         await send_email(to=req["email"], subject=subject, html=html, text=body,
-                         attachments=[("oVoxi-Co-owner-Consent.pdf", pdf)],
+                         attachments=[("OVOXI-Co-owner-Consent.pdf", pdf)],
                          reply_to=REPLY_TO_COSIGN, idempotency_key=f"cosign-signed-{req['id']}")
     except Exception as exc:
         logger.warning("cosign signed-copy email failed for %s: %s", req["id"], exc)
@@ -3232,7 +3232,7 @@ async def _send_license_email(order: dict, pdf: bytes | None = None, *, reissued
                                         reissued=reissued)
     result = await send_email(
         to=order["buyer_email"], subject=subject, html=html, text=text,
-        attachments=[(f"oVoxi-license-{order['license_id']}.pdf", pdf)],
+        attachments=[(f"OVOXI-license-{order['license_id']}.pdf", pdf)],
         idempotency_key=idempotency_key or (
             f"license-{order['order_id']}-v{order.get('token_version')}" + ("-reissue" if reissued else "")))
     logger.info("license email order=%s status=%s error=%s", order["order_id"], result["status"], result.get("error"))
@@ -3668,7 +3668,7 @@ async def subscriptions_register(request: Request, payload: RegisterRequest,
         subject, html, text = subscription_license_email(
             lic, download_url=f"{sync_orders.site_url()}/license/{token}")
         res = await send_email(to=lic["buyer_email"], subject=subject, html=html, text=text,
-                               attachments=[(f"oVoxi-license-{lic['license_id']}.pdf", pdf)],
+                               attachments=[(f"OVOXI-license-{lic['license_id']}.pdf", pdf)],
                                idempotency_key=f"sub-license-{lic['license_id']}")
         await db.licenses.update_one({"license_id": lic["license_id"]},
                                      {"$set": {"email_status": res["status"]}})
@@ -3830,7 +3830,7 @@ async def account_certificate(request: Request, license_id: str,
     url = await asyncio.to_thread(
         r2_client.generate_presigned_url, "get_object",
         Params={"Bucket": R2_BUCKET, "Key": lic["pdf_key"],
-                "ResponseContentDisposition": f'attachment; filename="oVoxi-license-{license_id}.pdf"'},
+                "ResponseContentDisposition": f'attachment; filename="OVOXI-license-{license_id}.pdf"'},
         ExpiresIn=300)
     return {"url": url}
 

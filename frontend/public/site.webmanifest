@@ -1,6 +1,6 @@
 {
-  "name": "oVoxi",
-  "short_name": "oVoxi",
+  "name": "OVOXI",
+  "short_name": "OVOXI",
   "icons": [
     { "src": "/icon-192.png", "type": "image/png", "sizes": "192x192" },
     { "src": "/icon-512.png", "type": "image/png", "sizes": "512x512" }

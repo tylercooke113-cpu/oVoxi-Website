@@ -37,7 +37,7 @@ export default function Close() {
 
         <footer className="border-t border-ovx-line pt-8 flex flex-col sm:flex-row justify-between items-start gap-6">
           <span className="font-jetmono text-[13px] text-ovx-faint uppercase tracking-[0.12em]">
-            oVoxi
+            OVOXI
           </span>
           <div className="flex gap-8">
             <a

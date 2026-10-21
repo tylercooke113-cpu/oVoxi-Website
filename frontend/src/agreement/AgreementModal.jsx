@@ -261,7 +261,7 @@ export default function AgreementModal({ open, onClose, onSigned, getToken, pref
         {/* Header */}
         <div className="flex items-start justify-between gap-2.5 px-[22px] pt-5">
           <h2 id="agreement-title" className="font-heading text-[22px] font-extrabold text-white">
-            oVoxi Artist Agreement
+            OVOXI Artist Agreement
           </h2>
           <button
             type="button"
@@ -299,8 +299,8 @@ export default function AgreementModal({ open, onClose, onSigned, getToken, pref
             <>
               <p className="mb-[18px] text-[14.5px] leading-[1.5] text-slate-300">
                 {previousSigned
-                  ? "We've updated the oVoxi Artist Agreement. Review and sign the new version to keep uploading. Your tracks and opt-ins stay as they are."
-                  : 'Before your first upload, sign the oVoxi Artist Agreement. You only do this once, and it covers every track you upload. It takes about two minutes.'}
+                  ? "We've updated the OVOXI Artist Agreement. Review and sign the new version to keep uploading. Your tracks and opt-ins stay as they are."
+                  : 'Before your first upload, sign the OVOXI Artist Agreement. You only do this once, and it covers every track you upload. It takes about two minutes.'}
               </p>
               <div className="mb-4 inline-flex overflow-hidden rounded-full border border-white/10">
                 {[['individual', "I'm signing as myself"], ['company', 'For a company']].map(([val, label]) => (
@@ -446,7 +446,7 @@ export default function AgreementModal({ open, onClose, onSigned, getToken, pref
               </label>
               <label className="my-2.5 flex cursor-pointer items-start gap-2.5 text-sm leading-[1.45] text-slate-300">
                 <Checkbox checked={agreed} onCheckedChange={(v) => setAgreed(v === true)} className={CHECKBOX_CLASS} />
-                <span>I have read and agree to the oVoxi Artist Agreement.</span>
+                <span>I have read and agree to the OVOXI Artist Agreement.</span>
               </label>
               <div className="mt-2 min-h-[18px] text-[13px] text-red-400">{err3 || liveNameError}</div>
             </>

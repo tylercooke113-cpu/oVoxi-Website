@@ -47,7 +47,7 @@ def _parse_terms(text: str) -> list:
 
 _DRAFT0 = [{"type": "para", "text": t} for t in (
     "PLACEHOLDER TERMS. This text is a draft pending legal review and is not the final license.",
-    "1. Grant. oVoxi grants the Licensee a non-exclusive, non-transferable license to synchronize "
+    "1. Grant. OVOXI grants the Licensee a non-exclusive, non-transferable license to synchronize "
     "the Track with the Licensee's audiovisual content within the scope of the Tier named above.",
     "2. Restrictions. The Licensee may not resell, sublicense or redistribute the Track or its stems "
     "as standalone audio, register the Track with any content identification system, or use the Track "
@@ -110,7 +110,7 @@ def _header_bar(canvas, doc):
     canvas.rect(0, LETTER[1] - 0.18 * inch, LETTER[0], 0.18 * inch, stroke=0, fill=1)
     canvas.setFont("Helvetica", 8)
     canvas.setFillColor(MUTED)
-    canvas.drawString(0.8 * inch, 0.5 * inch, "oVoxi  |  ovoxi.net")
+    canvas.drawString(0.8 * inch, 0.5 * inch, "OVOXI  |  ovoxi.net")
     canvas.drawRightString(LETTER[0] - 0.8 * inch, 0.5 * inch, f"Page {doc.page}")
     canvas.restoreState()
 
@@ -160,7 +160,7 @@ def render_license_pdf(order: dict, *, track_title: str, artist_name: str,
     story = [
         _p("Sync License Certificate", _TITLE),
         Spacer(1, 4),
-        _p("Issued by oVoxi for the track and tier below.", _SUB),
+        _p("Issued by OVOXI for the track and tier below.", _SUB),
         Spacer(1, 16),
         table,
         Spacer(1, 18),
@@ -206,7 +206,7 @@ def render_license_pdf(order: dict, *, track_title: str, artist_name: str,
     buf = BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=LETTER, leftMargin=0.8 * inch, rightMargin=0.8 * inch,
                             topMargin=0.8 * inch, bottomMargin=0.8 * inch,
-                            title=f"oVoxi license {order['license_id']}", author="oVoxi")
+                            title=f"OVOXI license {order['license_id']}", author="OVOXI")
 
     def on_page(canvas, d):
         _header_bar(canvas, d)

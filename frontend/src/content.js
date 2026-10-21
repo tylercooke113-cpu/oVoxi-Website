@@ -1,7 +1,7 @@
 // Central content + data source (pitch deck = source of truth)
 
 export const BRAND = {
-  name: "oVoxi",
+  name: "OVOXI",
   tagline: "The Curated Music Catalog Built for the AI Economy",
   email: "ovoxi.ai@gmail.com",
   domain: "ovoxi.net",
@@ -17,7 +17,7 @@ export const NAV_LINKS = [
 export const PROCESS = [
   { step: "01", title: "Artist Submits", body: "Emerging artists submit their catalog and sign our rights grant agreement." },
   { step: "02", title: "We Master & Prepare", body: "We handle professional mastering and 5-stem separation so your music is platform-ready." },  { step: "03", title: "Ownership Verified", body: "Chain-of-title documentation and acoustic fingerprinting confirm every track is fully cleared." },
-  { step: "04", title: "Catalog Licensed", body: "If AI platforms or enterprise clients license your music, you receive a payout based on attributable generations." },
+  { step: "04", title: "Catalog Licensed", body: "If AI platforms or buyers license your music, you receive 33% of the net revenue it earns, paid monthly." },
 ];
 
 export const AI_COPY = {

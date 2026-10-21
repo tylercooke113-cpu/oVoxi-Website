@@ -285,7 +285,7 @@ def test_sign_happy_path(client, fake_db, r2, mailer, agreements_dir):
     assert re.fullmatch(r"[0-9a-f]{64}", doc["pdf_sha256"])
     assert doc["ip"] and "user_agent" in doc
     assert mailer.await_count == 1
-    assert mailer.await_args.kwargs["attachments"][0][0] == "oVoxi-Artist-Agreement.pdf"
+    assert mailer.await_args.kwargs["attachments"][0][0] == "OVOXI-Artist-Agreement.pdf"
 
 
 def test_sign_hash_mismatch(client, fake_db, r2, agreements_dir):

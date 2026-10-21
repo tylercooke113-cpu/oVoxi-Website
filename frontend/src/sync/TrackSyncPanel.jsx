@@ -15,7 +15,7 @@ const CONFIRM_COPY = {
   'ai_training:grant': ['Use this track for AI training?', 'It will be included in future AI deliveries.'],
   'ai_training:withdraw': ['Stop using this track for AI training?',
     'It will be left out of future AI deliveries. Deliveries already made are not recalled.'],
-  'sync:withdraw': ['Remove from the sync library?',
+  'sync:withdraw': ['Remove from the OVOXI Catalog?',
     'It will no longer be listed for sale. Licenses already sold stay valid.'],
   'exclusive_buyout:withdraw': ['Stop allowing exclusive buyouts?',
     'Buyers will no longer be able to buy exclusive rights to this track. Buyouts already granted are not affected.'],
@@ -181,7 +181,7 @@ const SyncStatus = ({ track }) => {
   if (!track.consent.sync) {
     return (
       <>
-        <p className="text-sm text-slate-500">Not in the sync library</p>
+        <p className="text-sm text-slate-500">Not in the OVOXI Catalog</p>
         <p className="mt-1 text-xs text-slate-500">Turn on Sync placements to add it. You'll answer the sync questions first.</p>
       </>
     );
@@ -192,7 +192,7 @@ const SyncStatus = ({ track }) => {
   if (track.delisted_by_admin) {
     return (
       <>
-        <p className="text-sm font-medium text-red-400">● Removed by oVoxi</p>
+        <p className="text-sm font-medium text-red-400">● Removed by OVOXI</p>
         <p className="mt-1 text-xs text-slate-500">Contact support if you think this is a mistake.</p>
       </>
     );
@@ -269,7 +269,7 @@ const TrackSyncPanel = ({ track, getToken, onUpdated, status }) => {
   const copy = confirm && !addingSync ? CONFIRM_COPY[`${confirm.scope}:${confirm.action}`] : null;
   const isBuyoutGrant = confirm?.scope === 'exclusive_buyout' && confirm?.action === 'grant';
   const showBuyout = !!status?.buyouts_supported && !track.legacy;
-  const modalTitle = addingSync ? 'Add to the sync library'
+  const modalTitle = addingSync ? 'Add to the OVOXI Catalog'
     : isBuyoutGrant ? 'Allow exclusive buyout?' : copy?.[0];
 
   return (
@@ -362,7 +362,7 @@ const TrackSyncPanel = ({ track, getToken, onUpdated, status }) => {
       </div>
 
       <div>
-        <p className="mb-2 text-[11px] uppercase tracking-[0.14em] text-slate-500">Sync library</p>
+        <p className="mb-2 text-[11px] uppercase tracking-[0.14em] text-slate-500">OVOXI Catalog</p>
         <SyncStatus track={track} />
       </div>
 

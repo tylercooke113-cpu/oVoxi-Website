@@ -156,7 +156,7 @@ const LibraryInner = () => {
         </div>
       )}
       <div className="mx-auto max-w-6xl px-4 pt-6">
-        <p className="text-xs uppercase tracking-[0.2em] text-cyan">oVoxi sync library</p>
+        <p className="text-xs uppercase tracking-[0.2em] text-cyan">OVOXI Catalog</p>
         <h1 className="mt-1.5 font-heading text-4xl font-extrabold text-white md:text-5xl">Discover our royalty-free music for videos</h1>
         <p className="mb-6 mt-2 text-slate-400">All genres and sounds. Cleared for sync.</p>
 

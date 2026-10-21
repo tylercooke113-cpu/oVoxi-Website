@@ -3,7 +3,7 @@ import { Reveal } from '../components/Reveal';
 const stats = [
   { value: '$500M',  label: 'RIAA suits against Suno and Udio, 2024' },
   { value: '2 of 3', label: 'majors now license AI platforms' },
-  { value: '$0.005', label: 'per generation, the settlement template' },
+  { value: '$3,000', label: 'per book in Anthropic\'s $1.5B settlement' },
   { value: '0',      label: 'independent artist seats at that table' },
 ];
 

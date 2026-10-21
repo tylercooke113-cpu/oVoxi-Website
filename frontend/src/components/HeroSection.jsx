@@ -45,7 +45,7 @@ export const HeroSection = () => (
         transition={{ duration: 0.7, delay: 0.25 }}
         className="mt-7 max-w-2xl text-base leading-relaxed text-slate-400 sm:text-lg"
       >
-        oVoxi sources fully licensed, stems-delivered recordings from emerging artists and licenses
+        OVOXI sources fully licensed, stems-delivered recordings from emerging artists and licenses
         them to AI music platforms and enterprise clients.
       </motion.p>
 

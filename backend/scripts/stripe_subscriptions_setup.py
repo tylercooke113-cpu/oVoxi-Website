@@ -13,7 +13,7 @@ import sys
 
 import stripe
 
-PRODUCTS = {"creator": "oVoxi Creator", "pro": "oVoxi Pro", "business": "oVoxi Business"}
+PRODUCTS = {"creator": "OVOXI Creator", "pro": "OVOXI Pro", "business": "OVOXI Business"}
 PRICES = [
     ("sub_creator_month", "creator", 1900, "month"), ("sub_creator_year", "creator", 19000, "year"),
     ("sub_pro_month", "pro", 4900, "month"), ("sub_pro_year", "pro", 49000, "year"),

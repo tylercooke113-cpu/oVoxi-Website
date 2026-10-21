@@ -12,7 +12,7 @@ export default function Category() {
             >
               Epidemic proved curation scales.<br />
               The majors proved AI pays.<br />
-              oVoxi is the first catalog built for both.
+              OVOXI is the first catalog built for both.
             </p>
           </Reveal>
         </div>

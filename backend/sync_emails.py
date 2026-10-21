@@ -27,7 +27,7 @@ def license_email(order: dict, *, download_url: str, reissued: bool = False) -> 
     lid = order.get("license_id", "")
     expires = _fmt_date(order.get("token_expires_at"))
     prefix = "[TEST] " if order.get("test_mode") else ""
-    lead = "Here is a new download link for your license." if reissued else "Thanks for licensing on oVoxi."
+    lead = "Here is a new download link for your license." if reissued else "Thanks for licensing on OVOXI."
     subject = f"{prefix}Your license for {title}" + (" (new download link)" if reissued else "")
     test_note = ("This is a test order. The files are for testing and the attached certificate "
                  "is not a valid license.") if order.get("test_mode") else ""
@@ -45,7 +45,7 @@ def license_email(order: dict, *, download_url: str, reissued: bool = False) -> 
         "Your license certificate is attached. Keep it with your project files.",
         "",
         f"Questions? Reply to this email with your License ID ({lid}).",
-        "oVoxi",
+        "OVOXI",
     ] if line is not None)
 
     e = escape
@@ -87,7 +87,7 @@ def subscription_license_email(lic: dict, *, download_url: str) -> tuple[str, st
     e = escape
     plan_label = lic.get("license_label") or "your plan"
     project = (lic.get("project") or {}).get("name") or "your project"
-    subject = f"Your oVoxi license: {lic.get('track_title') or 'your track'}"
+    subject = f"Your OVOXI license: {lic.get('track_title') or 'your track'}"
     html = (f"<p>Your project <b>{e(project)}</b> is licensed under your {e(plan_label)}.</p>"
             f"<p>License ID {e(lic['license_id'])}. The certificate is attached.</p>"
             f'<p><a href="{e(download_url, quote=True)}">Download your files</a>. '

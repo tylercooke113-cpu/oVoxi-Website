@@ -421,7 +421,7 @@ const SongForm = ({ value, onChange, index, disabled, agreementStatus, getToken 
             checked: value.consentSync,
             onChange: toggleSync,
             title: 'Use this upload for sync placements.',
-            help: 'Listed in the oVoxi sync library for creators and brands to license.',
+            help: 'Listed in the OVOXI Catalog for creators and brands to license.',
           },
         ].map((c) => (
           <label
@@ -542,7 +542,7 @@ const SongForm = ({ value, onChange, index, disabled, agreementStatus, getToken 
               ))}
             </RadioGroup>
             <p className="text-xs leading-relaxed text-slate-500">
-              Songs in Content ID are not listed in the sync library, because buyers' videos would be claimed.
+              Songs in Content ID are not listed in the OVOXI Catalog, because buyers' videos would be claimed.
             </p>
           </div>
 

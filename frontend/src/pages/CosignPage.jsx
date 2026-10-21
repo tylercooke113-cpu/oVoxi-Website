@@ -218,8 +218,8 @@ const CosignPage = () => {
 
         {/* Plain-English summary */}
         <ul className="list-disc space-y-1.5 rounded-2xl border border-white/10 bg-white/[0.02] p-6 pl-10 text-sm text-slate-300 marker:text-slate-600">
-          <li>You keep ownership of your share. You're letting oVoxi license this song for the uses above.</li>
-          <li>You're paid your share of oVoxi's revenue share for this song, as set out in the documents below.</li>
+          <li>You keep ownership of your share. You're letting OVOXI license this song for the uses above.</li>
+          <li>You're paid your share of OVOXI's revenue share for this song, as set out in the documents below.</li>
           <li>You can end this after 12 months with 60 days' notice.</li>
         </ul>
 

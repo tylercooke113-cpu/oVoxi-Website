@@ -344,7 +344,7 @@ Used for webhook idempotency.
 | `SYNC_TOKEN_SECRET` | required for checkout; never change once orders exist (breaks issued links) |
 | `SYNC_STRIPE_TAX_CODE` | unset (account default) until chosen with an accountant |
 | `SYNC_SITE_URL` | `https://ovoxi.net`; base for Stripe success and cancel URLs, must be https |
-| `RESEND_API_KEY`, `EMAIL_FROM`, `EMAIL_REPLY_TO` | unset means emails are skipped (delivery still works on the success page). Set: `oVoxi Licenses <licenses@mail.ovoxi.net>`, `tyler@ovoxi.net` |
+| `RESEND_API_KEY`, `EMAIL_FROM`, `EMAIL_REPLY_TO` | unset means emails are skipped (delivery still works on the success page). Set: `OVOXI Licenses <licenses@mail.ovoxi.net>`, `tyler@ovoxi.net` |
 
 ## 13. Phases and gates
 

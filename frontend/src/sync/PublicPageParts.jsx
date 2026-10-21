@@ -14,7 +14,7 @@ export const VisibilityBanner = ({ viewer }) => {
   if (!viewer || viewer.public) return null;
   const text = viewer.is_admin && !viewer.is_owner
     ? 'Admin preview. This page is only visible to admins and the artist until it is public.'
-    : 'Only you and oVoxi can see this page right now.';
+    : 'Only you and OVOXI can see this page right now.';
   return (
     <div className="mx-auto mt-6 max-w-5xl px-4" data-testid="visibility-banner">
       <div className="rounded-xl border border-cyan/30 bg-cyan/[0.06] px-4 py-2.5 text-[13px] text-sky-200">{text}</div>

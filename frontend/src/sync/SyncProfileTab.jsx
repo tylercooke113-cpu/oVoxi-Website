@@ -130,7 +130,7 @@ const SyncProfileTab = ({ getToken, tracks, role, tracksLoaded }) => {
   const profileForm = (
     <div className="flex flex-col gap-4">
       {!slug && (
-        <p className="text-sm text-slate-400">Submit your music to your sync library. Start with your profile.</p>
+        <p className="text-sm text-slate-400">Submit your music to the OVOXI Catalog. Start with your profile.</p>
       )}
       <form onSubmit={save} className="rounded-2xl border border-white/10 bg-white/[0.02] p-6">
         <div className="mb-5 flex flex-wrap items-center gap-4" data-testid="profile-photo">

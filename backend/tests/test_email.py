@@ -18,7 +18,7 @@ NOW = datetime(2026, 9, 30, 12, 0, tzinfo=timezone.utc)
 @pytest.fixture(autouse=True)
 def email_env(monkeypatch):
     monkeypatch.setenv("RESEND_API_KEY", "re_test_key")
-    monkeypatch.setenv("EMAIL_FROM", "oVoxi Licenses <licenses@mail.ovoxi.net>")
+    monkeypatch.setenv("EMAIL_FROM", "OVOXI Licenses <licenses@mail.ovoxi.net>")
     monkeypatch.setenv("EMAIL_REPLY_TO", "tyler@ovoxi.net")
 
 
@@ -43,7 +43,7 @@ def test_sends_to_resend_with_attachment_and_idempotency():
     assert seen["headers"]["authorization"] == "Bearer re_test_key"
     assert seen["headers"]["idempotency-key"] == "license-o1-v1"
     b = seen["body"]
-    assert b["from"] == "oVoxi Licenses <licenses@mail.ovoxi.net>" and b["to"] == ["d@example.com"]
+    assert b["from"] == "OVOXI Licenses <licenses@mail.ovoxi.net>" and b["to"] == ["d@example.com"]
     assert b["reply_to"] == "tyler@ovoxi.net"
     assert b["attachments"] == [{"filename": "a.pdf", "content": base64.b64encode(b"%PDF-1").decode()}]
 
