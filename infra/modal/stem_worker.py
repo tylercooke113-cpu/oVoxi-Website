@@ -33,7 +33,7 @@ L4_RATE_PER_SEC = 0.000222  # $/sec as of Modal pricing page (PRD §2)
 
 # Bump this string on every meaningful deploy so Modal logs confirm which
 # code version executed. A warm container on old code logs the old string.
-WORKER_VERSION = "wav24-v2-analysis"
+WORKER_VERSION = "wav24-v3-previews"
 
 # ---------------------------------------------------------------------------
 # Image: CUDA-capable Python 3.12 with models baked in at build time
@@ -470,8 +470,9 @@ def separate_stems(
 
                 preview_base = f"{key_prefix}/{artist_slug}/{track_slug}/previews/{submission_id}"
                 for field, path, key, ctype in (
-                    ("preview_key",  res["preview_path"],  f"{preview_base}.mp3",           "audio/mpeg"),
-                    ("waveform_key", res["waveform_path"], f"{preview_base}.waveform.json", "application/json"),
+                    ("preview_key",       res["preview_path"],       f"{preview_base}.full128.mp3",   "audio/mpeg"),
+                    ("preview_short_key", res["preview_short_path"], f"{preview_base}.short.mp3",     "audio/mpeg"),
+                    ("waveform_key",      res["waveform_path"],      f"{preview_base}.waveform.json", "application/json"),
                 ):
                     if path is None:
                         continue
@@ -520,3 +521,98 @@ def separate_stems(
             "error": str(exc),
         })
         raise
+
+
+# ---------------------------------------------------------------------------
+# Backfill: regenerate previews at the new keys (Brief 25 Part A.3)
+# ---------------------------------------------------------------------------
+
+_preview_image = (
+    modal.Image.debian_slim(python_version="3.12")
+    .apt_install("ffmpeg")
+    # numpy because audio_analysis.py imports it at module top; the preview
+    # helpers themselves only shell out to ffmpeg.
+    .pip_install("boto3", "numpy")
+    .add_local_file(Path(__file__).parent / "audio_analysis.py", "/root/audio_analysis.py")
+)
+
+
+@app.function(
+    timeout=900,
+    image=_preview_image,
+    secrets=[modal.Secret.from_name("ovoxi-stem-secrets")],
+)
+def regenerate_previews(items: list) -> list:
+    """Rewrite previews at the new keys for each item. Never deletes the old
+    .mp3 object, and never overwrites an existing key: if a key is already
+    present it is kept and returned, so a half-finished run can be resumed.
+
+    items -> [{"submission_id": str, "mastered_r2_key": str}, ...]
+    returns -> [{"submission_id", "preview_key", "preview_short_key", "error"}]
+    """
+    import os
+    import tempfile
+    from pathlib import Path as P
+
+    import boto3
+    from botocore.config import Config
+
+    import audio_analysis
+
+    r2 = boto3.client(
+        "s3",
+        endpoint_url=os.environ["R2_ENDPOINT"],
+        aws_access_key_id=os.environ["R2_ACCESS_KEY_ID"],
+        aws_secret_access_key=os.environ["R2_SECRET_ACCESS_KEY"],
+        config=Config(signature_version="s3v4"),
+        region_name="auto",
+    )
+    bucket = os.environ["R2_BUCKET_NAME"]
+
+    def _exists(key: str) -> bool:
+        try:
+            r2.head_object(Bucket=bucket, Key=key)
+            return True
+        except Exception:
+            return False
+
+    results = []
+    for it in items:
+        sid = it["submission_id"]
+        mkey = it["mastered_r2_key"]
+        rec = {"submission_id": sid, "preview_key": None,
+               "preview_short_key": None, "error": None}
+        try:
+            parts = mkey.split("/")
+            if len(parts) < 4:
+                raise RuntimeError(f"Malformed mastered_r2_key {mkey!r}")
+            preview_base = f"{parts[0]}/{parts[1]}/{parts[2]}/previews/{sid}"
+            full_key = f"{preview_base}.full128.mp3"
+            short_key = f"{preview_base}.short.mp3"
+            full_exists = _exists(full_key)
+            short_exists = _exists(short_key)
+            if full_exists and short_exists:
+                # Both already written by an earlier run: keep them, do nothing.
+                rec["preview_key"] = full_key
+                rec["preview_short_key"] = short_key
+                results.append(rec)
+                continue
+            with tempfile.TemporaryDirectory() as td:
+                tdp = P(td)
+                src = tdp / "mastered.wav"
+                r2.download_file(bucket, mkey, str(src))
+                full = tdp / "full.mp3"
+                short = tdp / "short.mp3"
+                audio_analysis.make_preview(src, full)
+                audio_analysis.make_short_preview(src, short, audio_analysis.probe_duration(src))
+                for key, path, exists in ((full_key, full, full_exists), (short_key, short, short_exists)):
+                    if exists:
+                        continue  # keep the existing object; the guard never overwrites
+                    r2.put_object(Bucket=bucket, Key=key,
+                                  Body=path.read_bytes(), ContentType="audio/mpeg")
+            rec["preview_key"] = full_key
+            rec["preview_short_key"] = short_key
+        except Exception as exc:
+            rec["error"] = str(exc)
+        results.append(rec)
+    return results

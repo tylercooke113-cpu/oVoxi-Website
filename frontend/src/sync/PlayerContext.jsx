@@ -20,12 +20,17 @@ export const PlayerProvider = ({ children }) => {
   const [time, setTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [excerpt, setExcerpt] = useState(false);
 
   const loadAndPlay = useCallback(async (t, startAt = 0) => {
     const audio = audioRef.current;
     setLoading(true);
     try {
-      const { url } = await publicApi.preview(t.id, getToken, isSignedIn);
+      // publicApi.preview -> authed() calls getToken() fresh on every request,
+      // so a signed-in buyer never sends a stale (~60s) token and is reliably
+      // served the full song rather than silently getting the excerpt.
+      const { url, excerpt: ex } = await publicApi.preview(t.id, getToken, isSignedIn);
+      setExcerpt(!!ex);
       audio.src = url;
       audio.currentTime = startAt;
       await audio.play();
@@ -87,7 +92,7 @@ export const PlayerProvider = ({ children }) => {
     };
   }, [track, loadAndPlay]);
 
-  const value = { track, playing, time, duration, loading, toggle, seek };
+  const value = { track, playing, time, duration, loading, excerpt, toggle, seek };
   return (
     <PlayerContext.Provider value={value}>
       {/* controlsList/onContextMenu: no download button (PRD-03 6.3). */}

@@ -17,7 +17,8 @@ import numpy as np
 
 log = logging.getLogger("audio_analysis")
 
-PREVIEW_BITRATE = "320k"
+PREVIEW_BITRATE = "128k"
+SHORT_PREVIEW_SECONDS = 60
 WAVEFORM_POINTS = 800
 WAVEFORM_VERSION = 1
 ANALYSIS_SR = 22050
@@ -30,9 +31,32 @@ MINOR_PROFILE = np.array([6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 
 
 
 def make_preview(src: Path, dst: Path) -> None:
-    """320 kbps MP3 playback derivative. Never licensed or delivered (PRD-03 6.3)."""
+    """128 kbps MP3 playback derivative (full song, signed-in). Never licensed or delivered (PRD-03 6.3)."""
     subprocess.run(
         ["ffmpeg", "-y", "-i", str(src), "-vn", "-map_metadata", "-1",
+         "-codec:a", "libmp3lame", "-b:a", PREVIEW_BITRATE, str(dst)],
+        check=True, capture_output=True,
+    )
+
+
+def probe_duration(src: Path) -> float:
+    """Track length in seconds via ffprobe."""
+    out = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+         "-of", "default=noprint_wrappers=1:nokey=1", str(src)],
+        check=True, capture_output=True, text=True,
+    )
+    return float(out.stdout.strip())
+
+
+def make_short_preview(src: Path, dst: Path, duration_s: float) -> None:
+    """60-second public excerpt from about a third of the way in, with fades."""
+    start = max(0.0, min(duration_s * 0.33, duration_s - SHORT_PREVIEW_SECONDS))
+    length = min(SHORT_PREVIEW_SECONDS, duration_s)
+    subprocess.run(
+        ["ffmpeg", "-y", "-ss", f"{start:.2f}", "-t", f"{length:.2f}", "-i", str(src),
+         "-vn", "-map_metadata", "-1",
+         "-af", f"afade=t=in:d=1,afade=t=out:st={max(0.0, length - 2):.2f}:d=2",
          "-codec:a", "libmp3lame", "-b:a", PREVIEW_BITRATE, str(dst)],
         check=True, capture_output=True,
     )
@@ -137,8 +161,8 @@ def detect_key_with_confidence(y: np.ndarray, sr: int = ANALYSIS_SR) -> Optional
 def analyze(mastered: Path, workdir: Path) -> dict:
     """Run every step independently. A failed step leaves its result as None
     and is listed in `errors`; it never raises."""
-    out = {"preview_path": None, "waveform_path": None, "bpm": None, "key": None,
-           "key_confidence": None, "errors": []}
+    out = {"preview_path": None, "preview_short_path": None, "waveform_path": None,
+           "bpm": None, "key": None, "key_confidence": None, "errors": []}
 
     try:
         preview = workdir / "preview.mp3"
@@ -146,6 +170,13 @@ def analyze(mastered: Path, workdir: Path) -> dict:
         out["preview_path"] = preview
     except Exception as exc:
         out["errors"].append(f"preview: {exc}")
+
+    try:
+        short = workdir / "preview_short.mp3"
+        make_short_preview(mastered, short, probe_duration(mastered))
+        out["preview_short_path"] = short
+    except Exception as exc:
+        out["errors"].append(f"preview_short: {exc}")
 
     try:
         y = load_mono(mastered)

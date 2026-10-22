@@ -2603,13 +2603,29 @@ async def get_public_waveform(request: Request, track_id: str, viewer: Optional[
                         headers={"Cache-Control": "private, max-age=3600"})
 
 
+def _preview_rate_key(request: Request) -> str:
+    """Rate-limit bucket for the preview endpoint. Signed-in callers (any
+    bearer token present) get a higher tier than anonymous ones; real token
+    verification still happens in the endpoint via optional_clerk."""
+    ip = get_real_client_ip(request)
+    signed_in = bool((request.headers.get("authorization") or "").strip())
+    return f"{'in' if signed_in else 'out'}:{ip}"
+
+
+def _preview_rate_limit(key: str) -> str:
+    return "60/minute;1000/day" if key.startswith("in:") else "20/minute;200/day"
+
+
 @api_router.post("/sync/tracks/{track_id}/preview")
-@limiter.limit("30/minute")
+@limiter.limit(_preview_rate_limit, key_func=_preview_rate_key)
 async def get_public_preview(request: Request, track_id: str, viewer: Optional[dict] = Depends(optional_clerk)):
     doc, _, _ = await _visible_track(track_id, viewer)
-    key = doc.get("preview_key")
+    # Signed in (incl. owner/admin): full song. Signed out: 60-second excerpt
+    # only, and never a fallback to the full file.
+    signed_in = viewer is not None
+    key = doc.get("preview_key") if signed_in else doc.get("preview_short_key")
     if not key:
-        raise _not_found()
+        raise HTTPException(status_code=404, detail="Preview unavailable")
     try:
         url = await asyncio.to_thread(
             r2_client.generate_presigned_url, "get_object",
@@ -2620,7 +2636,7 @@ async def get_public_preview(request: Request, track_id: str, viewer: Optional[d
     except Exception as exc:
         logger.error("Preview sign failed for %s: %s", track_id, exc)
         raise HTTPException(status_code=503, detail="Preview unavailable. Please try again.")
-    return {"url": url, "expires_in": PREVIEW_URL_TTL}
+    return {"url": url, "expires_in": PREVIEW_URL_TTL, "excerpt": not signed_in}
 
 
 # ---------------------------------------------------------------------------
@@ -3007,11 +3023,13 @@ async def stems_callback(request: Request):
         # callback: a 400 here would leave the track stuck in "processing"
         # (the worker does not retry). Anything invalid is logged and dropped.
         preview_base = f"{parts[0]}/{parts[1]}/{parts[2]}/previews/{sid}"
-        for field, suffix in (("preview_key", ".mp3"), ("waveform_key", ".waveform.json")):
+        for field, suffixes in (("preview_key", (".full128.mp3", ".mp3")),
+                                ("preview_short_key", (".short.mp3",)),
+                                ("waveform_key", (".waveform.json",))):
             value = payload.get(field)
             if value is None:
                 continue
-            if value == preview_base + suffix:
+            if value in {preview_base + s for s in suffixes}:
                 extra[field] = value
             else:
                 logger.error("Callback %s: %s outside expected path, dropped", sid, field)

@@ -125,6 +125,7 @@ def test_analyze_end_to_end(wav, tmp_path):
     out = aa.analyze(src, tmp_path)
     assert out["errors"] == []
     assert out["preview_path"].exists()
+    assert out["preview_short_path"].exists()
     data = json.loads(out["waveform_path"].read_text())
     assert data["version"] == 1 and data["points"] == aa.WAVEFORM_POINTS
     assert len(data["peaks"]) == aa.WAVEFORM_POINTS
@@ -133,7 +134,7 @@ def test_analyze_end_to_end(wav, tmp_path):
     assert out["bpm"] is None or out["bpm"] > 0
 
 
-def test_preview_is_320k_mp3(wav, tmp_path):
+def test_preview_is_128k_mp3(wav, tmp_path):
     import subprocess
     dst = tmp_path / "p.mp3"
     aa.make_preview(wav(tone([440], 5)), dst)
@@ -144,7 +145,21 @@ def test_preview_is_320k_mp3(wav, tmp_path):
     )
     stream = json.loads(probe.stdout)["streams"][0]
     assert stream["codec_name"] == "mp3"
-    assert int(stream["bit_rate"]) == 320000
+    assert int(stream["bit_rate"]) == 128000
+
+
+def test_short_preview_is_60s_for_long_track(wav, tmp_path):
+    src = wav(tone([440], 180))
+    dst = tmp_path / "short.mp3"
+    aa.make_short_preview(src, dst, aa.probe_duration(src))
+    assert aa.probe_duration(dst) == pytest.approx(60.0, abs=1.5)
+
+
+def test_short_preview_is_full_length_for_short_track(wav, tmp_path):
+    src = wav(tone([440], 20))
+    dst = tmp_path / "short.mp3"
+    aa.make_short_preview(src, dst, aa.probe_duration(src))
+    assert aa.probe_duration(dst) == pytest.approx(20.0, abs=1.5)
 
 
 def test_analyze_missing_file_never_raises(tmp_path):

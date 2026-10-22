@@ -32,7 +32,8 @@ def listed_track(**over):
         "intake": {"content_id": "no", "ipi": "00123456789", "pro_name": "BMI"},
         "rights": {"writers": [{"legal_name": "Private Person", "share_bp": 10000}]},
         "sync_status": "cleared", "on_sync_profile": True,
-        "preview_key": f"catalog/a/t/previews/{TID}.mp3",
+        "preview_key": f"catalog/a/t/previews/{TID}.full128.mp3",
+        "preview_short_key": f"catalog/a/t/previews/{TID}.short.mp3",
         "waveform_key": f"catalog/a/t/previews/{TID}.waveform.json",
         "email": "owner@email.test",
         **MATCH,
@@ -297,11 +298,42 @@ def test_preview_is_short_lived_signed_link(env):
     assert body["url"].endswith("?ttl=300") and ".mp3" in body["url"]
 
 
-def test_missing_preview_is_404(env):
+def test_preview_signed_out_gets_excerpt(env):
     client, db, r2, as_, mp = env
-    db.track_submissions.docs[0]["preview_key"] = None
     gate(mp, True)
+    as_(None)
+    body = client.post(TRACK + "/preview").json()
+    assert body["excerpt"] is True and ".short.mp3" in body["url"]
+
+
+def test_preview_signed_in_gets_full(env):
+    client, db, r2, as_, mp = env
+    gate(mp, True)
+    as_(OTHER)                       # any signed-in viewer, not owner/admin
+    body = client.post(TRACK + "/preview").json()
+    assert body["excerpt"] is False and ".full128.mp3" in body["url"]
+
+
+def test_signed_out_missing_short_is_404_no_fallback(env):
+    client, db, r2, as_, mp = env
+    db.track_submissions.docs[0]["preview_short_key"] = None   # full still present
+    gate(mp, True)
+    as_(None)
     assert client.post(TRACK + "/preview").status_code == 404
+
+
+def test_signed_out_rate_limited_after_20(env):
+    client, db, r2, as_, mp = env
+    gate(mp, True)
+    as_(None)
+    mp.setattr(server.limiter, "enabled", True)
+    h = {"x-real-ip": "198.51.100.7"}                          # unique bucket for this test
+    for _ in range(20):
+        assert client.post(TRACK + "/preview", headers=h).status_code == 200
+    assert client.post(TRACK + "/preview", headers=h).status_code == 429
+    # a bearer header lands in the signed-in bucket (60/min), so it is not limited
+    assert client.post(TRACK + "/preview",
+                       headers={**h, "authorization": "Bearer x"}).status_code != 429
 
 
 def test_gate_requires_exact_true(env):

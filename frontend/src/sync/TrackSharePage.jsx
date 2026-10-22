@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams, useLocation } from 'react-router-dom';
 import { useAuth } from '@clerk/clerk-react';
 import { Loader2 } from 'lucide-react';
 import { publicApi } from './api';
+import { safeNext } from '../lib/safeNext';
 import { PlayerProvider, fmtTime, usePlayer } from './PlayerContext';
 import PlayerBar from './PlayerBar';
 import Waveform from './Waveform';
@@ -24,7 +25,8 @@ const TrackSharePageInner = () => {
   const [params] = useSearchParams();
   const cancelled = params.get('checkout') === 'cancelled';
   const { getToken, isSignedIn, isLoaded } = useAuth();
-  const { track: current, time, duration, seek } = usePlayer();
+  const { track: current, time, duration, seek, excerpt } = usePlayer();
+  const location = useLocation();
   const [state, setState] = useState({ loading: true, data: null, missing: false });
 
   useEffect(() => {
@@ -67,6 +69,16 @@ const TrackSharePageInner = () => {
           </div>
           <div className="my-5">
             <Waveform track={track} bars={160} height={90} progress={progress} onSeek={(f) => seek(track, f)} />
+            {isCurrent && excerpt && (
+              <p className="mt-2 text-xs text-slate-400" data-testid="excerpt-note">
+                60-second preview.{' '}
+                <Link
+                  to={`/login?next=${encodeURIComponent(safeNext(location.pathname + location.search))}`}
+                  className="text-cyan hover:underline">
+                  Sign in to hear the full song.
+                </Link>
+              </p>
+            )}
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <PlayButton track={track} size={52} />
