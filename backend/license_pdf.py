@@ -46,7 +46,7 @@ def _parse_terms(text: str) -> list:
 
 
 _DRAFT0 = [{"type": "para", "text": t} for t in (
-    "PLACEHOLDER TERMS. This text is a draft pending legal review and is not the final license.",
+    "PLACEHOLDER TERMS. This text applies to test orders only.",
     "1. Grant. OVOXI grants the Licensee a non-exclusive, non-transferable license to synchronize "
     "the Track with the Licensee's audiovisual content within the scope of the Tier named above.",
     "2. Restrictions. The Licensee may not resell, sublicense or redistribute the Track or its stems "
@@ -61,6 +61,7 @@ TERMS = {
     "draft-0": _DRAFT0,
     "v1": _parse_terms((TERMS_DIR / "license_v1.txt").read_text(encoding="utf-8")),
     "v2": _parse_terms((TERMS_DIR / "license_v2.txt").read_text(encoding="utf-8")),
+    "v3": _parse_terms((TERMS_DIR / "license_v3.txt").read_text(encoding="utf-8")),
 }
 
 _BASE = ParagraphStyle("base", fontName="Helvetica", fontSize=10, leading=14, textColor=INK, alignment=TA_LEFT)

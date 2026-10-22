@@ -159,7 +159,7 @@ def _signature_flowables(sig: dict) -> list:
 
 
 def _audit_flowables(sig: dict) -> list:
-    rows = [("Agreement ID", sig["agreement_id"]), ("Version", sig["version"]),
+    rows = [("Agreement ID", sig["agreement_id"]), ("Document fingerprint", sig["text_sha256"][:16]),
             ("Text SHA-256", sig["text_sha256"]), ("Signed at (UTC)", sig["signed_at"]),
             ("Platform account", sig["platform_account_id"]), ("IP address", sig["ip"]),
             ("Electronic signature consent", "Given"), ("Age confirmation", "18 or older")]

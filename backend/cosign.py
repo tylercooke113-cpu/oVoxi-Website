@@ -54,12 +54,15 @@ def format_interests(interests: list) -> str:
 
 
 def build_values(*, now: datetime, entity_type: str, legal_name: str, coowner_email: str,
-                 uploader_name: str, artist_agreement_version: str,
+                 uploader_name: str, artist_agreement_version: str = "",
                  work_title: str, work_artist: str, work_id: str, interests: list,
                  signer_name: str = "", signer_title: str = "") -> dict:
-    """All placeholder values for cosign_v1.txt. The co-owner's typed legal name goes
-    into coowner_party, so the hash changes when the name or entity fields change: the
-    page must re-fetch the rendered text (preview) before signing."""
+    """All placeholder values for the cosign template. artist_agreement_version is used
+    only by cosign_v1.txt; cosign_v2.txt dropped that placeholder, so the value is
+    harmless there and may be omitted. The renderer substitutes only the placeholders a
+    template actually contains and ignores any extra value. The co-owner's typed legal
+    name goes into coowner_party, so the hash changes when the name or entity fields
+    change: the page must re-fetch the rendered text (preview) before signing."""
     return {
         "consent_date": aa.agreement_date(now),
         "coowner_party": coowner_party(entity_type, legal_name, signer_name, signer_title),
@@ -110,7 +113,7 @@ def _signature_flowables(sig: dict) -> list:
 
 
 def _audit_flowables(sig: dict) -> list:
-    rows = [("Consent ID", sig["request_id"]), ("Version", sig["version"]),
+    rows = [("Consent ID", sig["request_id"]), ("Document fingerprint", sig["text_sha256"][:16]),
             ("Work ID", sig["work_id"]), ("Text SHA-256", sig["text_sha256"]),
             ("Signed at (UTC)", sig["signed_at"]), ("Co-owner email", sig["coowner_email"]),
             ("IP address", sig["ip"]), ("Electronic signature consent", "Given"),

@@ -503,3 +503,19 @@ def test_status_previous_signed(client, fake_db, clerk, monkeypatch):
     body = client.get("/api/agreement/status").json()
     assert body["signed"] is False and body["previous_signed"] is True
     assert body["buyouts_supported"] is True and body["current_version"] == "v2"
+
+
+def test_render_pdf_has_fingerprint_not_version(monkeypatch):
+    pypdf = pytest.importorskip("pypdf")
+    from io import BytesIO
+    monkeypatch.setattr(artist_agreement, "AGREEMENTS_DIR", REAL_AGREEMENTS_DIR)
+    artist_agreement.load_template.cache_clear()
+    text = artist_agreement.render_text("v1", _values())
+    sig = {"agreement_id": "a-1", "version": "v1", "text_sha256": "a" * 64,
+           "signed_at": "2026-10-01T00:00:00+00:00", "typed_signature": "Jane Q Smith",
+           "licensor_email": "jane@example.com", "platform_account_id": "user_test",
+           "ip": "203.0.113.9", "fields": IND}
+    body = "\n".join(p.extract_text() for p in pypdf.PdfReader(BytesIO(artist_agreement.render_pdf(text, sig))).pages)
+    assert "Document fingerprint" in body
+    assert "aaaaaaaaaaaaaaaa" in body          # text_sha256[:16]
+    assert "Version" not in body

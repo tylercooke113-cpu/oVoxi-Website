@@ -373,3 +373,57 @@ def test_resend_other_artists_track_404(client, db):
     r = client.post(f"/api/vault/tracks/{TRACK_ID}/cosign/req-1/resend")
     assert r.status_code == 404
     server.app.dependency_overrides.pop(server.require_artist, None)
+
+
+def test_cosign_v2_renders_without_version_or_placeholders():
+    from datetime import datetime, timezone
+    import artist_agreement as aa
+    values = cosign.build_values(
+        now=datetime(2026, 10, 23, tzinfo=timezone.utc),
+        entity_type="individual", legal_name="Jane Co", coowner_email="jane@example.com",
+        uploader_name="Upload Artist",                      # no artist_agreement_version
+        work_title="Night Drive", work_artist="Artist", work_id="w1",
+        interests=[{"side": "writers", "legal_name": "Jane Co", "role": "C", "share_bp": 10000}],
+    )
+    text = cosign.render_text(values, "cosign_v2")
+    # SIGNATURE_BLOCK is deliberately left literal for the PDF; no other placeholder remains.
+    assert "{{" not in text.replace(aa.SIGNATURE_MARKER, "")
+    assert "version" not in text.lower()
+
+
+def test_cosign_v1_still_renders_agreement_version():
+    from datetime import datetime, timezone
+    import artist_agreement as aa
+    values = cosign.build_values(
+        now=datetime(2026, 10, 23, tzinfo=timezone.utc),
+        entity_type="individual", legal_name="Jane Co", coowner_email="jane@example.com",
+        uploader_name="Upload Artist", artist_agreement_version="v4",
+        work_title="Night Drive", work_artist="Artist", work_id="w1",
+        interests=[{"side": "writers", "legal_name": "Jane Co", "role": "C", "share_bp": 10000}],
+    )
+    text = cosign.render_text(values, "cosign_v1")
+    assert "{{" not in text.replace(aa.SIGNATURE_MARKER, "")
+    assert "version v4" in text                              # "...Agreement, version v4..."
+
+
+def test_cosign_pdf_has_fingerprint_not_version():
+    pypdf = pytest.importorskip("pypdf")
+    from io import BytesIO
+    from datetime import datetime, timezone
+    values = cosign.build_values(
+        now=datetime(2026, 10, 23, tzinfo=timezone.utc),
+        entity_type="individual", legal_name="Jane Co", coowner_email="jane@example.com",
+        uploader_name="Upload Artist",
+        work_title="Night Drive", work_artist="Artist", work_id="w1",
+        interests=[{"side": "writers", "legal_name": "Jane Co", "role": "C", "share_bp": 10000}],
+    )
+    text = cosign.render_text(values, "cosign_v2")
+    sig = {"request_id": "req-1", "version": "cosign_v2", "work_id": "w1",
+           "text_sha256": "b" * 64, "signed_at": "2026-10-23T00:00:00+00:00",
+           "typed_signature": "Jane Co", "entity_type": "individual", "legal_name": "Jane Co",
+           "signer_name": "", "signer_title": "", "coowner_email": "jane@example.com",
+           "ip": "203.0.113.9"}
+    body = "\n".join(p.extract_text() for p in pypdf.PdfReader(BytesIO(cosign.render_pdf(text, sig))).pages)
+    assert "Document fingerprint" in body
+    assert "bbbbbbbbbbbbbbbb" in body
+    assert "Version" not in body

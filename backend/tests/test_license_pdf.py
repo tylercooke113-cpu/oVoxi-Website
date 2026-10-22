@@ -71,3 +71,8 @@ def test_unknown_terms_version_fails_loudly():
 
 def test_draft_terms_exist():
     assert "draft-0" in TERMS
+
+
+def test_certificate_has_no_version_row():
+    # Certificate never carried a Version row; confirm none appears (B.4).
+    assert "Version" not in text_of(render_license_pdf(ORDER, track_title="Night Drive", artist_name="Kay Lune"))

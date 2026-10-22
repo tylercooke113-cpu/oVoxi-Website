@@ -299,7 +299,7 @@ export default function AgreementModal({ open, onClose, onSigned, getToken, pref
             <>
               <p className="mb-[18px] text-[14.5px] leading-[1.5] text-slate-300">
                 {previousSigned
-                  ? "We've updated the OVOXI Artist Agreement. Review and sign the new version to keep uploading. Your tracks and opt-ins stay as they are."
+                  ? "We've updated the OVOXI Artist Agreement. Please review and sign it to keep uploading. Your tracks and opt-ins stay as they are."
                   : 'Before your first upload, sign the OVOXI Artist Agreement. You only do this once, and it covers every track you upload. It takes about two minutes.'}
               </p>
               <div className="mb-4 inline-flex overflow-hidden rounded-full border border-white/10">
