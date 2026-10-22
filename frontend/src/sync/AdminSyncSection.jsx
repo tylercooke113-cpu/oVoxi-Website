@@ -79,7 +79,7 @@ const AdminSyncSection = ({ getToken, submissions, onChanged }) => {
                     <td className="px-4 py-3 text-slate-400">
                       {s.sync_delisted_by_admin ? 'Delisted by admin' : s.on_sync_profile ? 'Live' : (s.sync_status || 'Processing')}
                     </td>
-                    <td className="px-4 py-3"><a href={`/sync/track/${s.id}`} target="_blank" rel="noopener noreferrer" className="text-cyan">View</a></td>
+                    <td className="px-4 py-3"><a href={`/catalog/track/${s.id}`} target="_blank" rel="noopener noreferrer" className="text-cyan">View</a></td>
                     <td className="px-4 py-3 text-right">
                       <Toggle on={!!s.sync_delisted_by_admin} busy={busy === s.id} onClick={() => delist(s)}
                         label={s.sync_delisted_by_admin ? 'Relist' : 'Delist'} />

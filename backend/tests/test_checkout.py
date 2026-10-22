@@ -158,8 +158,8 @@ def test_session_params_tax_and_urls(monkeypatch):
     assert pd["product_data"]["tax_code"] == "txcd_test"
     assert pd["product_data"]["name"] == "Sync license: Night Drive by Kay Lune"
     assert p["automatic_tax"] == {"enabled": True} and p["billing_address_collection"] == "required"
-    assert p["success_url"] == "https://ovoxi.net/sync/success?session_id={CHECKOUT_SESSION_ID}"
-    assert p["cancel_url"] == "https://ovoxi.net/sync/track/t1?checkout=cancelled"
+    assert p["success_url"] == "https://ovoxi.net/catalog/success?session_id={CHECKOUT_SESSION_ID}"
+    assert p["cancel_url"] == "https://ovoxi.net/catalog/track/t1?checkout=cancelled"
     assert p["expires_at"] == int(NOW.timestamp()) + 35 * 60
     assert "customer_creation" not in p
 

@@ -95,7 +95,7 @@ const SuccessPage = () => {
     <Shell>
       <h1 className="font-heading text-2xl font-extrabold text-white">{title}</h1>
       <p className="mt-2 text-sm text-slate-400">{body}</p>
-      <Link to="/sync" className="mt-6 inline-block rounded-full border border-white/10 px-5 py-2 text-sm text-slate-300 hover:text-white">Back to the library</Link>
+      <Link to="/catalog" className="mt-6 inline-block rounded-full border border-white/10 px-5 py-2 text-sm text-slate-300 hover:text-white">Back to the library</Link>
     </Shell>
   );
 };

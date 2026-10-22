@@ -164,7 +164,7 @@ export default function AccountPage() {
           <div className="mt-5 rounded-2xl border border-dashed border-white/10 p-7 text-center text-slate-400">
             <p className="mb-1.5 font-medium text-white">No licenses yet</p>
             <p className="mb-4 text-sm">Licenses you buy or create with a subscription show up here, with certificates and downloads.</p>
-            <a href="/sync" className="inline-block rounded-full bg-gradient-brand px-5 py-2.5 text-sm font-semibold text-white">Browse the OVOXI Catalog</a>
+            <a href="/catalog" className="inline-block rounded-full bg-gradient-brand px-5 py-2.5 text-sm font-semibold text-white">Browse the OVOXI Catalog</a>
           </div>
         ) : (
           <div className="mt-5">

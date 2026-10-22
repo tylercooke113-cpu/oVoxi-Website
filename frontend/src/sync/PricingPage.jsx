@@ -144,7 +144,7 @@ const PricingPage = () => {
         </div>
         <p className="mt-2 flex-1 text-[13.5px] leading-relaxed text-slate-300">{desc}</p>
         <div className="mt-4">
-          <button type="button" onClick={() => (s.by_quote ? setQuote(true) : navigate('/sync'))}
+          <button type="button" onClick={() => (s.by_quote ? setQuote(true) : navigate('/catalog'))}
             className="rounded-full border border-white/10 px-5 py-2.5 text-sm text-slate-200">
             {s.by_quote ? C.requestQuote : C.browseLibrary}
           </button>

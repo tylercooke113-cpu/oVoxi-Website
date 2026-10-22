@@ -4,6 +4,10 @@ describe('safeNext (Brief 20 B3)', () => {
   test.each([
     ['/account', '/account'],
     ['/vault', '/vault'],
+    ['/catalog', '/catalog'],
+    ['/catalog/track/abc', '/catalog/track/abc'],
+    ['/catalog?sort=newest', '/catalog?sort=newest'],
+    ['/catalog/success?session_id=x', '/catalog/success?session_id=x'],
     ['/sync', '/sync'],
     ['/sync/track/abc', '/sync/track/abc'],
     ['/sync?sort=newest', '/sync?sort=newest'],

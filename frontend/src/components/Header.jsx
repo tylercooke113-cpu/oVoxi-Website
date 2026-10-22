@@ -84,7 +84,7 @@ export const Header = () => {
           <Link to="/vault" onClick={click} data-testid="nav-vault" className={cls}>My Vault</Link>
         )}
         {browseSignedOut && (
-          <Link to="/sync" onClick={click} data-testid="nav-browse"
+          <Link to="/catalog" onClick={click} data-testid="nav-browse"
             className={mobile ? `${gradientCls} text-center` : gradientCls}>Browse OVOXI Catalog</Link>
         )}
         {browsePrompt && (
@@ -93,7 +93,7 @@ export const Header = () => {
           </button>
         )}
         {catalogLink && (
-          <Link to="/sync" onClick={click} data-testid="nav-catalog" className={cls}>OVOXI Catalog</Link>
+          <Link to="/catalog" onClick={click} data-testid="nav-catalog" className={cls}>OVOXI Catalog</Link>
         )}
         {showPricing && (
           <Link to="/pricing" onClick={click} data-testid="nav-pricing" className={cls}>Pricing</Link>
@@ -151,7 +151,7 @@ export const Header = () => {
       {buyerPrompt && (
         <BuyerAccessModal
           onClose={() => setBuyerPrompt(false)}
-          onGranted={() => { setBuyerPrompt(false); navigate('/sync'); }}
+          onGranted={() => { setBuyerPrompt(false); navigate('/catalog'); }}
         />
       )}
     </header>

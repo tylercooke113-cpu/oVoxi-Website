@@ -362,8 +362,8 @@ def checkout_session_params(order: dict, *, now: datetime) -> dict:
         "metadata": meta,
         "payment_intent_data": {"metadata": meta},
         "expires_at": int((now + timedelta(minutes=CHECKOUT_EXPIRY_MINUTES)).timestamp()),
-        "success_url": f"{base}/sync/success?session_id={{CHECKOUT_SESSION_ID}}",
-        "cancel_url": f"{base}/sync/track/{order['track_id']}?checkout=cancelled",
+        "success_url": f"{base}/catalog/success?session_id={{CHECKOUT_SESSION_ID}}",
+        "cancel_url": f"{base}/catalog/track/{order['track_id']}?checkout=cancelled",
     }
 
 

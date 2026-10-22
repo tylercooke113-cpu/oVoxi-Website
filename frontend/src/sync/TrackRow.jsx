@@ -39,7 +39,7 @@ const TrackRow = ({ track, showArtist = true }) => {
       data-testid={`track-row-${track.id}`}>
       <PlayButton track={track} />
       <div className="min-w-0">
-        <Link to={`/sync/track/${track.id}`} className="block truncate text-[15px] font-medium text-white hover:underline">
+        <Link to={`/catalog/track/${track.id}`} className="block truncate text-[15px] font-medium text-white hover:underline">
           {track.track_name}
         </Link>
         {showArtist && (

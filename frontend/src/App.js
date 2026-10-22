@@ -1,6 +1,6 @@
 import './App.css';
 import { useEffect, useState, lazy, Suspense } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useParams } from 'react-router-dom';
 import { Toaster } from 'sonner';
 import { Header } from './components/Header';
 import { Footer } from './components/Footer';
@@ -28,6 +28,21 @@ import LicenseTermsPage from './pages/LicenseTermsPage';
 
 const NEW_MARKETING = process.env.REACT_APP_NEW_MARKETING === 'true';
 const MarketingPage = lazy(() => import('./marketing/MarketingPage'));
+
+// Old /sync links (emails, issued Stripe sessions) redirect to /catalog, keeping the query string.
+const CatalogRedirect = () => {
+  const { search } = useLocation();
+  return <Navigate to={`/catalog${search}`} replace />;
+};
+const CatalogTrackRedirect = () => {
+  const { id } = useParams();
+  const { search } = useLocation();
+  return <Navigate to={`/catalog/track/${id}${search}`} replace />;
+};
+const CatalogSuccessRedirect = () => {
+  const { search } = useLocation();
+  return <Navigate to={`/catalog/success${search}`} replace />;
+};
 
 function ScrollToTop() {
   const { pathname } = useLocation();
@@ -71,13 +86,17 @@ function AppContent() {
           <Route path='/terms' element={<TermsPage />} />
           <Route path='/cosign/:token' element={<CosignPage />} />
           {/* PRD-03 phase 5: the library is gated server-side by SYNC_LIBRARY_ENABLED (admins always). */}
-          <Route path='/catalog' element={<Navigate to='/sync' replace />} />
-          <Route path='/sync' element={<LibraryPage />} />
+          {/* OVOXI Catalog at /catalog; gated server-side by SYNC_LIBRARY_ENABLED (admins always). */}
+          <Route path='/catalog' element={<LibraryPage />} />
+          <Route path='/catalog/track/:id' element={<TrackSharePage />} />
+          {/* PRD-03 phase 6b: public checkout result (no sign-in). */}
+          <Route path='/catalog/success' element={<SuccessPage />} />
+          {/* Old /sync links redirect to /catalog, keeping the query string. */}
+          <Route path='/sync' element={<CatalogRedirect />} />
+          <Route path='/sync/track/:id' element={<CatalogTrackRedirect />} />
+          <Route path='/sync/success' element={<CatalogSuccessRedirect />} />
           <Route path='/pricing' element={<PricingPage />} />
           <Route path='/artist/:slug' element={<ArtistPage />} />
-          <Route path='/sync/track/:id' element={<TrackSharePage />} />
-          {/* PRD-03 phase 6b: public checkout result and download pages (no sign-in). */}
-          <Route path='/sync/success' element={<SuccessPage />} />
           <Route path='/license/:token' element={<DownloadPage />} />
         </Routes>
       </main>
