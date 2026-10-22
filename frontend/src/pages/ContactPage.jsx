@@ -100,7 +100,7 @@ const ContactPage = () => {
                 <h3 className="mt-5 font-heading text-2xl font-semibold text-white">Inquiry received</h3>
                 <p className="mt-3 max-w-md text-base text-slate-400">
                   Thanks, {form.name.split(' ')[0] || 'there'}. Our team will review your message and
-                  follow up at ovoxi.ai@gmail.com.
+                  follow up at {BRAND.email}.
                 </p>
               </div>
             ) : (

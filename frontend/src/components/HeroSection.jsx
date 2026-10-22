@@ -1,10 +1,26 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
+import { useAuth } from '@clerk/clerk-react';
 import { HeroCanvas } from './HeroCanvas';
 import { PrimaryCTA, GhostCTA } from './CtaButtons';
 import { BRAND } from '../content';
+import { publicApi } from '../sync/api';
 
-export const HeroSection = () => (
+export const HeroSection = () => {
+  const { getToken, isSignedIn, isLoaded } = useAuth();
+  const [catalogVisible, setCatalogVisible] = useState(() => {
+    try { return sessionStorage.getItem('ovoxi_library_visible') === '1'; } catch { return false; }
+  });
+  // Same rule as Header: library_visible = SYNC_LIBRARY_ENABLED or admin.
+  useEffect(() => {
+    if (!isLoaded) return undefined;
+    let alive = true;
+    publicApi.pricing(getToken, isSignedIn)
+      .then((d) => { if (alive) setCatalogVisible(!!d.library_visible); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [getToken, isSignedIn, isLoaded]);
+  return (
   <section data-testid="hero-section" className="relative min-h-[100svh] overflow-hidden bg-ink">
     <HeroCanvas />
     {/* Readability overlays */}
@@ -55,8 +71,8 @@ export const HeroSection = () => (
         transition={{ duration: 0.7, delay: 0.4 }}
         className="mt-10 flex flex-col gap-3 sm:flex-row"
       >
-        <PrimaryCTA to="/contact?interest=ai_company" testid="hero-partnership-cta">
-          Request Partnership
+        <PrimaryCTA to={catalogVisible ? '/catalog' : '/contact?interest=ai_company'} testid="hero-partnership-cta">
+          Discuss Licensing
         </PrimaryCTA>
         <GhostCTA to="/signup" testid="hero-artist-cta">
           Join as an Artist
@@ -66,4 +82,5 @@ export const HeroSection = () => (
 
     <div className="pointer-events-none absolute bottom-0 inset-x-0 h-24 bg-gradient-to-t from-ink to-transparent" />
   </section>
-);
+  );
+};

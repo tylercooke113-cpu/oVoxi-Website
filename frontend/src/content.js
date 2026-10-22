@@ -3,7 +3,7 @@
 export const BRAND = {
   name: "OVOXI",
   tagline: "The Curated Music Catalog Built for the AI Economy",
-  email: "ovoxi.ai@gmail.com",
+  email: "tyler@ovoxi.net",
   domain: "ovoxi.net",
   logo: "/logo.png",
   pillars: ["Emerging-First", "Fully Licensed", "AI-Ready"],
@@ -16,8 +16,9 @@ export const NAV_LINKS = [
 
 export const PROCESS = [
   { step: "01", title: "Artist Submits", body: "Emerging artists submit their catalog and sign our rights grant agreement." },
-  { step: "02", title: "We Master & Prepare", body: "We handle professional mastering and 5-stem separation so your music is platform-ready." },  { step: "03", title: "Ownership Verified", body: "Chain-of-title documentation and acoustic fingerprinting confirm every track is fully cleared." },
-  { step: "04", title: "Catalog Licensed", body: "If AI platforms or buyers license your music, you receive 33% of the net revenue it earns, paid monthly." },
+  { step: "02", title: "We Master & Prepare", body: "We handle professional mastering and 5-stem separation so your music is platform-ready." },
+  { step: "03", title: "Ownership Checked", body: "Every track is checked against global audio fingerprint databases, and every co-owner you list signs before a song is licensed." },
+  { step: "04", title: "Catalog Licensed", body: "When AI platforms or Sync buyers license your music, you receive payments directly to your OVOXI digital wallet (paid monthly)." },
 ];
 
 export const AI_COPY = {

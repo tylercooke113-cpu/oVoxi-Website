@@ -105,8 +105,9 @@ export const Header = () => {
         {!isSignedIn && (
           <>
             <Link to="/signup" onClick={click} data-testid="header-artist-cta" className={cls}>Join as Artist</Link>
-            <Link to="/contact?interest=ai_company" onClick={click} data-testid="header-partnership-cta"
-              className={mobile ? `${gradientCls} text-center` : gradientCls}>Request Partnership</Link>
+            <Link to={catalogVisible ? '/catalog' : '/contact?interest=ai_company'} onClick={click}
+              data-testid="header-partnership-cta"
+              className={mobile ? `${gradientCls} text-center` : gradientCls}>Discuss Licensing</Link>
           </>
         )}
       </>
