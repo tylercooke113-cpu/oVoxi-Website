@@ -77,6 +77,7 @@ export const emptySong = (overrides = {}) => ({
   musicalKey: '',
   keyUnsure: false,
   consentAi: false,
+  consentAiExclusive: false,
   consentSync: false,
   intake: EMPTY_INTAKE,
   rights: emptyRights(),
@@ -92,6 +93,7 @@ export const emptySong = (overrides = {}) => ({
 export const carryOverSong = (prev) => emptySong({
   form: { artist_name: prev.form.artist_name, track_name: '', genre: '' },
   consentAi: prev.consentAi,
+  consentAiExclusive: prev.consentAiExclusive,
   consentSync: prev.consentSync,
   intake: {
     ...EMPTY_INTAKE,
@@ -447,6 +449,23 @@ const SongForm = ({ value, onChange, index, disabled, agreementStatus, getToken 
             </span>
           </label>
         ))}
+        {value.consentAi && (
+          <div className="ml-8 space-y-2" data-testid={tid('ai-exclusive-choice')}>
+            {[
+              { ex: false, title: 'Non-exclusive. You can also license AI training elsewhere.' },
+              { ex: true, title: 'Exclusive to OVOXI. You earn 50% instead of 33% on AI training sales of this song, and agree not to license AI training for it anywhere else.' },
+            ].map((o) => (
+              <label key={String(o.ex)}
+                className={`flex cursor-pointer items-start gap-2.5 rounded-lg border px-3 py-2.5 text-sm ${
+                  value.consentAiExclusive === o.ex ? 'border-electric/60 bg-electric/[0.06] text-white' : 'border-white/10 text-slate-300'
+                }`}>
+                <input type="radio" name={tid('ai-exclusive')} checked={value.consentAiExclusive === o.ex}
+                  onChange={() => patch({ consentAiExclusive: o.ex })} disabled={disabled} className="mt-1" />
+                <span>{o.title}</span>
+              </label>
+            ))}
+          </div>
+        )}
         {!value.consentAi && !value.consentSync && (
           <p className="text-xs text-red-400">Choose at least one.</p>
         )}

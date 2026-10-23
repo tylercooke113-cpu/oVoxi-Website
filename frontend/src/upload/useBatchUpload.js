@@ -71,6 +71,7 @@ export const uploadOne = async (song, { getToken, api, onProgress }) => {
     filename: song.file.name,
     file_size: song.file.size,
     consent_ai_training: song.consentAi,
+    consent_ai_exclusive: song.consentAi && song.consentAiExclusive,
     consent_sync: song.consentSync,
     moods: song.moods,
     vocals: song.vocals,

@@ -118,7 +118,8 @@ def test_ai_only(client, fake_db):
     assert all(e["source"] == "upload" and e["action"] == "grant" for e in ev)
     assert all(e["grant_version"] == "draft-0" for e in ev)
     doc = inserted_doc(fake_db)
-    assert doc["consent"] == {"ai_training": True, "sync": False}
+    assert doc["consent"] == {"ai_training": True, "sync": False,
+                              "ai_exclusive": False, "ai_exclusive_withdrawn_at": None}
     assert doc["consent_grant_version"] == "draft-0"
     assert doc["metadata"] == {
         "moods": ["Chill", "Dreamy"], "vocals": "vocal",
@@ -133,7 +134,8 @@ def test_sync_only(client, fake_db):
     assert resp.status_code == 200, resp.text
     assert [e["scope"] for e in events(fake_db)] == ["sync"]
     doc = inserted_doc(fake_db)
-    assert doc["consent"] == {"ai_training": False, "sync": True}
+    assert doc["consent"] == {"ai_training": False, "sync": True,
+                              "ai_exclusive": False, "ai_exclusive_withdrawn_at": None}
     assert doc["intake"]["samples_attested_at"]
     assert doc["intake"]["ipi"] == "00123456789"
     assert "samples_attested" not in doc["intake"]

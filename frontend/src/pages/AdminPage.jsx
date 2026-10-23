@@ -229,6 +229,9 @@ const AdminPage = () => {
                             </td>
                             <td className="px-4 py-3 whitespace-nowrap">
                               <StatusBadge status={s.status} />
+                              {s.ai_exclusive_in_effect && (
+                                <span className="ml-2 rounded-full border border-cyan/30 bg-cyan/[0.06] px-2 py-0.5 text-[11px] text-cyan">AI exclusive</span>
+                              )}
                               {s.status === 'failed' && s.error && (
                                 <p className="mt-1 text-xs text-red-400/70 max-w-[200px] break-words">
                                   {s.error}

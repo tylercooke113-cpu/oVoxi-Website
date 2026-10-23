@@ -54,7 +54,7 @@ from sync_emails import license_email, quote_email, subscription_license_email
 import subscriptions
 from sync_search import PAGE_SIZE, SearchParamError, build_filter, build_pipeline, encode_cursor, parse_params
 from sync_vault import (
-    INSTAGRAM_URL, SPOTIFY_ARTIST_URL, is_legacy, metadata_patch_fields,
+    INSTAGRAM_URL, SPOTIFY_ARTIST_URL, ai_exclusive_in_effect, is_legacy, metadata_patch_fields,
     slugify_profile, vault_track_view,
 )
 from rights import TrackRightsIn, build_rights, EMAIL_PATTERN as RIGHTS_EMAIL_PATTERN
@@ -785,6 +785,7 @@ class PresignRequest(BaseModel):
     pro_register_us: bool = False
     consent_ai_training: bool = False
     consent_sync: bool = False
+    consent_ai_exclusive: bool = False
     moods: List[str]                        # required, no default
     vocals: str                             # required, no default
     sync_intake: Optional[SyncIntake] = None
@@ -830,6 +831,8 @@ class PresignRequest(BaseModel):
     def _consent_rules(self):
         if not (self.consent_ai_training or self.consent_sync):
             raise ValueError("Choose at least one use for this upload.")
+        if self.consent_ai_exclusive and not self.consent_ai_training:
+            raise ValueError("Exclusive AI training requires AI training.")
         if self.consent_sync and self.sync_intake is None:
             raise ValueError("Sync details are required when sync is selected.")
         if not self.consent_sync and self.sync_intake is not None:
@@ -896,7 +899,7 @@ class VaultMetadataPatch(BaseModel):
         return self
 
 
-CONSENT_SCOPES = ("ai_training", "sync", "exclusive_buyout")
+CONSENT_SCOPES = ("ai_training", "sync", "exclusive_buyout", "ai_exclusive")
 CONSENT_ACTIONS = ("grant", "withdraw")
 
 
@@ -1662,6 +1665,8 @@ async def presign_upload(request: Request, payload: PresignRequest, clerk_payloa
     scopes = []
     if payload.consent_ai_training:
         scopes.append("ai_training")
+        if payload.consent_ai_exclusive:
+            scopes.append("ai_exclusive")
     if payload.consent_sync:
         scopes.append("sync")
     try:
@@ -1688,7 +1693,8 @@ async def presign_upload(request: Request, payload: PresignRequest, clerk_payloa
     doc = submission.model_dump()
     doc['upload_date'] = doc['upload_date'].isoformat()
     doc['expected_size'] = payload.file_size
-    doc['consent'] = {"ai_training": payload.consent_ai_training, "sync": payload.consent_sync}
+    doc['consent'] = {"ai_training": payload.consent_ai_training, "sync": payload.consent_sync,
+                      "ai_exclusive": payload.consent_ai_exclusive, "ai_exclusive_withdrawn_at": None}
     doc['consent_grant_version'] = GRANT_VERSION
     doc['agreement_id'] = agreement["id"] if agreement else None
     doc['metadata'] = {
@@ -2321,6 +2327,42 @@ async def patch_vault_metadata(request: Request, track_id: str, payload: VaultMe
 async def change_vault_consent(request: Request, track_id: str, payload: ConsentChange,
                                clerk_payload: dict = Depends(require_artist)):
     doc = await _owned_track(track_id, clerk_payload)
+
+    # AI exclusivity is a sub-choice of AI training with a 30-day wind-down (Agreement
+    # 12.4): withdraw never clears the flag, it timestamps the wind-down, so the share
+    # stays 50% until day 30. Grant clears the timestamp, re-enabling it immediately.
+    if payload.scope == "ai_exclusive":
+        c = doc["consent"]
+        want = payload.action == "grant"
+        chosen = c.get("ai_exclusive") is True and c.get("ai_exclusive_withdrawn_at") is None
+        if chosen == want:
+            raise HTTPException(status_code=409,
+                                detail=f"Exclusive AI training is already {'on' if want else 'off'}.")
+        agreement = None
+        if want:
+            if c.get("ai_training") is not True:
+                raise HTTPException(status_code=409, detail="Turn on AI training first.")
+            agreement = await _require_signed_agreement(clerk_payload)
+        try:
+            if want:
+                await record_grants(db, user_id=clerk_payload["sub"], track_id=track_id,
+                                     scopes=["ai_exclusive"], source="vault",
+                                     ip=get_real_client_ip(request), agreement=agreement)
+            else:
+                await record_withdrawals(db, user_id=clerk_payload["sub"], track_id=track_id,
+                                         scopes=["ai_exclusive"], source="vault",
+                                         ip=get_real_client_ip(request))
+        except Exception as exc:
+            logger.error("Consent ledger write failed for %s: %s", track_id, exc)
+            raise HTTPException(status_code=503, detail="Could not record consent. Please try again.")
+        now_iso = datetime.now(timezone.utc).isoformat()
+        fields = ({"consent.ai_exclusive": True, "consent.ai_exclusive_withdrawn_at": None}
+                  if want else {"consent.ai_exclusive_withdrawn_at": now_iso})
+        await db.track_submissions.update_one(
+            {"id": track_id, "clerk_user_id": clerk_payload["sub"]}, {"$set": fields})
+        doc = await _owned_track(track_id, clerk_payload)
+        return {"id": track_id, **vault_track_view(doc)}
+
     want = payload.action == "grant"
     if (doc["consent"].get(payload.scope) is True) == want:
         label = {"ai_training": "AI training", "sync": "Sync",
@@ -2799,7 +2841,9 @@ async def get_submissions(request: Request, admin: dict = Depends(require_admin)
             ExpiresIn=3600,
         )
 
+    now = datetime.now(timezone.utc)
     for s in subs:
+        s["ai_exclusive_in_effect"] = ai_exclusive_in_effect(s, now)
         if isinstance(s.get("upload_date"), str):
             s["upload_date"] = datetime.fromisoformat(s["upload_date"])
         if s.get("stem_paths"):

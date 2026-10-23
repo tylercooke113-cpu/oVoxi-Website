@@ -19,6 +19,15 @@ const CONFIRM_COPY = {
     'It will no longer be listed for sale. Licenses already sold stay valid.'],
   'exclusive_buyout:withdraw': ['Stop allowing exclusive buyouts?',
     'Buyers will no longer be able to buy exclusive rights to this track. Buyouts already granted are not affected.'],
+  'ai_exclusive:grant': ['Make AI training exclusive to OVOXI?',
+    'You earn 50% instead of 33% on AI training sales of this song, and agree not to license AI training for it anywhere else.'],
+};
+
+// The exclusive wind-down ends 30 days after withdrawal (Agreement 12.4).
+const fmtEndDate = (iso) => {
+  const d = new Date(iso);
+  d.setDate(d.getDate() + 30);
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 };
 
 const Switch = ({ on, onClick, disabled, label }) => (
@@ -268,9 +277,12 @@ const TrackSyncPanel = ({ track, getToken, onUpdated, status }) => {
   const addingSync = confirm?.scope === 'sync' && confirm?.action === 'grant';
   const copy = confirm && !addingSync ? CONFIRM_COPY[`${confirm.scope}:${confirm.action}`] : null;
   const isBuyoutGrant = confirm?.scope === 'exclusive_buyout' && confirm?.action === 'grant';
+  const isExclusiveWithdraw = confirm?.scope === 'ai_exclusive' && confirm?.action === 'withdraw';
+  const exclusiveEndMsg = `Exclusive AI training ends on ${fmtEndDate(new Date().toISOString())}. Your share returns to 33% for new AI licenses after that. Licenses already granted stay in place.`;
   const showBuyout = !!status?.buyouts_supported && !track.legacy;
   const modalTitle = addingSync ? 'Add to the OVOXI Catalog'
-    : isBuyoutGrant ? 'Allow exclusive buyout?' : copy?.[0];
+    : isBuyoutGrant ? 'Allow exclusive buyout?'
+    : isExclusiveWithdraw ? 'Turn off exclusive AI training?' : copy?.[0];
 
   return (
     <div className="mt-4 grid grid-cols-1 gap-5 border-t border-white/10 pt-4 md:grid-cols-3" data-testid={`vault-panel-${track.id}`}>
@@ -282,6 +294,23 @@ const TrackSyncPanel = ({ track, getToken, onUpdated, status }) => {
             <Switch on={!!track.consent[scope]} label={label} disabled={busy} onClick={() => toggle(scope)} />
           </div>
         ))}
+        {track.consent.ai_training && (
+          <div className="mt-1 border-t border-white/10 pt-2" data-testid="ai-exclusive-toggle">
+            <div className="flex items-center justify-between text-sm text-slate-300">
+              <span>Exclusive to OVOXI</span>
+              <Switch on={!!track.consent.ai_exclusive_chosen} label="Exclusive AI training" disabled={busy}
+                onClick={() => setConfirm({ scope: 'ai_exclusive', action: track.consent.ai_exclusive_chosen ? 'withdraw' : 'grant' })} />
+            </div>
+            <p className="mt-1 text-xs text-slate-500">
+              Exclusive means 50% instead of 33% on AI training sales of this song, and no AI training licensing elsewhere. Non-exclusive is the default.
+            </p>
+            {track.consent.ai_exclusive && track.consent.ai_exclusive_withdrawn_at && track.consent.ai_exclusive_in_effect && (
+              <p className="mt-1 text-xs text-amber-300" data-testid="ai-exclusive-winddown">
+                Exclusive AI training ends on {fmtEndDate(track.consent.ai_exclusive_withdrawn_at)}. Your share returns to 33% for new AI licenses after that. Licenses already granted stay in place.
+              </p>
+            )}
+          </div>
+        )}
         {showBuyout && (
           <div className="mt-1 border-t border-white/10 pt-2">
             <div className="flex items-center justify-between text-sm text-slate-300">
@@ -380,6 +409,8 @@ const TrackSyncPanel = ({ track, getToken, onUpdated, status }) => {
           <p className="text-sm text-slate-400">
             Buyers will be able to buy exclusive sync rights to <b className="font-medium text-white">{track.track_name}</b> without asking you first. You'll get 50% of each buyout and a notice within 5 business days. During an exclusive term the track leaves the library, and you can't license it for sync anywhere else (Artist Agreement section 3.4).
           </p>
+        ) : isExclusiveWithdraw ? (
+          <p className="text-sm text-slate-400">{exclusiveEndMsg}</p>
         ) : (
           <p className="text-sm text-slate-400">{copy?.[1]}</p>
         )}
