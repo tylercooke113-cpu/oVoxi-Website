@@ -240,7 +240,20 @@ def require_role(*roles: str):
     return _dep
 
 
-require_artist = require_role("artist", "admin")
+def _artist_approval_required() -> bool:
+    """ARTIST_APPROVAL_REQUIRED (default "true"). Set to "false" to let any signed-in
+    account with no role act as an artist (upload, Vault), skipping the manual
+    role=artist approval in Clerk. Admin-only routes are unaffected."""
+    return os.environ.get("ARTIST_APPROVAL_REQUIRED", "true").strip().lower() != "false"
+
+
+async def require_artist(payload: dict = Depends(verify_clerk_token)) -> dict:
+    role = _role(payload)
+    if role in ("artist", "admin"):
+        return payload
+    if role is None and not _artist_approval_required():
+        return payload
+    raise HTTPException(status_code=403, detail="Forbidden")
 require_admin = require_role("admin")
 
 
