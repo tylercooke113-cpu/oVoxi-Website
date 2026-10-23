@@ -7,7 +7,7 @@ import { NotFound } from './PublicPageParts';
 import Modal from './Modal';
 import SubscribeModal from './SubscribeModal';
 import QuoteForm from './QuoteForm';
-import { PRICING_COPY as C } from './constants';
+import { PRICING_COPY as C, AI_PRICING as AI } from './constants';
 
 // Comma money, matching the approved pricing mockup ("$1,499", "$16.15", "$149").
 const money = (cents) => {
@@ -51,6 +51,11 @@ const PricingPage = () => {
   const [bill, setBill] = useState('m');
   const [sub, setSub] = useState({ open: false, plan: null, interval: 'month' });
   const [quote, setQuote] = useState(false);
+  const [quoteMsg, setQuoteMsg] = useState('');
+  const [quoteKind, setQuoteKind] = useState('enterprise');
+  const openQuote = useCallback((msg = '', kind = 'enterprise') => {
+    setQuoteMsg(msg); setQuoteKind(kind); setQuote(true);
+  }, []);
 
   useEffect(() => {
     if (!isLoaded) return undefined;
@@ -176,7 +181,7 @@ const PricingPage = () => {
                 <ul className="my-4 flex-1 space-y-1.5 text-sm">
                   {C.enterprisePlan.features.map((f) => <Feature key={f}>{f}</Feature>)}
                 </ul>
-                <button type="button" onClick={() => setQuote(true)}
+                <button type="button" onClick={() => openQuote()}
                   className="rounded-full border border-white/10 px-5 py-2.5 text-sm text-slate-200">{C.contactSales}</button>
               </div>
             </div>
@@ -190,7 +195,7 @@ const PricingPage = () => {
             </div>
             <p className="mt-4 text-center text-sm text-slate-400">
               {C.singleNote}{' '}
-              <button type="button" onClick={() => setQuote(true)} className="text-cyan">{C.requestQuote}</button>.
+              <button type="button" onClick={() => openQuote()} className="text-cyan">{C.requestQuote}</button>.
             </p>
           </>
         )}
@@ -215,13 +220,74 @@ const PricingPage = () => {
           </table>
         </div>
         <p className="mt-4 text-center text-sm text-slate-400">{C.tableNote}</p>
+
+        {/* Brief 25 Part E: AI training. Same visibility as this page (data.visible). */}
+        <section className="mt-16" data-testid="ai-pricing">
+          <h2 className="text-center font-heading text-3xl font-extrabold text-white">{AI.heading}</h2>
+          <p className="mx-auto mb-7 mt-2 max-w-[640px] text-center text-slate-400">{AI.lead}</p>
+
+          <div className="grid gap-3.5" style={GRID}>
+            {AI.scopes.map((s) => (
+              <div key={s.key} className={`${CARD} border-white/10 bg-white/[0.02]`}>
+                <h3 className="font-heading text-xl font-semibold text-white">{s.key}</h3>
+                <p className="mt-2 flex-1 text-[13.5px] leading-relaxed text-slate-300">{s.desc}</p>
+                <button type="button" onClick={() => openQuote(`AI training: ${s.key}`, 'ai_training')}
+                  className="mt-4 rounded-full border border-white/10 px-5 py-2.5 text-sm text-slate-200">{C.contactSales}</button>
+              </div>
+            ))}
+          </div>
+
+          <h3 className="mt-10 text-center font-heading text-xl font-semibold text-white">{AI.perSong.heading}</h3>
+          <div className="mt-3.5 overflow-x-auto rounded-2xl border border-white/10">
+            <table className="w-full border-collapse text-sm">
+              <thead>
+                <tr>
+                  {AI.perSong.columns.map((c, i) => (
+                    <th key={c} className={`border-b border-white/10 bg-[#0A0A0C] px-3.5 py-3 font-medium text-white ${i === 0 ? 'text-left' : ''}`}>{c}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {AI.perSong.bands.map((b) => (
+                  <tr key={b[0]}>
+                    {b.map((c, i) => (
+                      <td key={i} className={`whitespace-nowrap border-b border-white/10 px-3.5 py-2.5 text-slate-300 ${i === 0 ? 'text-left' : 'text-center'}`}>{c}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="mt-4 text-center text-sm text-slate-400">{AI.perSong.note}</p>
+
+          <h3 className="mt-10 text-center font-heading text-xl font-semibold text-white">{AI.plansHeading}</h3>
+          <div className="mt-3.5 grid gap-3.5" style={GRID}>
+            {AI.plans.map((p) => (
+              <div key={p.key} className={`${CARD} border-white/10 bg-white/[0.02]`}>
+                <h3 className="font-heading text-xl font-semibold text-white">{p.key}</h3>
+                <div className="mt-3.5 font-heading text-3xl font-extrabold text-white">{p.monthly}<span className="text-sm font-normal text-slate-400">/month</span></div>
+                <div className="min-h-[20px] text-[12.5px] text-slate-500">{p.annual}</div>
+                <p className="mt-3 flex-1 text-sm text-slate-300">{p.songs}</p>
+                <button type="button" onClick={() => openQuote(`AI training: ${p.key} plan`, 'ai_training')}
+                  className="mt-4 rounded-full bg-gradient-brand px-5 py-2.5 text-sm font-semibold text-white">{C.contactSales}</button>
+              </div>
+            ))}
+          </div>
+          <p className="mt-4 text-center text-sm text-slate-400">{AI.plansNote}</p>
+
+          <div className={`${CARD} mt-3.5 border-white/10 bg-white/[0.02] sm:flex-row sm:items-center sm:justify-between`}>
+            <p className="text-sm text-slate-300">{AI.enterprise}</p>
+            <button type="button" onClick={() => openQuote('AI training: Enterprise and datasets', 'ai_training')}
+              className="mt-3 rounded-full border border-white/10 px-5 py-2.5 text-sm text-slate-200 sm:mt-0">{C.contactSales}</button>
+          </div>
+        </section>
       </div>
 
       <SubscribeModal open={sub.open} onClose={() => setSub((s) => ({ ...s, open: false }))}
         config={{ plans: data.plans }} getToken={getToken} plan={sub.plan} interval={sub.interval} />
 
       <Modal open={quote} title={C.requestQuote} onClose={() => setQuote(false)}>
-        <QuoteForm kind="enterprise" onDone={() => {}} />
+        <QuoteForm kind={quoteKind} onDone={() => {}} message={quoteMsg} />
       </Modal>
     </div>
   );

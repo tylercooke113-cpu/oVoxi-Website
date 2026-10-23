@@ -285,3 +285,35 @@ export const PRICING_COPY = {
     projectsSingle: '1',
   },
 };
+
+// Brief 25 Part E: AI training prices shown on /pricing, with "Contact sales"
+// buttons until the Brief 24 checkout. One source of truth; Brief 24 moves the
+// numbers to the server.
+export const AI_PRICING = {
+  heading: 'AI training',
+  lead: 'License cleared songs to train AI models. Every song is opted in by its artist, with signed rights documentation.',
+  scopes: [
+    { key: 'Personal', desc: 'One person training a model for their own use. No sharing the model, no selling what it makes.' },
+    { key: 'Research', desc: 'Internal testing and evaluation only, nothing deployed.' },
+    { key: 'Commercial', desc: 'Train and deploy one model family.' },
+  ],
+  perSong: {
+    heading: 'Per song, by order size',
+    columns: ['Songs in the order', 'Commercial', 'Research', 'Personal'],
+    bands: [
+      ['1 to 99', '$12', '$5', '$2'],
+      ['100 to 999', '$8', '$3', '$1.50'],
+      ['1,000 to 4,999', '$5', '$2', '$1'],
+      ['5,000 to 10,000', '$3', '$1.25', '$0.75'],
+    ],
+    note: 'One-time purchase with a 12-month training window. Models trained in that window keep their license. Delivery includes mastered audio, stems and metadata.',
+  },
+  plansHeading: 'Monthly plans',
+  plans: [
+    { key: 'Personal', monthly: '$19', songs: '50 new songs a month', annual: '$190/year' },
+    { key: 'Research', monthly: '$199', songs: '100 new songs a month', annual: '$1,990/year' },
+    { key: 'Commercial', monthly: '$999', songs: '200 new songs a month', annual: '$9,990/year' },
+  ],
+  plansNote: 'Models trained during your plan keep their license.',
+  enterprise: 'Custom datasets and enterprise terms by quote.',
+};
