@@ -187,11 +187,19 @@ const CosignBlock = ({ track, getToken, onUpdated }) => {
 };
 
 const SyncStatus = ({ track }) => {
-  if (!track.consent.sync) {
+  if (!track.consent.sync && !track.consent.ai_training) {
     return (
       <>
         <p className="text-sm text-slate-500">Not in the OVOXI Catalog</p>
-        <p className="mt-1 text-xs text-slate-500">Turn on Sync placements to add it. You'll answer the sync questions first.</p>
+        <p className="mt-1 text-xs text-slate-500">Turn on AI training or Sync placements to add it.</p>
+      </>
+    );
+  }
+  if (!track.consent.sync) {
+    return (
+      <>
+        <p className="text-sm font-medium text-green-400">● In the OVOXI Catalog for AI training</p>
+        <p className="mt-1 text-xs text-slate-500">Turn on Sync placements to also offer it for sync. You'll answer the sync questions first.</p>
       </>
     );
   }
@@ -294,23 +302,6 @@ const TrackSyncPanel = ({ track, getToken, onUpdated, status }) => {
             <Switch on={!!track.consent[scope]} label={label} disabled={busy} onClick={() => toggle(scope)} />
           </div>
         ))}
-        {track.consent.ai_training && (
-          <div className="mt-1 border-t border-white/10 pt-2" data-testid="ai-exclusive-toggle">
-            <div className="flex items-center justify-between text-sm text-slate-300">
-              <span>Exclusive to OVOXI</span>
-              <Switch on={!!track.consent.ai_exclusive_chosen} label="Exclusive AI training" disabled={busy}
-                onClick={() => setConfirm({ scope: 'ai_exclusive', action: track.consent.ai_exclusive_chosen ? 'withdraw' : 'grant' })} />
-            </div>
-            <p className="mt-1 text-xs text-slate-500">
-              Exclusive means 50% instead of 33% on AI training sales of this song, and no AI training licensing elsewhere. Non-exclusive is the default.
-            </p>
-            {track.consent.ai_exclusive && track.consent.ai_exclusive_withdrawn_at && track.consent.ai_exclusive_in_effect && (
-              <p className="mt-1 text-xs text-amber-300" data-testid="ai-exclusive-winddown">
-                Exclusive AI training ends on {fmtEndDate(track.consent.ai_exclusive_withdrawn_at)}. Your share returns to 33% for new AI licenses after that. Licenses already granted stay in place.
-              </p>
-            )}
-          </div>
-        )}
         {showBuyout && (
           <div className="mt-1 border-t border-white/10 pt-2">
             <div className="flex items-center justify-between text-sm text-slate-300">
@@ -319,7 +310,7 @@ const TrackSyncPanel = ({ track, getToken, onUpdated, status }) => {
                 disabled={busy || !track.consent.sync} onClick={() => toggle('exclusive_buyout')} />
             </div>
             <p className="mt-1 text-xs text-slate-500">
-              Buyers can request exclusive sync rights to this track. You get 50% of the buyout. During an exclusive term the track leaves the library and you can't license it for sync elsewhere. Turn off any time for future deals.
+              Buyers can request exclusive sync rights to this track. During an exclusive term the track leaves the library and you can't license it for sync elsewhere. Turn off any time for future deals.
             </p>
           </div>
         )}
@@ -407,7 +398,7 @@ const TrackSyncPanel = ({ track, getToken, onUpdated, status }) => {
           </>
         ) : isBuyoutGrant ? (
           <p className="text-sm text-slate-400">
-            Buyers will be able to buy exclusive sync rights to <b className="font-medium text-white">{track.track_name}</b> without asking you first. You'll get 50% of each buyout and a notice within 5 business days. During an exclusive term the track leaves the library, and you can't license it for sync anywhere else (Artist Agreement section 3.4).
+            Buyers will be able to buy exclusive sync rights to <b className="font-medium text-white">{track.track_name}</b> without asking you first. You'll get a notice within 5 business days. During an exclusive term the track leaves the library, and you can't license it for sync anywhere else (Artist Agreement section 3.4).
           </p>
         ) : isExclusiveWithdraw ? (
           <p className="text-sm text-slate-400">{exclusiveEndMsg}</p>
