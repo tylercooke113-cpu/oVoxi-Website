@@ -67,10 +67,10 @@ const SECTIONS = [
       <>
         <p>Through the Platform:</p>
         <ul className="list-disc space-y-2 pl-5">
-          <li>artists upload music, sign the Artist Agreement, choose for each song whether to license it for AI training, for sync, or both, and whether AI training is exclusive to OVOXI;</li>
+          <li>artists upload music, sign the Artist Agreement, choose for each song whether to license it for AI training, for sync, or both, and whether it is offered to many buyers or sold once, as an exclusive license;</li>
           <li>OVOXI prepares the music for licensing, including mastering, separating it into stems, analyzing it, and checking it against audio fingerprint databases;</li>
           <li>songs that pass our checks are listed in the OVOXI Catalog, which anyone may browse and preview; and</li>
-          <li>buyers create an account to license songs for sync or for AI training, at the prices and on the terms shown at checkout.</li>
+          <li>buyers create an account to license songs for sync or for AI training, at the prices and on the terms shown at checkout, or by quote for exclusive songs.</li>
         </ul>
         <p>
           Prices, plans and features are shown on the Platform and may change. A change does not affect
@@ -88,6 +88,11 @@ const SECTIONS = [
           You keep ownership of your music. The rights you grant OVOXI, the payments you receive and
           the way songs are withdrawn are set out in the Artist Agreement and the choices you record on
           the Platform.
+        </p>
+        <p>
+          A song may be offered for sync only if every writer is affiliated with a performing rights
+          organization and their details are entered on the Platform. Songs without that information
+          may be offered for AI training only.
         </p>
         <p>
           When you upload a song, you confirm that every statement you make about it is true, including

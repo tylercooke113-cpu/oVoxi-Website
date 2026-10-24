@@ -427,3 +427,18 @@ def test_cosign_pdf_has_fingerprint_not_version():
     assert "Document fingerprint" in body
     assert "bbbbbbbbbbbbbbbb" in body
     assert "Version" not in body
+
+
+def test_cosign_v3_renders_without_version_or_placeholders():
+    from datetime import datetime, timezone
+    import artist_agreement as aa
+    values = cosign.build_values(
+        now=datetime(2026, 10, 23, tzinfo=timezone.utc),
+        entity_type="individual", legal_name="Jane Co", coowner_email="jane@example.com",
+        uploader_name="Upload Artist",
+        work_title="Night Drive", work_artist="Artist", work_id="w1",
+        interests=[{"side": "writers", "legal_name": "Jane Co", "role": "C", "share_bp": 10000}],
+    )
+    text = cosign.render_text(values, "cosign_v3")
+    assert "{{" not in text.replace(aa.SIGNATURE_MARKER, "")
+    assert "version" not in text.lower()

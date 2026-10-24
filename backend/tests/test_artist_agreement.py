@@ -519,3 +519,31 @@ def test_render_pdf_has_fingerprint_not_version(monkeypatch):
     assert "Document fingerprint" in body
     assert "aaaaaaaaaaaaaaaa" in body          # text_sha256[:16]
     assert "Version" not in body
+
+
+def test_supports_exclusive_v5_only():
+    # Reads the real backend/agreements/*.txt (no agreements_dir override).
+    assert artist_agreement.supports_exclusive("v5") is True
+    for old in ("v1", "v2", "v3", "v4"):
+        assert artist_agreement.supports_exclusive(old) is False
+    # v5 drops the old buyout clause, so the old toggle is not offered under v5.
+    assert artist_agreement.supports_buyouts("v5") is False
+    assert artist_agreement.supports_buyouts("v4") is True
+
+
+def test_v5_text_sync_and_ai_exclusive_pro_rule_40pct():
+    text = artist_agreement.load_template("v5")
+    assert "The License is exclusive for the AI Training Field of Use and for the Sync Field of Use." in text
+    assert "to license them for sync through others" not in text
+    assert "3.4 Exclusive Election and Exclusive Licenses." in text
+    assert "3.5 Sync and Performing Rights Organizations." in text
+    assert "forty percent (40%)" in text
+    assert "\u2014" not in text
+
+
+def test_v5_renders_without_version_or_placeholders(monkeypatch):
+    monkeypatch.setattr(artist_agreement, "AGREEMENTS_DIR", REAL_AGREEMENTS_DIR)
+    artist_agreement.load_template.cache_clear()
+    text = artist_agreement.render_text("v5", _values())
+    assert "{{" not in text.replace(artist_agreement.SIGNATURE_MARKER, "")
+    assert "v5" not in text

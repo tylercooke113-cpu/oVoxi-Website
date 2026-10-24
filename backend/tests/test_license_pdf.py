@@ -76,3 +76,11 @@ def test_draft_terms_exist():
 def test_certificate_has_no_version_row():
     # Certificate never carried a Version row; confirm none appears (B.4).
     assert "Version" not in text_of(render_license_pdf(ORDER, track_title="Night Drive", artist_name="Kay Lune"))
+
+
+def test_terms_v4_loaded_with_exclusivity_section():
+    assert "v4" in TERMS and TERMS["v4"]
+    joined = " ".join(b["text"] for b in TERMS["v4"])
+    assert "D3. Exclusivity." in joined
+    # No visible version label ("instrumental version" in B1 is ordinary wording).
+    assert "v4" not in joined and "Version " not in joined

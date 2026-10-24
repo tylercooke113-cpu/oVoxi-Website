@@ -62,6 +62,7 @@ TERMS = {
     "v1": _parse_terms((TERMS_DIR / "license_v1.txt").read_text(encoding="utf-8")),
     "v2": _parse_terms((TERMS_DIR / "license_v2.txt").read_text(encoding="utf-8")),
     "v3": _parse_terms((TERMS_DIR / "license_v3.txt").read_text(encoding="utf-8")),
+    "v4": _parse_terms((TERMS_DIR / "license_v4.txt").read_text(encoding="utf-8")),
 }
 
 _BASE = ParagraphStyle("base", fontName="Helvetica", fontSize=10, leading=14, textColor=INK, alignment=TA_LEFT)

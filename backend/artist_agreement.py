@@ -49,6 +49,13 @@ def supports_buyouts(version: str) -> bool:
     return "3.4 Exclusive Buyouts." in load_template(version)
 
 
+def supports_exclusive(version: str) -> bool:
+    """True when the agreement text contains the exclusive election clause (v5 and later).
+    Replaces supports_buyouts for new records; supports_buyouts stays only until its last
+    callers (the old buyout toggle) are removed in Brief 25b Part B/C."""
+    return "3.4 Exclusive Election" in load_template(version)
+
+
 def _ordinal(n: int) -> str:
     suffix = "th" if 10 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
     return f"{n}{suffix}"
