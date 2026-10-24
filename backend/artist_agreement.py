@@ -44,15 +44,10 @@ def load_template(version: str) -> str:
     return (AGREEMENTS_DIR / f"{version}.txt").read_text(encoding="utf-8")
 
 
-def supports_buyouts(version: str) -> bool:
-    """True when the agreement text contains the exclusive buyout clause (v2 and later)."""
-    return "3.4 Exclusive Buyouts." in load_template(version)
-
-
 def supports_exclusive(version: str) -> bool:
-    """True when the agreement text contains the exclusive election clause (v5 and later).
-    Replaces supports_buyouts for new records; supports_buyouts stays only until its last
-    callers (the old buyout toggle) are removed in Brief 25b Part B/C."""
+    """True when the agreement text contains the Exclusive Election clause (v5 and later).
+    It replaced supports_buyouts (Brief 25b): the v2 to v4 "Allow exclusive buyout"
+    toggle is gone; records made under it keep their stored values."""
     return "3.4 Exclusive Election" in load_template(version)
 
 

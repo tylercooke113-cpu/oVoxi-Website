@@ -118,8 +118,7 @@ def test_ai_only(client, fake_db):
     assert all(e["source"] == "upload" and e["action"] == "grant" for e in ev)
     assert all(e["grant_version"] == "draft-0" for e in ev)
     doc = inserted_doc(fake_db)
-    assert doc["consent"] == {"ai_training": True, "sync": False,
-                              "ai_exclusive": False, "ai_exclusive_withdrawn_at": None}
+    assert doc["consent"] == {"ai_training": True, "sync": False, "exclusive": False}
     assert doc["consent_grant_version"] == "draft-0"
     assert doc["metadata"] == {
         "moods": ["Chill", "Dreamy"], "vocals": "vocal",
@@ -134,8 +133,7 @@ def test_sync_only(client, fake_db):
     assert resp.status_code == 200, resp.text
     assert [e["scope"] for e in events(fake_db)] == ["sync"]
     doc = inserted_doc(fake_db)
-    assert doc["consent"] == {"ai_training": False, "sync": True,
-                              "ai_exclusive": False, "ai_exclusive_withdrawn_at": None}
+    assert doc["consent"] == {"ai_training": False, "sync": True, "exclusive": False}
     assert doc["intake"]["samples_attested_at"]
     assert doc["intake"]["ipi"] == "00123456789"
     assert "samples_attested" not in doc["intake"]
@@ -248,3 +246,36 @@ def test_ledger_failure_returns_503_and_no_submission(client, fake_db):
     assert resp.json()["detail"] == "Could not record consent. Please try again."
     fake_db.track_submissions.insert_one.assert_not_awaited()
     assert "presigned_url" not in resp.text
+
+
+# --------------------------------------------------------------------------- Brief 25b: exclusive choice
+
+def _agreements(monkeypatch, version):
+    from pathlib import Path
+    import artist_agreement
+    monkeypatch.setenv("ARTIST_AGREEMENT_VERSION", version)
+    monkeypatch.setattr(artist_agreement, "AGREEMENTS_DIR", Path(server.__file__).parent / "agreements")
+    artist_agreement.load_template.cache_clear()
+
+
+def test_exclusive_refused_before_v5(client, fake_db, monkeypatch):
+    _agreements(monkeypatch, "v4")
+    fake_db.artist_agreements.find_one = AsyncMock(return_value={"id": "a4", "version": "v4", "signed_at": "x"})
+    resp = post(client, base(consent_exclusive=True))
+    assert resp.status_code == 409 and resp.json()["detail"] == "Exclusive songs are not available yet."
+    assert_rejected(resp, fake_db, status=409)
+
+
+def test_exclusive_v5_recorded_with_ledger_scope(client, fake_db, monkeypatch):
+    _agreements(monkeypatch, "v5")
+    fake_db.artist_agreements.find_one = AsyncMock(return_value={"id": "a5", "version": "v5", "signed_at": "x"})
+    resp = post(client, base(consent_exclusive=True))
+    assert resp.status_code == 200, resp.text
+    assert [e["scope"] for e in events(fake_db)] == ["ai_training", "exclusive"]
+    assert inserted_doc(fake_db)["consent"] == {"ai_training": True, "sync": False, "exclusive": True}
+
+
+def test_exclusive_default_off(client, fake_db):
+    resp = post(client, base())
+    assert resp.status_code == 200, resp.text
+    assert inserted_doc(fake_db)["consent"]["exclusive"] is False

@@ -6,19 +6,9 @@ artist (no intake answers, no splits, no ACRCloud match detail).
 """
 import re
 import unicodedata
-from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-
-def ai_exclusive_in_effect(doc: dict, now: datetime) -> bool:
-    """Exclusive AI training is in force when AI training is on, exclusivity was
-    chosen, and either it has not been withdrawn or the 30-day wind-down
-    (Agreement 12.4) has not elapsed. Turning AI training off ends it at once."""
-    c = doc.get("consent") or {}
-    if not c.get("ai_training") or not c.get("ai_exclusive"):
-        return False
-    w = c.get("ai_exclusive_withdrawn_at")
-    return w is None or now < datetime.fromisoformat(w) + timedelta(days=30)
+from exclusive import is_exclusive, sold_uses
 
 VAULT_METADATA_FIELDS = (
     "moods", "vocals", "duration_s",
@@ -51,14 +41,9 @@ def vault_track_view(doc: dict) -> dict:
     return {
         "legacy": False,
         "consent": {"ai_training": consent.get("ai_training") is True, "sync": sync_on,
-                    "exclusive_buyout": consent.get("exclusive_buyout") is True,
-                    "ai_exclusive": consent.get("ai_exclusive") is True,
-                    "ai_exclusive_withdrawn_at": consent.get("ai_exclusive_withdrawn_at"),
-                    # The artist's current choice (what the switch shows); distinct from
-                    # in_effect, which stays true through the 30-day wind-down.
-                    "ai_exclusive_chosen": (consent.get("ai_exclusive") is True
-                                            and consent.get("ai_exclusive_withdrawn_at") is None),
-                    "ai_exclusive_in_effect": ai_exclusive_in_effect(doc, datetime.now(timezone.utc))},
+                    "exclusive": is_exclusive(doc),
+                    # Uses already licensed exclusively (Brief 25b): those stay off the catalog.
+                    "exclusive_sold": {u: u in sold_uses(doc) for u in ("sync", "ai")}},
         "metadata": {k: meta.get(k) for k in VAULT_METADATA_FIELDS},
         "sync_status": doc.get("sync_status") if sync_on else None,
         "sync_reasons": failed_reasons(doc) if sync_on else [],

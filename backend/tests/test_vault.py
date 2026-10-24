@@ -17,7 +17,7 @@ from pymongo.errors import DuplicateKeyError
 import artist_agreement
 import server
 from metadata_reconcile import reconcile
-from sync_vault import ai_exclusive_in_effect, slugify_profile, vault_track_view
+from sync_vault import slugify_profile, vault_track_view
 
 UID = "user_artist"
 TID = "track-1"
@@ -171,9 +171,8 @@ def test_vault_edit_responses_never_return_match_detail(client):
 def test_vault_view_fields(client):
     t = client.get("/api/vault/tracks").json()[0]
     assert t["legacy"] is False
-    assert t["consent"] == {"ai_training": True, "sync": False, "exclusive_buyout": False,
-                            "ai_exclusive": False, "ai_exclusive_withdrawn_at": None,
-                            "ai_exclusive_chosen": False, "ai_exclusive_in_effect": False}
+    assert t["consent"] == {"ai_training": True, "sync": False, "exclusive": False,
+                            "exclusive_sold": {"sync": False, "ai": False}}
     assert t["metadata"]["key"] == "A minor" and t["metadata"]["key_needs_confirmation"] is True
     assert t["sync_status"] is None and t["sync_reasons"] == [] and t["on_sync_profile"] is False
 
@@ -399,191 +398,93 @@ def test_all_symbol_name_falls_back(client):
     assert client.put("/api/sync/profile", json={"display_name": "日本"}).json()["slug"] == "artist"
 
 
-# ---------------------------------------------------------------------------
-# Exclusive buyout consent (Brief 16)
+# Exclusive songs (Brief 25b Part B)
 # ---------------------------------------------------------------------------
 
 REAL_AGREEMENTS = Path(server.__file__).parent / "agreements"
 
 
-def _use_v2(monkeypatch):
-    monkeypatch.setenv("ARTIST_AGREEMENT_VERSION", "v2")
+def _use_version(monkeypatch, version):
+    monkeypatch.setenv("ARTIST_AGREEMENT_VERSION", version)
     monkeypatch.setattr(artist_agreement, "AGREEMENTS_DIR", REAL_AGREEMENTS)
     artist_agreement.load_template.cache_clear()
 
 
-def _buyout(client, action, **extra):
-    return client.post(f"/api/vault/tracks/{TID}/consent",
-                       json={"scope": "exclusive_buyout", "action": action, **extra})
+def _exc(client, action):
+    return client.post(f"/api/vault/tracks/{TID}/consent", json={"scope": "exclusive", "action": action})
 
 
-def test_buyout_grant_sync_off_409(client, db, monkeypatch):
-    _use_v2(monkeypatch)
-    db.artist_agreements.find_one = AsyncMock(return_value={"id": "a", "version": "v2", "signed_at": "x"})
-    r = _buyout(client, "grant")  # default track sync is off
-    assert r.status_code == 409 and r.json()["detail"] == "Turn on sync placements first."
+def test_exclusive_grant_v4_not_available_409(client, db, monkeypatch):
+    _use_version(monkeypatch, "v4")
+    db.artist_agreements.find_one = AsyncMock(return_value={"id": "a4", "version": "v4", "signed_at": "x"})
+    r = _exc(client, "grant")
+    assert r.status_code == 409 and r.json()["detail"] == "Exclusive songs are not available yet."
+    assert db.consent_events.inserted == []
 
 
-def test_buyout_grant_no_agreement_403(client, db, monkeypatch):
-    _use_v2(monkeypatch)
-    db.track_submissions = FakeCollection([track(consent={"ai_training": True, "sync": True})])
-    db.artist_agreements.find_one = AsyncMock(return_value=None)
-    r = _buyout(client, "grant")
+def test_exclusive_grant_unsigned_v5_403(client, db, monkeypatch):
+    _use_version(monkeypatch, "v5")
+    r = _exc(client, "grant")                      # fixture: no signed agreement
     assert r.status_code == 403 and r.json()["detail"] == "Sign the latest Artist Agreement first."
 
 
-def test_buyout_grant_v1_not_available_409(client, db, monkeypatch):
-    monkeypatch.setenv("ARTIST_AGREEMENT_VERSION", "v1")
-    monkeypatch.setattr(artist_agreement, "AGREEMENTS_DIR", REAL_AGREEMENTS)
-    artist_agreement.load_template.cache_clear()
-    db.track_submissions = FakeCollection([track(consent={"ai_training": True, "sync": True})])
-    db.artist_agreements.find_one = AsyncMock(return_value={"id": "a1", "version": "v1", "signed_at": "x"})
-    r = _buyout(client, "grant")
-    assert r.status_code == 409 and r.json()["detail"] == "Exclusive buyouts are not available yet."
-
-
-def test_buyout_grant_v2_ok(client, db, monkeypatch):
-    _use_v2(monkeypatch)
-    db.track_submissions = FakeCollection([track(consent={"ai_training": True, "sync": True})])
-    db.artist_agreements.find_one = AsyncMock(return_value={"id": "agr-v2", "version": "v2", "signed_at": "x"})
-    r = _buyout(client, "grant")
-    assert r.status_code == 200 and r.json()["consent"]["exclusive_buyout"] is True
+def test_exclusive_grant_v5_writes_ledger_and_flag(client, db, monkeypatch):
+    _use_version(monkeypatch, "v5")
+    db.artist_agreements.find_one = AsyncMock(return_value={"id": "agr-v5", "version": "v5", "signed_at": "x"})
+    r = _exc(client, "grant")
+    assert r.status_code == 200, r.text
+    assert db.track_submissions.docs[0]["consent"]["exclusive"] is True
+    assert r.json()["consent"]["exclusive"] is True
     ev = db.consent_events.inserted
-    assert [e["scope"] for e in ev] == ["exclusive_buyout"]
-    assert ev[0]["action"] == "grant" and ev[0]["agreement_id"] == "agr-v2"
+    assert [(e["scope"], e["action"], e["agreement_id"]) for e in ev] == [("exclusive", "grant", "agr-v5")]
 
 
-def test_buyout_withdraw_never_gated(client, db, monkeypatch):
-    _use_v2(monkeypatch)
-    db.track_submissions = FakeCollection([track(consent={"ai_training": True, "sync": True, "exclusive_buyout": True})])
-    db.artist_agreements.find_one = AsyncMock(return_value=None)
-    r = _buyout(client, "withdraw")
-    assert r.status_code == 200 and r.json()["consent"]["exclusive_buyout"] is False
-    assert [e["scope"] for e in db.consent_events.inserted] == ["exclusive_buyout"]
+def test_exclusive_grant_twice_409(client, db, monkeypatch):
+    _use_version(monkeypatch, "v5")
+    db.track_submissions.docs[0]["consent"]["exclusive"] = True
+    r = _exc(client, "grant")
+    assert r.status_code == 409 and "already on" in r.json()["detail"]
 
 
-def test_sync_withdraw_cascades_buyout(client, db, monkeypatch):
-    _use_v2(monkeypatch)
-    db.track_submissions = FakeCollection([track(consent={"ai_training": True, "sync": True, "exclusive_buyout": True})])
-    r = client.post(f"/api/vault/tracks/{TID}/consent", json={"scope": "sync", "action": "withdraw"})
-    assert r.status_code == 200
-    assert db.consent_events.insert_many.await_count == 1
-    assert sorted(e["scope"] for e in db.consent_events.inserted) == ["exclusive_buyout", "sync"]
-    c = db.track_submissions.docs[0]["consent"]
-    assert c["sync"] is False and c["exclusive_buyout"] is False
+def test_exclusive_withdraw_never_needs_agreement(client, db, monkeypatch):
+    _use_version(monkeypatch, "v5")
+    db.track_submissions.docs[0]["consent"]["exclusive"] = True
+    r = _exc(client, "withdraw")
+    assert r.status_code == 200, r.text
+    assert db.track_submissions.docs[0]["consent"]["exclusive"] is False
+    assert [(e["scope"], e["action"]) for e in db.consent_events.inserted] == [("exclusive", "withdraw")]
 
 
-def test_buyout_with_sync_intake_422(client, db, monkeypatch):
-    _use_v2(monkeypatch)
-    db.track_submissions = FakeCollection([track(consent={"ai_training": True, "sync": True})])
-    db.artist_agreements.find_one = AsyncMock(return_value={"id": "a", "version": "v2", "signed_at": "x"})
-    assert _buyout(client, "grant", sync_intake={"samples": "original"}).status_code == 422
-
-
-# ---------------------------------------------------------------------------
-# Exclusive / non-exclusive AI training (Brief 25 Part F)
-# ---------------------------------------------------------------------------
-from datetime import datetime, timedelta, timezone
-
-AINOW = datetime(2026, 10, 23, 12, 0, tzinfo=timezone.utc)
-
-
-def _cons(**kw):
-    return {"consent": kw}
-
-
-def test_ai_exclusive_in_effect_off_without_ai_training():
-    assert ai_exclusive_in_effect(_cons(ai_training=False, ai_exclusive=True), AINOW) is False
-
-
-def test_ai_exclusive_in_effect_off_when_not_exclusive():
-    assert ai_exclusive_in_effect(_cons(ai_training=True, ai_exclusive=False), AINOW) is False
-
-
-def test_ai_exclusive_in_effect_on_when_chosen():
-    assert ai_exclusive_in_effect(
-        _cons(ai_training=True, ai_exclusive=True, ai_exclusive_withdrawn_at=None), AINOW) is True
-
-
-def test_ai_exclusive_in_effect_true_within_30_days():
-    w = (AINOW - timedelta(days=29)).isoformat()
-    assert ai_exclusive_in_effect(
-        _cons(ai_training=True, ai_exclusive=True, ai_exclusive_withdrawn_at=w), AINOW) is True
-
-
-def test_ai_exclusive_in_effect_false_after_30_days():
-    w = (AINOW - timedelta(days=31)).isoformat()
-    assert ai_exclusive_in_effect(
-        _cons(ai_training=True, ai_exclusive=True, ai_exclusive_withdrawn_at=w), AINOW) is False
-
-
-def test_ai_exclusive_ends_when_ai_training_off():
-    # Fix 4: turning AI training off ends exclusivity at once, even before withdrawal.
-    assert ai_exclusive_in_effect(
-        _cons(ai_training=False, ai_exclusive=True, ai_exclusive_withdrawn_at=None), AINOW) is False
-
-
-def _ex(client, action, **extra):
-    return client.post(f"/api/vault/tracks/{TID}/consent",
-                       json={"scope": "ai_exclusive", "action": action, **extra})
-
-
-def test_ai_exclusive_grant_without_ai_training_409(client, db):
-    db.track_submissions.docs[0]["consent"] = {"ai_training": False, "sync": True,
-                                               "ai_exclusive": False, "ai_exclusive_withdrawn_at": None}
-    r = _ex(client, "grant")
-    assert r.status_code == 409 and r.json()["detail"] == "Turn on AI training first."
+def test_exclusive_withdraw_refused_when_every_use_sold(client, db, monkeypatch):
+    _use_version(monkeypatch, "v5")
+    d = db.track_submissions.docs[0]
+    d["consent"] = {"ai_training": True, "sync": False, "exclusive": True}
+    d["exclusive_sold"] = {"ai": "lic-1", "sync": None}
+    r = _exc(client, "withdraw")
+    assert r.status_code == 409
+    assert r.json()["detail"] == "This song is already licensed exclusively for AI training. Exclusive can't be turned off."
     assert db.consent_events.inserted == []
 
 
-def test_ai_exclusive_grant_writes_ledger_and_flags(client, db):
-    r = _ex(client, "grant")                       # default track: ai_training on, exclusive off
+def test_exclusive_withdraw_allowed_when_a_use_is_unsold(client, db, monkeypatch):
+    _use_version(monkeypatch, "v5")
+    d = db.track_submissions.docs[0]
+    d["consent"] = {"ai_training": True, "sync": True, "exclusive": True}
+    d["exclusive_sold"] = {"sync": "lic-1", "ai": None}
+    r = _exc(client, "withdraw")
     assert r.status_code == 200, r.text
-    c = db.track_submissions.docs[0]["consent"]
-    assert c["ai_exclusive"] is True and c["ai_exclusive_withdrawn_at"] is None
-    assert [e["scope"] for e in db.consent_events.inserted] == ["ai_exclusive"]
-    assert db.consent_events.inserted[0]["action"] == "grant"
-    body = r.json()["consent"]
-    assert body["ai_exclusive_chosen"] is True and body["ai_exclusive_in_effect"] is True
+    assert r.json()["consent"]["exclusive_sold"] == {"sync": True, "ai": False}
 
 
-def test_ai_exclusive_withdraw_sets_window_and_in_effect_stays(client, db):
-    db.track_submissions.docs[0]["consent"] = {"ai_training": True, "sync": False,
-                                               "ai_exclusive": True, "ai_exclusive_withdrawn_at": None}
-    r = _ex(client, "withdraw")
-    assert r.status_code == 200, r.text
-    c = db.track_submissions.docs[0]["consent"]
-    assert c["ai_exclusive"] is True and c["ai_exclusive_withdrawn_at"]       # timestamped, not cleared
-    assert [e["scope"] for e in db.consent_events.inserted] == ["ai_exclusive"]
-    body = r.json()["consent"]
-    assert body["ai_exclusive_chosen"] is False and body["ai_exclusive_in_effect"] is True
+def test_old_scopes_rejected_422(client):
+    for scope in ("exclusive_buyout", "ai_exclusive"):
+        r = client.post(f"/api/vault/tracks/{TID}/consent", json={"scope": scope, "action": "grant"})
+        assert r.status_code == 422, scope
 
 
-def test_ai_exclusive_grant_during_wind_down_clears_timestamp(client, db):
-    w = (datetime.now(timezone.utc) - timedelta(days=5)).isoformat()
-    db.track_submissions.docs[0]["consent"] = {"ai_training": True, "sync": False,
-                                               "ai_exclusive": True, "ai_exclusive_withdrawn_at": w}
-    r = _ex(client, "grant")
-    assert r.status_code == 200, r.text
-    c = db.track_submissions.docs[0]["consent"]
-    assert c["ai_exclusive"] is True and c["ai_exclusive_withdrawn_at"] is None
-
-
-def test_ai_exclusive_withdraw_twice_409(client, db):
-    w = (datetime.now(timezone.utc) - timedelta(days=5)).isoformat()
-    db.track_submissions.docs[0]["consent"] = {"ai_training": True, "sync": False,
-                                               "ai_exclusive": True, "ai_exclusive_withdrawn_at": w}
-    r = _ex(client, "withdraw")                    # already winding down -> already off
-    assert r.status_code == 409 and "already off" in r.json()["detail"]
-    assert db.consent_events.inserted == []
-
-
-def test_upload_ai_exclusive_without_ai_training_422():
-    from pydantic import ValidationError
+def test_upload_old_ai_exclusive_field_is_ignored():
     base = dict(artist_name="A", track_name="T", genre="R&B", filename="t.wav",
                 file_size=1024, moods=["Chill"], vocals="vocal", bpm=120.0, key="C major",
                 rights={"owns_everything": True, "self_legal_name": "P", "attested": True})
-    server.PresignRequest(**base, consent_ai_training=True, consent_ai_exclusive=True)   # valid
-    with pytest.raises(ValidationError, match="Exclusive AI training requires AI training"):
-        server.PresignRequest(**base, consent_sync=True, sync_intake=INTAKE,
-                              consent_ai_exclusive=True, consent_ai_training=False)
+    req = server.PresignRequest(**base, consent_ai_training=True, consent_ai_exclusive=True)
+    assert req.consent_exclusive is False

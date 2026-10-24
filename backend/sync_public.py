@@ -13,6 +13,7 @@ LISTING_FILTER = {
     "intake.content_id": "no",
     "on_sync_profile": True,
     "sync_delisted_by_admin": {"$ne": True},
+    "exclusive_sold.sync": None,        # Brief 25b: sold exclusively for sync -> down at once
 }
 
 PROFILE_FIELDS = ("slug", "display_name", "location", "bio", "spotify_url", "instagram_url")
@@ -23,7 +24,8 @@ def is_listed(doc: dict) -> bool:
             and (doc.get("consent") or {}).get("sync") is True
             and (doc.get("intake") or {}).get("content_id") == "no"
             and doc.get("on_sync_profile") is True
-            and doc.get("sync_delisted_by_admin") is not True)
+            and doc.get("sync_delisted_by_admin") is not True
+            and not (doc.get("exclusive_sold") or {}).get("sync"))
 
 
 def public_track_view(doc: dict, profile: Optional[dict]) -> dict:
@@ -41,7 +43,7 @@ def public_track_view(doc: dict, profile: Optional[dict]) -> dict:
         "duration_s": meta.get("duration_s"),
         "has_preview": bool(doc.get("preview_key")),
         "has_waveform": bool(doc.get("waveform_key")),
-        "buyout_allowed": (doc.get("consent") or {}).get("exclusive_buyout") is True,
+        "exclusive": (doc.get("consent") or {}).get("exclusive") is True,
         "ai_training": (doc.get("consent") or {}).get("ai_training") is True,
     }
 

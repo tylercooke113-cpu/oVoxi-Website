@@ -11,8 +11,8 @@ import server  # noqa: E402
 
 LISTED = {"id": "t1", "track_name": "Golden Hour", "artist_name": "J Riv", "clerk_user_id": "u",
           "sync_status": "cleared", "on_sync_profile": True, "intake": {"content_id": "no"},
-          "consent": {"sync": True, "exclusive_buyout": True}}
-NO_BUYOUT = {**LISTED, "id": "t2", "consent": {"sync": True, "exclusive_buyout": False}}
+          "consent": {"sync": True, "exclusive": True}}
+NO_BUYOUT = {**LISTED, "id": "t2", "consent": {"sync": True, "exclusive": False}}
 
 
 class AsyncCollection:

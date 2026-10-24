@@ -48,13 +48,14 @@ from sync_public import (
 import sync_orders
 import licenses
 import quotes
+import exclusive
 from license_pdf import TERMS as LICENSE_TERMS, render_license_pdf
 from email_sender import send_email
 from sync_emails import license_email, quote_email, subscription_license_email
 import subscriptions
 from sync_search import PAGE_SIZE, SearchParamError, build_filter, build_pipeline, encode_cursor, parse_params
 from sync_vault import (
-    INSTAGRAM_URL, SPOTIFY_ARTIST_URL, ai_exclusive_in_effect, is_legacy, metadata_patch_fields,
+    INSTAGRAM_URL, SPOTIFY_ARTIST_URL, is_legacy, metadata_patch_fields,
     slugify_profile, vault_track_view,
 )
 from rights import TrackRightsIn, build_rights, EMAIL_PATTERN as RIGHTS_EMAIL_PATTERN
@@ -798,7 +799,8 @@ class PresignRequest(BaseModel):
     pro_register_us: bool = False
     consent_ai_training: bool = False
     consent_sync: bool = False
-    consent_ai_exclusive: bool = False
+    consent_exclusive: bool = False         # Brief 25b: song-level exclusive choice
+    consent_ai_exclusive: bool = False      # deprecated (Brief 25); accepted and ignored
     moods: List[str]                        # required, no default
     vocals: str                             # required, no default
     sync_intake: Optional[SyncIntake] = None
@@ -844,8 +846,6 @@ class PresignRequest(BaseModel):
     def _consent_rules(self):
         if not (self.consent_ai_training or self.consent_sync):
             raise ValueError("Choose at least one use for this upload.")
-        if self.consent_ai_exclusive and not self.consent_ai_training:
-            raise ValueError("Exclusive AI training requires AI training.")
         if self.consent_sync and self.sync_intake is None:
             raise ValueError("Sync details are required when sync is selected.")
         if not self.consent_sync and self.sync_intake is not None:
@@ -912,7 +912,7 @@ class VaultMetadataPatch(BaseModel):
         return self
 
 
-CONSENT_SCOPES = ("ai_training", "sync", "exclusive_buyout", "ai_exclusive")
+CONSENT_SCOPES = ("ai_training", "sync", "exclusive")
 CONSENT_ACTIONS = ("grant", "withdraw")
 
 
@@ -1477,7 +1477,7 @@ async def agreement_status(request: Request, clerk_payload: dict = Depends(verif
         "prefill": None,
         "previous_signed": await db.artist_agreements.find_one(
             {"user_id": uid, "version": {"$ne": version}}, {"_id": 1}) is not None,
-        "buyouts_supported": artist_agreement.supports_buyouts(version),
+        "exclusive_supported": artist_agreement.supports_exclusive(version),
     }
     if signed is None:
         resp["prefill"] = await _agreement_prefill(uid)
@@ -1678,10 +1678,16 @@ async def presign_upload(request: Request, payload: PresignRequest, clerk_payloa
     scopes = []
     if payload.consent_ai_training:
         scopes.append("ai_training")
-        if payload.consent_ai_exclusive:
-            scopes.append("ai_exclusive")
     if payload.consent_sync:
         scopes.append("sync")
+    if payload.consent_exclusive:
+        # Exclusive needs an agreement with the Exclusive Election clause (v5 and later).
+        # Admins upload without a signature, so they are checked against the current version.
+        version = (agreement["version"] if agreement
+                   else artist_agreement.current_version() if _role(clerk_payload) == "admin" else None)
+        if not (version and artist_agreement.supports_exclusive(version)):
+            raise HTTPException(status_code=409, detail="Exclusive songs are not available yet.")
+        scopes.append("exclusive")
     try:
         await record_grants(
             db, user_id=clerk_user_id, track_id=submission_id, scopes=scopes,
@@ -1707,7 +1713,7 @@ async def presign_upload(request: Request, payload: PresignRequest, clerk_payloa
     doc['upload_date'] = doc['upload_date'].isoformat()
     doc['expected_size'] = payload.file_size
     doc['consent'] = {"ai_training": payload.consent_ai_training, "sync": payload.consent_sync,
-                      "ai_exclusive": payload.consent_ai_exclusive, "ai_exclusive_withdrawn_at": None}
+                      "exclusive": payload.consent_exclusive}
     doc['consent_grant_version'] = GRANT_VERSION
     doc['agreement_id'] = agreement["id"] if agreement else None
     doc['metadata'] = {
@@ -2341,74 +2347,61 @@ async def change_vault_consent(request: Request, track_id: str, payload: Consent
                                clerk_payload: dict = Depends(require_artist)):
     doc = await _owned_track(track_id, clerk_payload)
 
-    # AI exclusivity is a sub-choice of AI training with a 30-day wind-down (Agreement
-    # 12.4): withdraw never clears the flag, it timestamps the wind-down, so the share
-    # stays 50% until day 30. Grant clears the timestamp, re-enabling it immediately.
-    if payload.scope == "ai_exclusive":
-        c = doc["consent"]
+    # Brief 25b: one song-level Exclusive choice (Agreement 3.4). Turning it off applies
+    # to future deals at once (3.4(j)); a use already sold exclusively stays exclusive.
+    if payload.scope == "exclusive":
         want = payload.action == "grant"
-        chosen = c.get("ai_exclusive") is True and c.get("ai_exclusive_withdrawn_at") is None
-        if chosen == want:
+        if exclusive.is_exclusive(doc) == want:
             raise HTTPException(status_code=409,
-                                detail=f"Exclusive AI training is already {'on' if want else 'off'}.")
+                                detail=f"Exclusive is already {'on' if want else 'off'}.")
         agreement = None
         if want:
-            if c.get("ai_training") is not True:
-                raise HTTPException(status_code=409, detail="Turn on AI training first.")
-            agreement = await _require_signed_agreement(clerk_payload)
+            if not exclusive.opted_uses(doc):
+                raise HTTPException(status_code=409, detail="Turn on AI training or sync placements first.")
+            if not artist_agreement.supports_exclusive(artist_agreement.current_version()):
+                raise HTTPException(status_code=409, detail="Exclusive songs are not available yet.")
+            agreement = await _current_agreement(clerk_payload["sub"])
+            if agreement is None and _role(clerk_payload) != "admin":
+                raise HTTPException(status_code=403, detail="Sign the latest Artist Agreement first.")
+        elif exclusive.fully_sold(doc):
+            raise HTTPException(
+                status_code=409,
+                detail=(f"This song is already licensed exclusively for "
+                        f"{exclusive.uses_label(exclusive.sold_uses(doc))}. Exclusive can't be turned off."))
         try:
             if want:
                 await record_grants(db, user_id=clerk_payload["sub"], track_id=track_id,
-                                     scopes=["ai_exclusive"], source="vault",
+                                     scopes=["exclusive"], source="vault",
                                      ip=get_real_client_ip(request), agreement=agreement)
             else:
                 await record_withdrawals(db, user_id=clerk_payload["sub"], track_id=track_id,
-                                         scopes=["ai_exclusive"], source="vault",
+                                         scopes=["exclusive"], source="vault",
                                          ip=get_real_client_ip(request))
         except Exception as exc:
             logger.error("Consent ledger write failed for %s: %s", track_id, exc)
             raise HTTPException(status_code=503, detail="Could not record consent. Please try again.")
-        now_iso = datetime.now(timezone.utc).isoformat()
-        fields = ({"consent.ai_exclusive": True, "consent.ai_exclusive_withdrawn_at": None}
-                  if want else {"consent.ai_exclusive_withdrawn_at": now_iso})
         await db.track_submissions.update_one(
-            {"id": track_id, "clerk_user_id": clerk_payload["sub"]}, {"$set": fields})
+            {"id": track_id, "clerk_user_id": clerk_payload["sub"]}, {"$set": {"consent.exclusive": want}})
         doc = await _owned_track(track_id, clerk_payload)
         return {"id": track_id, **vault_track_view(doc)}
 
     want = payload.action == "grant"
     if (doc["consent"].get(payload.scope) is True) == want:
-        label = {"ai_training": "AI training", "sync": "Sync",
-                 "exclusive_buyout": "Exclusive buyout"}.get(payload.scope, payload.scope)
+        label = {"ai_training": "AI training", "sync": "Sync"}.get(payload.scope, payload.scope)
         raise HTTPException(status_code=409, detail=f"{label} is already {'on' if want else 'off'}.")
 
     # PRD-03 3.4: every change is a new consent event, written first. Grants are gated;
     # withdrawals never are, so an artist can always opt out.
-    if payload.scope == "exclusive_buyout" and want:
-        # Brief 16 section 4.2: three gates, in order. The signed-agreement check
-        # applies even when enforcement is off.
-        if doc["consent"].get("sync") is not True:
-            raise HTTPException(status_code=409, detail="Turn on sync placements first.")
-        agreement = await _current_agreement(clerk_payload["sub"])
-        if agreement is None:
-            raise HTTPException(status_code=403, detail="Sign the latest Artist Agreement first.")
-        if not artist_agreement.supports_buyouts(artist_agreement.current_version()):
-            raise HTTPException(status_code=409, detail="Exclusive buyouts are not available yet.")
-    else:
-        agreement = await _require_signed_agreement(clerk_payload) if want else None
+    agreement = await _require_signed_agreement(clerk_payload) if want else None
 
-    # Withdrawing sync also withdraws buyouts (one ledger write) when buyouts were on.
-    cascade_buyout = (payload.scope == "sync" and not want
-                      and doc["consent"].get("exclusive_buyout") is True)
     try:
         if want:
             await record_grants(db, user_id=clerk_payload["sub"], track_id=track_id,
                                  scopes=[payload.scope], source="vault",
                                  ip=get_real_client_ip(request), agreement=agreement)
         else:
-            scopes = ["sync", "exclusive_buyout"] if cascade_buyout else [payload.scope]
             await record_withdrawals(db, user_id=clerk_payload["sub"], track_id=track_id,
-                                     scopes=scopes, source="vault",
+                                     scopes=[payload.scope], source="vault",
                                      ip=get_real_client_ip(request))
     except Exception as exc:
         logger.error("Consent ledger write failed for %s: %s", track_id, exc)
@@ -2427,8 +2420,6 @@ async def change_vault_consent(request: Request, track_id: str, payload: Consent
         # Delisted for future sales; licenses already sold stay valid.
         fields.update({"on_sync_profile": False, "sync_delisted_at": now_iso,
                        "sync_status": None, "checks": None})
-        if cascade_buyout:
-            fields["consent.exclusive_buyout"] = False
     await db.track_submissions.update_one(
         {"id": track_id, "clerk_user_id": clerk_payload["sub"]}, {"$set": fields})
     if payload.scope == "sync" and want:
@@ -2856,7 +2847,8 @@ async def get_submissions(request: Request, admin: dict = Depends(require_admin)
 
     now = datetime.now(timezone.utc)
     for s in subs:
-        s["ai_exclusive_in_effect"] = ai_exclusive_in_effect(s, now)
+        s["exclusive"] = exclusive.is_exclusive(s)
+        s["exclusive_sold"] = exclusive.sold_uses(s)
         if isinstance(s.get("upload_date"), str):
             s["upload_date"] = datetime.fromisoformat(s["upload_date"])
         if s.get("stem_paths"):
@@ -3229,9 +3221,8 @@ async def sync_quote(request: Request, payload: QuoteRequest):
         track = await db.track_submissions.find_one(
             {"id": payload.track_id}, {"_id": 0, **{f: 0 for f in MATCH_DETAIL_FIELDS}})
     if payload.kind == "buyout":
-        if (not track or not is_listed(track)
-                or (track.get("consent") or {}).get("exclusive_buyout") is not True):
-            raise HTTPException(status_code=409, detail="Exclusive buyout is not offered for this track.")
+        if not track or not is_listed(track) or not exclusive.is_exclusive(track):
+            raise HTTPException(status_code=409, detail="Exclusive licenses are not offered for this track.")
     q = quotes.build_quote(payload.model_dump(), ip=get_real_client_ip(request),
                            user_agent=request.headers.get("user-agent") or "", track=track, now=now)
     try:
@@ -3272,6 +3263,8 @@ async def sync_checkout(request: Request, payload: CheckoutRequest,
         {"id": payload.track_id}, {"_id": 0, **{f: 0 for f in MATCH_DETAIL_FIELDS}})
     if not track or not is_listed(track):
         raise _not_found()
+    if exclusive.is_exclusive(track):
+        raise HTTPException(status_code=409, detail=exclusive.EXCLUSIVE_ONLY_DETAIL)
     profile = await db.sync_profiles.find_one({"user_id": track.get("clerk_user_id")}, {"_id": 0})
     now = datetime.now(timezone.utc)
     include_stems = payload.include_stems and sync_orders.deliver_stems()
@@ -3723,6 +3716,8 @@ async def subscriptions_register(request: Request, payload: RegisterRequest,
         {"id": payload.track_id}, {"_id": 0, **{f: 0 for f in MATCH_DETAIL_FIELDS}})
     if not track or not is_listed(track):
         raise _not_found()
+    if exclusive.is_exclusive(track):
+        raise HTTPException(status_code=409, detail=exclusive.EXCLUSIVE_ONLY_DETAIL)
     include_stems = payload.include_stems and sync_orders.deliver_stems()
     sub = await db.subscriptions.find_one({"user_id": uid}, sort=[("created_at", -1)])
     plan = access["plan"]

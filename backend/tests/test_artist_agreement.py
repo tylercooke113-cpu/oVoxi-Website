@@ -406,12 +406,6 @@ def test_presign_refuses_pending_user(fake_db, clerk, monkeypatch):
         server.app.dependency_overrides.clear()
 
 
-def test_supports_buyouts_v3_true():
-    # Reads the real backend/agreements/*.txt (no agreements_dir override).
-    assert artist_agreement.supports_buyouts("v3") is True
-    assert artist_agreement.supports_buyouts("v1") is False
-
-
 def test_presign_enforced_unsigned_artist_403(client, fake_db, monkeypatch):
     monkeypatch.setenv("ARTIST_AGREEMENT_ENFORCED", "true")
     resp = _presign(client)
@@ -483,13 +477,6 @@ def test_vault_withdraw_enforced_unsigned_passes(client, fake_db, monkeypatch):
 # v2 buyouts (Brief 16)
 # ---------------------------------------------------------------------------
 
-def test_supports_buyouts_v1_v2(monkeypatch):
-    monkeypatch.setattr(artist_agreement, "AGREEMENTS_DIR", REAL_AGREEMENTS_DIR)
-    artist_agreement.load_template.cache_clear()
-    assert artist_agreement.supports_buyouts("v1") is False
-    assert artist_agreement.supports_buyouts("v2") is True
-
-
 def test_status_previous_signed(client, fake_db, clerk, monkeypatch):
     monkeypatch.setenv("ARTIST_AGREEMENT_VERSION", "v2")
     monkeypatch.setattr(artist_agreement, "AGREEMENTS_DIR", REAL_AGREEMENTS_DIR)
@@ -502,7 +489,7 @@ def test_status_previous_signed(client, fake_db, clerk, monkeypatch):
 
     body = client.get("/api/agreement/status").json()
     assert body["signed"] is False and body["previous_signed"] is True
-    assert body["buyouts_supported"] is True and body["current_version"] == "v2"
+    assert body["exclusive_supported"] is False and body["current_version"] == "v2"
 
 
 def test_render_pdf_has_fingerprint_not_version(monkeypatch):
@@ -526,9 +513,6 @@ def test_supports_exclusive_v5_only():
     assert artist_agreement.supports_exclusive("v5") is True
     for old in ("v1", "v2", "v3", "v4"):
         assert artist_agreement.supports_exclusive(old) is False
-    # v5 drops the old buyout clause, so the old toggle is not offered under v5.
-    assert artist_agreement.supports_buyouts("v5") is False
-    assert artist_agreement.supports_buyouts("v4") is True
 
 
 def test_v5_text_sync_and_ai_exclusive_pro_rule_40pct():
