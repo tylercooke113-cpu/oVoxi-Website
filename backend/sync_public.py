@@ -6,26 +6,52 @@ public_track_view() or public_profile_view(). Both are allowlists.
 """
 from typing import Optional
 
-# PRD-03 3.2: a track is listed only when all of these hold.
-LISTING_FILTER = {
+# PRD-03 3.2 and Brief 25b Part D1: a track is in the OVOXI Catalog when it is
+# listed for at least one use. on_sync_profile is the listing flag for every use.
+_LISTED_COMMON = {
+    "on_sync_profile": True,
+    "sync_delisted_by_admin": {"$ne": True},
+}
+SYNC_LISTED = {
     "sync_status": "cleared",
     "consent.sync": True,
     "intake.content_id": "no",
-    "on_sync_profile": True,
-    "sync_delisted_by_admin": {"$ne": True},
-    "exclusive_sold.sync": None,        # Brief 25b: sold exclusively for sync -> down at once
+    "exclusive_sold.sync": None,        # sold exclusively for sync -> down at once
 }
+AI_LISTED = {
+    "ai_status": "cleared",
+    "consent.ai_training": True,
+    "exclusive_sold.ai": None,          # sold exclusively for AI training -> down at once
+}
+SYNC_LISTING_FILTER = {**_LISTED_COMMON, **SYNC_LISTED}
+AI_LISTING_FILTER = {**_LISTED_COMMON, **AI_LISTED}
+LISTING_FILTER = {**_LISTED_COMMON, "$or": [SYNC_LISTED, AI_LISTED]}
 
 PROFILE_FIELDS = ("slug", "display_name", "location", "bio", "spotify_url", "instagram_url")
 
 
+def listed_for(doc: dict, use: str) -> bool:
+    """Listed in the catalog for one use: "sync" or "ai"."""
+    if doc.get("on_sync_profile") is not True or doc.get("sync_delisted_by_admin") is True:
+        return False
+    consent = doc.get("consent") or {}
+    sold = doc.get("exclusive_sold") or {}
+    if use == "sync":
+        return (doc.get("sync_status") == "cleared" and consent.get("sync") is True
+                and (doc.get("intake") or {}).get("content_id") == "no" and not sold.get("sync"))
+    if use == "ai":
+        return (doc.get("ai_status") == "cleared" and consent.get("ai_training") is True
+                and not sold.get("ai"))
+    raise ValueError(f"unknown use {use!r}")
+
+
+def available_for(doc: dict) -> list:
+    return [u for u in ("sync", "ai") if listed_for(doc, u)]
+
+
 def is_listed(doc: dict) -> bool:
-    return (doc.get("sync_status") == "cleared"
-            and (doc.get("consent") or {}).get("sync") is True
-            and (doc.get("intake") or {}).get("content_id") == "no"
-            and doc.get("on_sync_profile") is True
-            and doc.get("sync_delisted_by_admin") is not True
-            and not (doc.get("exclusive_sold") or {}).get("sync"))
+    """In the catalog for at least one use."""
+    return bool(available_for(doc))
 
 
 def public_track_view(doc: dict, profile: Optional[dict]) -> dict:
@@ -45,6 +71,7 @@ def public_track_view(doc: dict, profile: Optional[dict]) -> dict:
         "has_waveform": bool(doc.get("waveform_key")),
         "exclusive": (doc.get("consent") or {}).get("exclusive") is True,
         "ai_training": (doc.get("consent") or {}).get("ai_training") is True,
+        "available_for": available_for(doc),
     }
 
 

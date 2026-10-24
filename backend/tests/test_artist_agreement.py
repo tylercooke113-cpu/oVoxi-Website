@@ -371,6 +371,7 @@ PRESIGN_BODY = {
     "consent_ai_training": True, "consent_sync": False,
     "moods": ["Chill", "Dreamy"], "vocals": "vocal", "bpm": 120.0, "key": "C major",
     "rights": {"owns_everything": True, "self_legal_name": "Test Person", "attested": True},
+    "declarations": {"samples": "original", "samples_attested": True, "ai_tools": "none", "ai_tools_attested": True},
 }
 
 

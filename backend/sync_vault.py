@@ -8,6 +8,7 @@ import re
 import unicodedata
 from typing import Optional
 
+from clearance import AI_CHECK_NAMES, SYNC_CHECK_NAMES
 from exclusive import is_exclusive, sold_uses
 
 VAULT_METADATA_FIELDS = (
@@ -25,10 +26,12 @@ def is_legacy(doc: dict) -> bool:
     return not isinstance(doc.get("consent"), dict)
 
 
-def failed_reasons(doc: dict) -> list:
+def failed_reasons(doc: dict, names=None) -> list:
+    """Reasons for checks that did not pass, limited to one use's checks when given."""
     checks = doc.get("checks") or {}
-    return [c.get("reason") for c in checks.values()
-            if isinstance(c, dict) and c.get("result") != "pass" and c.get("reason")]
+    return [c.get("reason") for n, c in checks.items()
+            if (names is None or n in names)
+            and isinstance(c, dict) and c.get("result") != "pass" and c.get("reason")]
 
 
 def vault_track_view(doc: dict) -> dict:
@@ -38,6 +41,8 @@ def vault_track_view(doc: dict) -> dict:
     meta = doc.get("metadata") or {}
     consent = doc.get("consent") or {}
     sync_on = consent.get("sync") is True
+    ai_on = consent.get("ai_training") is True
+    intake = doc.get("intake") or {}
     return {
         "legacy": False,
         "consent": {"ai_training": consent.get("ai_training") is True, "sync": sync_on,
@@ -46,8 +51,13 @@ def vault_track_view(doc: dict) -> dict:
                     "exclusive_sold": {u: u in sold_uses(doc) for u in ("sync", "ai")}},
         "metadata": {k: meta.get(k) for k in VAULT_METADATA_FIELDS},
         "sync_status": doc.get("sync_status") if sync_on else None,
-        "sync_reasons": failed_reasons(doc) if sync_on else [],
-        "on_sync_profile": bool(doc.get("on_sync_profile")) if sync_on else False,
+        "sync_reasons": failed_reasons(doc, SYNC_CHECK_NAMES) if sync_on else [],
+        "ai_status": doc.get("ai_status") if ai_on else None,
+        "ai_reasons": failed_reasons(doc, AI_CHECK_NAMES) if ai_on else [],
+        # The catalog-listing flag for every use (Brief 25b D1).
+        "on_sync_profile": bool(doc.get("on_sync_profile")) if (sync_on or ai_on) else False,
+        # Older uploads never answered the samples / AI-tools questions (Brief 25b D1).
+        "needs_declarations": not (intake.get("samples") and intake.get("ai_tools")),
         "delisted_by_admin": doc.get("sync_delisted_by_admin") is True,
         "cosign_required": doc.get("cosign_required") is True,
         "cosign_status": doc.get("cosign_status"),

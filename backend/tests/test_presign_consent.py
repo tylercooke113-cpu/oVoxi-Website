@@ -43,6 +43,9 @@ def client(fake_db, monkeypatch):
     server.app.dependency_overrides.clear()
 
 
+DECLARATIONS = {"samples": "original", "samples_attested": True, "ai_tools": "none", "ai_tools_attested": True}
+
+
 def base(**overrides):
     body = {
         "artist_name": "Test Artist",
@@ -57,6 +60,7 @@ def base(**overrides):
         "bpm": 120.0,
         "key": "C major",
         "rights": rights(),
+        "declarations": dict(DECLARATIONS),
     }
     body.update(overrides)
     return body
@@ -125,7 +129,9 @@ def test_ai_only(client, fake_db):
         "bpm": 120.0, "bpm_source": "artist", "bpm_unsure": False,
         "key": "C major", "key_source": "artist", "key_unsure": False,
     }
-    assert "intake" not in doc
+    # Brief 25b D1: every upload stores samples and AI tools; no sync fields for AI-only.
+    assert set(doc["intake"]) == {"samples", "samples_attested_at", "ai_tools",
+                                  "ai_tools_detail", "ai_tools_attested_at"}
 
 
 def test_sync_only(client, fake_db):

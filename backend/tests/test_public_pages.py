@@ -29,7 +29,9 @@ def listed_track(**over):
         "consent": {"ai_training": True, "sync": True},
         "metadata": {"moods": ["Chill"], "vocals": "vocal", "bpm": 90.0, "key": "C major",
                      "duration_s": 184.0, "bpm_detected": 90.0},
-        "intake": {"content_id": "no", "ipi": "00123456789", "pro_name": "BMI"},
+        "intake": {"content_id": "no", "ipi": "00123456789", "pro_name": "BMI",
+                   "samples": "original", "samples_attested_at": "t",
+                   "ai_tools": "none", "ai_tools_attested_at": "t"},
         "rights": {"writers": [{"legal_name": "Private Person", "share_bp": 10000}]},
         "sync_status": "cleared", "on_sync_profile": True,
         "preview_key": f"catalog/a/t/previews/{TID}.full128.mp3",
@@ -72,6 +74,10 @@ class QueryCollection(FakeCollection):
 
     def _match(self, doc, flt):
         for k, v in flt.items():
+            if k == "$or":
+                if not any(self._match(doc, sub) for sub in v):
+                    return False
+                continue
             actual = self._get(doc, k)
             if isinstance(v, dict) and "$ne" in v:
                 if actual == v["$ne"]:
@@ -232,7 +238,8 @@ def test_public_page_content(env):
     assert t == {"id": TID, "track_name": "Night Drive", "artist_display_name": "Tyler Example",
                  "artist_slug": "tyler-example", "genre": "R&B", "moods": ["Chill"], "vocals": "vocal",
                  "bpm": 90.0, "key": "C major", "duration_s": 184.0,
-                 "has_preview": True, "has_waveform": True, "exclusive": False, "ai_training": True}
+                 "has_preview": True, "has_waveform": True, "exclusive": False, "ai_training": True,
+                 "available_for": ["sync"]}
     assert body["viewer"] == {"is_owner": False, "is_admin": False, "public": True}
     assert_nothing_private(client.get(TRACK).json())
 

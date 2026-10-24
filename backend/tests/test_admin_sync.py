@@ -20,7 +20,7 @@ def env(monkeypatch):
         rights={"attested_at": "t", "writers": [{"share_bp": 10000}], "publishers": [{"share_bp": 10000}],
                 "master_owners": [{"share_bp": 10000}]},
         intake={"samples": "original", "samples_attested_at": "t", "content_id": "no",
-                "pro_not_affiliated": True},
+                "pro_not_affiliated": True, "ai_tools": "none", "ai_tools_attested_at": "t"},
         stem_paths={n: "x" for n in ("vocals", "instrumental", "drums", "bass", "other")})])
     db.sync_profiles = QueryCollection([profile()])
     db.admin_actions = QueryCollection()

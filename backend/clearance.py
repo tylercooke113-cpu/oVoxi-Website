@@ -1,11 +1,13 @@
-"""Clearance evaluator. See docs/PRD-03 section 5.
+"""Clearance evaluator. See docs/PRD-03 section 5 and Brief 25b Part D1.
 
-Pure: a track document in, check results and sync_status out. No DB access.
-Runs only for sync-consented tracks; returns None for everything else.
+Pure: a track document in, check results and a status per use out. No DB access.
+A track opted into sync gets sync_status; one opted into AI training gets
+ai_status. Content ID and PRO are sync-only checks; everything else applies to
+both uses. Tracks with no use (or legacy tracks) return None.
 """
 from typing import Optional
 
-from sync_constants import MAX_MOODS, MAX_PARTIES, SAMPLE_DECLARATIONS, TOTAL_BP
+from sync_constants import AI_TOOLS_PASS, MAX_MOODS, MAX_PARTIES, SAMPLE_DECLARATIONS, TOTAL_BP
 
 STEM_NAMES = ("vocals", "instrumental", "drums", "bass", "other")
 RIGHTS_SIDES = ("writers", "publishers", "master_owners")
@@ -69,6 +71,24 @@ def check_pro(doc: dict) -> dict:
     return _fail("pro")
 
 
+def check_ai_tools(doc: dict) -> dict:
+    """AI-tools disclosure (Agreement 9(e)). "partial" waits for an admin review."""
+    intake = doc.get("intake") or {}
+    answer = intake.get("ai_tools")
+    if not answer or not intake.get("ai_tools_attested_at"):
+        return _fail("ai_tools")
+    if answer in AI_TOOLS_PASS:
+        return _ok()
+    if answer == "partial":
+        review = (doc.get("ai_tools_reviewed") or {}).get("result")
+        if review == "approved":
+            return _ok()
+        if review == "rejected":
+            return _fail("ai_tools_rejected")
+        return {"result": "pending", "reason": "ai_tools_review"}
+    return _fail("ai_tools_full")
+
+
 def check_cosign(doc: dict) -> dict:
     # Grandfather rule: tracks uploaded before co-owner sign-off shipped have no
     # cosign_required field, so they pass untouched.
@@ -108,27 +128,66 @@ def check_metadata(doc: dict) -> dict:
     return _ok() if not parts else _fail("; ".join(parts))
 
 
-CHECKS = (
+# Order matters only for display. COMMON_CHECKS apply to every use.
+COMMON_CHECKS = (
     ("splits", check_splits),
     ("fingerprint", check_fingerprint),
     ("samples", check_samples),
-    ("content_id", check_content_id),
-    ("pro", check_pro),
+    ("ai_tools", check_ai_tools),
     ("cosign", check_cosign),
     ("metadata", check_metadata),
 )
+SYNC_ONLY_CHECKS = (
+    ("content_id", check_content_id),
+    ("pro", check_pro),
+)
+SYNC_CHECK_NAMES = tuple(n for n, _ in COMMON_CHECKS + SYNC_ONLY_CHECKS)
+AI_CHECK_NAMES = tuple(n for n, _ in COMMON_CHECKS)
+
+
+def _status(checks: dict, names) -> str:
+    picked = [checks[n] for n in names]
+    if any(c["reason"] == "conflict" for c in picked):
+        return "conflict"
+    if all(c["result"] == "pass" for c in picked):
+        return "cleared"
+    return "needs_docs"
 
 
 def evaluate(doc: dict) -> Optional[dict]:
-    """Return {"checks": {...}, "sync_status": ...}, or None when the track has
-    no sync consent (AI-only tracks keep sync_status null)."""
-    if (doc.get("consent") or {}).get("sync") is not True:
+    """Return {"checks", "sync_status", "ai_status"}, or None when the track has no
+    use opted in. A status is None for a use the track is not opted into."""
+    consent = doc.get("consent")
+    if not isinstance(consent, dict):
         return None
-    checks = {name: fn(doc) for name, fn in CHECKS}
-    if any(c["reason"] == "conflict" for c in checks.values()):
-        status = "conflict"
-    elif all(c["result"] == "pass" for c in checks.values()):
-        status = "cleared"
+    sync_on = consent.get("sync") is True
+    ai_on = consent.get("ai_training") is True
+    if not (sync_on or ai_on):
+        return None
+    checks = {name: fn(doc) for name, fn in COMMON_CHECKS}
+    if sync_on:
+        checks.update({name: fn(doc) for name, fn in SYNC_ONLY_CHECKS})
+    return {
+        "checks": checks,
+        "sync_status": _status(checks, SYNC_CHECK_NAMES) if sync_on else None,
+        "ai_status": _status(checks, AI_CHECK_NAMES) if ai_on else None,
+    }
+
+
+def clearance_fields(doc: dict, now_iso: str) -> dict:
+    """The $set for a track after evaluation. on_sync_profile is the catalog-listing
+    flag for every use (the name predates AI listing): on when any opted use clears
+    and an admin has not delisted the track. sync_listed_at moves only when the
+    track goes from unlisted to listed."""
+    result = evaluate(doc)
+    if result is None:
+        fields = {"checks": None, "sync_status": None, "ai_status": None}
     else:
-        status = "needs_docs"
-    return {"checks": checks, "sync_status": status}
+        fields = dict(result)
+    listed = ("cleared" in (fields["sync_status"], fields["ai_status"])
+              and doc.get("sync_delisted_by_admin") is not True)
+    fields["on_sync_profile"] = listed
+    fields["clearance_evaluated_at"] = now_iso
+    if listed and not doc.get("on_sync_profile"):
+        fields["sync_listed_at"] = now_iso
+    return fields

@@ -35,6 +35,7 @@ from sync_constants import (
     DISTRIBUTORS, PRO_ORGS, IPI_PATTERN, MUSICAL_KEYS, BPM_MIN, BPM_MAX, COUNTRIES,
     PLANS, SUB_DAY_CAP,
     COSIGN_TOKEN_TTL_DAYS, COSIGN_MAX_RESENDS, COSIGN_RESEND_COOLDOWN_MIN,
+    AI_TOOLS, AI_TOOLS_DETAIL_MAX, AI_TOOLS_FULL_MESSAGE,
 )
 from consent_ledger import record_grants, record_withdrawals, GRANT_VERSION
 import artist_agreement
@@ -43,7 +44,7 @@ from profile_photo import (
     MAX_PHOTO_BYTES, PHOTO_CONTENT_TYPES, PHOTO_SIZES, PhotoRejected, REJECT_MESSAGE, process_photo,
 )
 from sync_public import (
-    LISTING_FILTER, is_listed, photo_visible, public_profile_view, public_track_view,
+    LISTING_FILTER, is_listed, listed_for, photo_visible, public_profile_view, public_track_view,
 )
 import sync_orders
 import licenses
@@ -59,7 +60,7 @@ from sync_vault import (
     slugify_profile, vault_track_view,
 )
 from rights import TrackRightsIn, build_rights, EMAIL_PATTERN as RIGHTS_EMAIL_PATTERN
-from clearance import evaluate as evaluate_clearance
+from clearance import clearance_fields
 from metadata_reconcile import reconcile as reconcile_metadata
 from starlette.middleware.cors import CORSMiddleware
 from slowapi import Limiter
@@ -282,28 +283,16 @@ async def _set_status(submission_id: str, status: str, extra: Optional[dict] = N
 
 
 async def _run_clearance(submission_id: str) -> None:
-    """PRD-03 section 5. Evaluate a sync-consented track and store the result.
+    """PRD-03 section 5 / Brief 25b D1. Evaluate a track for each opted use and store it.
     Never raises: a clearance error must not break the pipeline or a callback."""
     try:
         doc = await db.track_submissions.find_one({"id": submission_id}, {"_id": 0})
         if not doc:
             return
-        result = evaluate_clearance(doc)
-        if result is None:
-            return
-        now = datetime.now(timezone.utc).isoformat()
-        fields = {
-            "checks": result["checks"],
-            "sync_status": result["sync_status"],
-            "clearance_evaluated_at": now,
-        }
-        if (result["sync_status"] == "cleared"
-                and not doc.get("on_sync_profile")
-                and not doc.get("sync_delisted_by_admin")):
-            fields["on_sync_profile"] = True
-            fields["sync_listed_at"] = now
+        fields = clearance_fields(doc, datetime.now(timezone.utc).isoformat())
         await db.track_submissions.update_one({"id": submission_id}, {"$set": fields})
-        logger.info("Clearance submission=%s sync_status=%s", submission_id, result["sync_status"])
+        logger.info("Clearance submission=%s sync_status=%s ai_status=%s",
+                    submission_id, fields["sync_status"], fields["ai_status"])
     except Exception as exc:
         logger.error("Clearance evaluation failed for %s: %s", submission_id, exc)
 
@@ -746,8 +735,10 @@ def _one_of(value, allowed, label):
 class SyncIntake(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    samples: str
-    samples_attested: bool
+    # Samples moved to Declarations (Brief 25b D1). Still accepted here from the Vault's
+    # add-sync flow for tracks that never answered; ignored at upload.
+    samples: Optional[str] = None
+    samples_attested: bool = False
     distributor: str
     content_id: str
     pro_not_affiliated: bool = False
@@ -757,14 +748,13 @@ class SyncIntake(BaseModel):
     @field_validator("samples")
     @classmethod
     def _samples(cls, v):
-        return _one_of(v, SAMPLE_DECLARATIONS, "samples declaration")
+        return None if v is None else _one_of(v, SAMPLE_DECLARATIONS, "samples declaration")
 
-    @field_validator("samples_attested")
-    @classmethod
-    def _attested(cls, v):
-        if not v:
+    @model_validator(mode="after")
+    def _attested(self):
+        if self.samples is not None and not self.samples_attested:
             raise ValueError("Confirm the samples declaration to use sync.")
-        return v
+        return self
 
     @field_validator("distributor")
     @classmethod
@@ -788,6 +778,47 @@ class SyncIntake(BaseModel):
         return self
 
 
+class Declarations(BaseModel):
+    """Asked on every upload and in the Vault (Brief 25b D1): samples and AI tools."""
+    model_config = ConfigDict(extra="forbid")
+
+    samples: str
+    samples_attested: bool
+    ai_tools: str
+    ai_tools_detail: str = Field(default="", max_length=AI_TOOLS_DETAIL_MAX)
+    ai_tools_attested: bool
+
+    @field_validator("samples")
+    @classmethod
+    def _samples(cls, v):
+        return _one_of(v, SAMPLE_DECLARATIONS, "samples declaration")
+
+    @field_validator("ai_tools")
+    @classmethod
+    def _ai_tools(cls, v):
+        v = _one_of(v, AI_TOOLS, "AI tools answer")
+        if v == "full":
+            raise ValueError(AI_TOOLS_FULL_MESSAGE)
+        return v
+
+    @model_validator(mode="after")
+    def _rules(self):
+        if not self.samples_attested:
+            raise ValueError("Confirm the samples declaration.")
+        if not self.ai_tools_attested:
+            raise ValueError("Confirm your AI tools answer.")
+        detail = self.ai_tools_detail.strip()
+        if self.ai_tools == "partial" and not detail:
+            raise ValueError("Tell us which parts used AI, and which tool.")
+        self.ai_tools_detail = detail if self.ai_tools == "partial" else ""
+        return self
+
+    def intake_fields(self, now_iso: str) -> dict:
+        return {"samples": self.samples, "samples_attested_at": now_iso,
+                "ai_tools": self.ai_tools, "ai_tools_detail": self.ai_tools_detail or None,
+                "ai_tools_attested_at": now_iso}
+
+
 class PresignRequest(BaseModel):
     artist_name: str = Field(..., min_length=1, max_length=120)
     track_name: str = Field(..., min_length=1, max_length=120)
@@ -804,6 +835,7 @@ class PresignRequest(BaseModel):
     moods: List[str]                        # required, no default
     vocals: str                             # required, no default
     sync_intake: Optional[SyncIntake] = None
+    declarations: Optional[Declarations] = None   # required on every upload; see _consent_rules
     rights: Optional[TrackRightsIn] = None
     bpm: Optional[float] = None
     bpm_unsure: bool = False
@@ -846,6 +878,8 @@ class PresignRequest(BaseModel):
     def _consent_rules(self):
         if not (self.consent_ai_training or self.consent_sync):
             raise ValueError("Choose at least one use for this upload.")
+        if self.declarations is None:
+            raise ValueError("Answer the samples and AI tools questions.")
         if self.consent_sync and self.sync_intake is None:
             raise ValueError("Sync details are required when sync is selected.")
         if not self.consent_sync and self.sync_intake is not None:
@@ -1182,6 +1216,12 @@ class AdminReissue(BaseModel):
 class AdminDelist(BaseModel):
     model_config = ConfigDict(extra="forbid")
     delisted: bool = Field(..., strict=True)
+    reason: str = Field(default="", max_length=500)
+
+
+class AdminAiToolsReview(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    result: Literal["approved", "rejected"]
     reason: str = Field(default="", max_length=500)
 
 
@@ -1726,18 +1766,16 @@ async def presign_upload(request: Request, payload: PresignRequest, clerk_payloa
         "key_source": "artist" if payload.key is not None else None,
         "key_unsure": payload.key_unsure,
     }
+    # Samples and AI tools are answered on every upload (Brief 25b D1); sync adds its own.
+    doc['intake'] = payload.declarations.intake_fields(now_iso)
     if payload.consent_sync:
-        doc['intake'] = {
-            "samples": payload.sync_intake.samples,
-            "samples_attested_at": now_iso,
+        doc['intake'].update({
             "distributor": payload.sync_intake.distributor,
             "content_id": payload.sync_intake.content_id,
             "pro_not_affiliated": payload.sync_intake.pro_not_affiliated,
             "pro_name": payload.sync_intake.pro_name,
             "ipi": payload.sync_intake.ipi,
-        }
-    else:
-        doc.pop('intake', None)
+        })
     doc['rights'] = build_rights(
         payload.rights, intake=payload.sync_intake,
         clerk_user_id=clerk_user_id, now_iso=now_iso,
@@ -2410,20 +2448,45 @@ async def change_vault_consent(request: Request, track_id: str, payload: Consent
     now_iso = datetime.now(timezone.utc).isoformat()
     fields: dict = {f"consent.{payload.scope}": want}
     if payload.scope == "sync" and want:
+        # Dotted paths: the samples and AI-tools answers already on the track are kept.
         i = payload.sync_intake
-        fields["intake"] = {
-            "samples": i.samples, "samples_attested_at": now_iso,
-            "distributor": i.distributor, "content_id": i.content_id,
-            "pro_not_affiliated": i.pro_not_affiliated, "pro_name": i.pro_name, "ipi": i.ipi,
-        }
+        fields.update({
+            "intake.distributor": i.distributor, "intake.content_id": i.content_id,
+            "intake.pro_not_affiliated": i.pro_not_affiliated, "intake.pro_name": i.pro_name,
+            "intake.ipi": i.ipi,
+        })
+        if i.samples is not None:
+            fields.update({"intake.samples": i.samples, "intake.samples_attested_at": now_iso})
     elif payload.scope == "sync":
-        # Delisted for future sales; licenses already sold stay valid.
-        fields.update({"on_sync_profile": False, "sync_delisted_at": now_iso,
-                       "sync_status": None, "checks": None})
+        # Off the catalog for sync sales; licenses already sold stay valid. Clearance
+        # below keeps the track listed if it is still cleared for AI training.
+        fields.update({"sync_delisted_at": now_iso, "sync_status": None})
     await db.track_submissions.update_one(
         {"id": track_id, "clerk_user_id": clerk_payload["sub"]}, {"$set": fields})
-    if payload.scope == "sync" and want:
-        await _run_clearance(track_id)
+    await _run_clearance(track_id)      # every use change re-evaluates both uses
+    doc = await _owned_track(track_id, clerk_payload)
+    return {"id": track_id, **vault_track_view(doc)}
+
+
+@api_router.post("/vault/tracks/{track_id}/declarations")
+@limiter.limit("10/minute")
+async def set_vault_declarations(request: Request, track_id: str, payload: Declarations,
+                                 clerk_payload: dict = Depends(require_artist)):
+    """Brief 25b D1: answer (or update) the samples and AI-tools questions for a track,
+    for older uploads that never asked them. A changed AI-tools answer needs a new
+    admin review when it is "partial"."""
+    doc = await _owned_track(track_id, clerk_payload)
+    if is_legacy(doc):
+        raise HTTPException(status_code=409, detail="This track has no usage choices recorded.")
+    now_iso = datetime.now(timezone.utc).isoformat()
+    new = payload.intake_fields(now_iso)
+    old = doc.get("intake") or {}
+    fields = {f"intake.{k}": v for k, v in new.items()}
+    if (old.get("ai_tools"), old.get("ai_tools_detail")) != (new["ai_tools"], new["ai_tools_detail"]):
+        fields["ai_tools_reviewed"] = None
+    await db.track_submissions.update_one(
+        {"id": track_id, "clerk_user_id": clerk_payload["sub"]}, {"$set": fields})
+    await _run_clearance(track_id)
     doc = await _owned_track(track_id, clerk_payload)
     return {"id": track_id, **vault_track_view(doc)}
 
@@ -2716,6 +2779,28 @@ async def admin_delist_track(request: Request, track_id: str, payload: AdminDeli
     doc = await db.track_submissions.find_one(
         {"id": track_id}, {"_id": 0, "id": 1, "sync_status": 1, "on_sync_profile": 1,
                            "sync_delisted_by_admin": 1})
+    return doc
+
+
+@api_router.post("/admin/sync/tracks/{track_id}/ai-tools-review")
+@limiter.limit("30/minute")
+async def admin_ai_tools_review(request: Request, track_id: str, payload: AdminAiToolsReview,
+                                admin: dict = Depends(require_admin)):
+    """Brief 25b D1: approve or reject a track whose artist said AI generated part of it.
+    Rejecting fails the ai_tools check, which takes the track off the catalog."""
+    doc = await db.track_submissions.find_one({"id": track_id}, {"_id": 0, "id": 1, "intake": 1})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Track not found")
+    if (doc.get("intake") or {}).get("ai_tools") != "partial":
+        raise HTTPException(status_code=409, detail="This track does not need an AI tools review.")
+    review = {"result": payload.result, "by": admin.get("sub"),
+              "at": datetime.now(timezone.utc).isoformat()}
+    await db.track_submissions.update_one({"id": track_id}, {"$set": {"ai_tools_reviewed": review}})
+    await _log_admin_action(admin, f"ai_tools_{payload.result}", track_id, payload.reason)
+    await _run_clearance(track_id)
+    doc = await db.track_submissions.find_one(
+        {"id": track_id}, {"_id": 0, "id": 1, "sync_status": 1, "ai_status": 1,
+                           "on_sync_profile": 1, "ai_tools_reviewed": 1})
     return doc
 
 
@@ -3261,7 +3346,7 @@ async def sync_checkout(request: Request, payload: CheckoutRequest,
 
     track = await db.track_submissions.find_one(
         {"id": payload.track_id}, {"_id": 0, **{f: 0 for f in MATCH_DETAIL_FIELDS}})
-    if not track or not is_listed(track):
+    if not track or not listed_for(track, "sync"):
         raise _not_found()
     if exclusive.is_exclusive(track):
         raise HTTPException(status_code=409, detail=exclusive.EXCLUSIVE_ONLY_DETAIL)
@@ -3714,7 +3799,7 @@ async def subscriptions_register(request: Request, payload: RegisterRequest,
 
     track = await db.track_submissions.find_one(
         {"id": payload.track_id}, {"_id": 0, **{f: 0 for f in MATCH_DETAIL_FIELDS}})
-    if not track or not is_listed(track):
+    if not track or not listed_for(track, "sync"):
         raise _not_found()
     if exclusive.is_exclusive(track):
         raise HTTPException(status_code=409, detail=exclusive.EXCLUSIVE_ONLY_DETAIL)

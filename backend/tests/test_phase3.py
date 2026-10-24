@@ -33,7 +33,7 @@ def cleared_doc(**overrides):
                      "key": "A minor", "duration_s": 180.5},
         "intake": {"samples": "original", "samples_attested_at": "t", "distributor": "DistroKid",
                    "content_id": "no", "pro_not_affiliated": False, "pro_name": "BMI",
-                   "ipi": "00123456789"},
+                   "ipi": "00123456789", "ai_tools": "none", "ai_tools_attested_at": "t"},
         "rights": {"owns_everything": True, "attested_at": "t",
                    "writers": [{"share_bp": 10000}], "publishers": [{"share_bp": 10000}],
                    "master_owners": [{"share_bp": 10000}]},
@@ -56,12 +56,44 @@ def test_all_checks_pass_is_cleared():
     r = evaluate(cleared_doc())
     assert r["sync_status"] == "cleared"
     assert all(c["result"] == "pass" for c in r["checks"].values())
-    assert set(r["checks"]) == {"splits", "fingerprint", "samples", "content_id", "pro", "cosign", "metadata"}
+    assert set(r["checks"]) == {"splits", "fingerprint", "samples", "ai_tools", "content_id", "pro",
+                                "cosign", "metadata"}
 
 
-def test_ai_only_is_not_evaluated():
-    assert evaluate(cleared_doc(consent={"ai_training": True, "sync": False})) is None
+def test_ai_only_gets_ai_status_without_sync_only_checks():
+    # Brief 25b D1: AI-training tracks are evaluated too. Content ID and PRO are sync-only.
+    r = evaluate(cleared_doc(consent={"ai_training": True, "sync": False},
+                             intake={"samples": "original", "samples_attested_at": "t",
+                                     "ai_tools": "none", "ai_tools_attested_at": "t"}))
+    assert r["sync_status"] is None and r["ai_status"] == "cleared"
+    assert "content_id" not in r["checks"] and "pro" not in r["checks"]
+
+
+def test_no_use_or_legacy_is_not_evaluated():
+    assert evaluate(cleared_doc(consent={"ai_training": False, "sync": False})) is None
     assert evaluate({"id": SID}) is None
+
+
+def test_both_uses_each_get_a_status():
+    r = evaluate(cleared_doc(consent={"ai_training": True, "sync": True},
+                             intake={**cleared_doc()["intake"], "content_id": "yes"}))
+    assert r["sync_status"] == "needs_docs" and r["ai_status"] == "cleared"   # Content ID is sync-only
+
+
+@pytest.mark.parametrize("intake_over,review,result,reason", [
+    ({"ai_tools": None}, None, "fail", "ai_tools"),
+    ({"ai_tools_attested_at": None}, None, "fail", "ai_tools"),
+    ({"ai_tools": "assistive"}, None, "pass", None),
+    ({"ai_tools": "partial"}, None, "pending", "ai_tools_review"),
+    ({"ai_tools": "partial"}, {"result": "approved"}, "pass", None),
+    ({"ai_tools": "partial"}, {"result": "rejected"}, "fail", "ai_tools_rejected"),
+    ({"ai_tools": "full"}, None, "fail", "ai_tools_full"),
+])
+def test_ai_tools_check(intake_over, review, result, reason):
+    doc = cleared_doc(intake={**cleared_doc()["intake"], **intake_over}, ai_tools_reviewed=review)
+    r = evaluate(doc)
+    assert r["checks"]["ai_tools"] == {"result": result, "reason": reason}
+    assert r["sync_status"] == ("cleared" if result == "pass" else "needs_docs")
 
 
 # ---------------------------------------------------------------------------
@@ -212,26 +244,36 @@ def test_run_clearance_already_listed_keeps_listed_at(fake_db):
     fake_db.track_submissions.find_one.return_value = cleared_doc(on_sync_profile=True, sync_listed_at="old")
     run(server._run_clearance(SID))
     f = stored_fields(fake_db)
-    assert "sync_listed_at" not in f and "on_sync_profile" not in f
+    assert "sync_listed_at" not in f and f["on_sync_profile"] is True
 
 
 def test_run_clearance_respects_admin_delist(fake_db):
     fake_db.track_submissions.find_one.return_value = cleared_doc(sync_delisted_by_admin=True)
     run(server._run_clearance(SID))
-    assert "on_sync_profile" not in stored_fields(fake_db)
+    assert stored_fields(fake_db)["on_sync_profile"] is False
 
 
 def test_run_clearance_needs_docs_does_not_list(fake_db):
     fake_db.track_submissions.find_one.return_value = cleared_doc(fingerprint_result="NEEDS_DOCS")
     run(server._run_clearance(SID))
     f = stored_fields(fake_db)
-    assert f["sync_status"] == "needs_docs" and "on_sync_profile" not in f
+    assert f["sync_status"] == "needs_docs" and f["on_sync_profile"] is False
 
 
-def test_run_clearance_ai_only_writes_nothing(fake_db):
+def test_run_clearance_ai_only_is_listed(fake_db):
     fake_db.track_submissions.find_one.return_value = cleared_doc(consent={"ai_training": True, "sync": False})
     run(server._run_clearance(SID))
-    fake_db.track_submissions.update_one.assert_not_awaited()
+    f = stored_fields(fake_db)
+    assert f["ai_status"] == "cleared" and f["sync_status"] is None
+    assert f["on_sync_profile"] is True and f["sync_listed_at"]
+
+
+def test_run_clearance_sync_off_ai_still_cleared_stays_listed(fake_db):
+    fake_db.track_submissions.find_one.return_value = cleared_doc(
+        consent={"ai_training": True, "sync": False}, on_sync_profile=True, sync_listed_at="old")
+    run(server._run_clearance(SID))
+    f = stored_fields(fake_db)
+    assert f["on_sync_profile"] is True and "sync_listed_at" not in f
 
 
 def test_run_clearance_never_raises(fake_db):

@@ -294,7 +294,7 @@ def test_remove_sync_delists(client, db):
     assert resp.status_code == 200, resp.text
     d = db.track_submissions.docs[0]
     assert d["consent"]["sync"] is False and d["on_sync_profile"] is False
-    assert d["sync_delisted_at"] and d["sync_status"] is None and d["checks"] is None
+    assert d["sync_delisted_at"] and d["sync_status"] is None
     assert d["sync_listed_at"] == "t"   # history kept
     ev = db.consent_events.inserted[0]
     assert ev["action"] == "withdraw" and ev["scope"] == "sync"
@@ -486,5 +486,6 @@ def test_upload_old_ai_exclusive_field_is_ignored():
     base = dict(artist_name="A", track_name="T", genre="R&B", filename="t.wav",
                 file_size=1024, moods=["Chill"], vocals="vocal", bpm=120.0, key="C major",
                 rights={"owns_everything": True, "self_legal_name": "P", "attested": True})
-    req = server.PresignRequest(**base, consent_ai_training=True, consent_ai_exclusive=True)
+    req = server.PresignRequest(**base, consent_ai_training=True, consent_ai_exclusive=True,
+                                declarations={"samples": "original", "samples_attested": True, "ai_tools": "none", "ai_tools_attested": True})
     assert req.consent_exclusive is False

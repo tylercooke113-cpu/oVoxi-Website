@@ -15,6 +15,13 @@ VOCALS = ("vocal", "instrumental")
 
 SAMPLE_DECLARATIONS = ("original", "cleared_sample", "royalty_free_loop")
 
+# AI-tools disclosure (Brief 25b Part D1, Agreement 9(e)). "full" is refused at upload;
+# "partial" needs an admin review before the track clears.
+AI_TOOLS = ("none", "assistive", "partial", "full")
+AI_TOOLS_PASS = ("none", "assistive")
+AI_TOOLS_DETAIL_MAX = 300
+AI_TOOLS_FULL_MESSAGE = "OVOXI licenses music created by people. Songs made mostly with AI can't be uploaded."
+
 CONTENT_ID_ANSWERS = ("yes", "no", "not_sure")
 
 DISTRIBUTORS = (
