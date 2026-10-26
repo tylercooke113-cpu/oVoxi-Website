@@ -74,6 +74,17 @@ export const api = {
     (await axios.get(`${API}/admin/sync/profiles`, await authed(getToken))).data,
   adminDelist: async (getToken, id, delisted) =>
     (await axios.post(`${API}/admin/sync/tracks/${id}/delist`, { delisted }, await authed(getToken))).data,
+  // Brief 25b D5 / D1 / F: exclusive sales and the two reviews.
+  adminRecordExclusive: async (getToken, id, body) =>
+    (await axios.post(`${API}/admin/sync/tracks/${id}/exclusive-licenses`, body, await authed(getToken))).data,
+  adminExclusiveLicenses: async (getToken) =>
+    (await axios.get(`${API}/admin/sync/exclusive-licenses`, await authed(getToken))).data,
+  adminAiToolsReview: async (getToken, id, result, reason = '') =>
+    (await axios.post(`${API}/admin/sync/tracks/${id}/ai-tools-review`, { result, reason }, await authed(getToken))).data,
+  adminLoopLicense: async (getToken, id, index) =>
+    (await axios.get(`${API}/admin/sync/tracks/${id}/loops/${index}/license`, await authed(getToken))).data,
+  adminLoopReview: async (getToken, id, result, reason = '') =>
+    (await axios.post(`${API}/admin/sync/tracks/${id}/loop-licenses-review`, { result, reason }, await authed(getToken))).data,
   adminHide: async (getToken, slug, hidden) =>
     (await axios.post(`${API}/admin/sync/profiles/${slug}/hide`, { hidden }, await authed(getToken))).data,
   adminOrders: async (getToken, params) =>

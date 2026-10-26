@@ -7,7 +7,7 @@ import { NotFound } from './PublicPageParts';
 import Modal from './Modal';
 import SubscribeModal from './SubscribeModal';
 import QuoteForm from './QuoteForm';
-import { PRICING_COPY as C, AI_PRICING as AI } from './constants';
+import { PRICING_COPY as C, AI_PRICING as AI, EXCLUSIVE_PRICING_NOTE } from './constants';
 
 // Comma money, matching the approved pricing mockup ("$1,499", "$16.15", "$149").
 const money = (cents) => {
@@ -220,6 +220,7 @@ const PricingPage = () => {
           </table>
         </div>
         <p className="mt-4 text-center text-sm text-slate-400">{C.tableNote}</p>
+        <p className="mt-2 text-center text-sm text-slate-400" data-testid="exclusive-note-sync">{EXCLUSIVE_PRICING_NOTE}</p>
 
         {/* Brief 25 Part E: AI training. Same visibility as this page (data.visible). */}
         <section className="mt-16" data-testid="ai-pricing">
@@ -236,6 +237,7 @@ const PricingPage = () => {
               </div>
             ))}
           </div>
+          <p className="mt-4 text-center text-sm text-slate-400" data-testid="exclusive-note-ai">{EXCLUSIVE_PRICING_NOTE}</p>
         </section>
       </div>
 

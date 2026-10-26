@@ -278,7 +278,7 @@ export const PRICING_COPY = {
     digital: 'Client and brand work, paid social and digital ads up to $25,000 spend for 12 months. Organic use forever.',
     campaign: 'Adds out-of-home, retail, events, trade shows and displays. 1 year, up to $100,000 spend. Longer terms available.',
     broadcast: 'Adds TV, radio, OTT, CTV, VOD and film in one country. Ads: 1 year, up to $250,000 spend. Programs and films: forever.',
-    enterprise: 'National and global campaigns, feature films, major TV, games, exclusivity and buyouts.',
+    enterprise: 'National and global campaigns, feature films, major TV and games.',
   },
   table: {
     columns: ['Creator', 'Pro', 'Business', 'Single Digital'],
@@ -309,6 +309,9 @@ export const PRICING_COPY = {
 // Brief 25 Part E: AI training prices shown on /pricing, with "Contact sales"
 // buttons until the Brief 24 checkout. One source of truth; Brief 24 moves the
 // numbers to the server.
+// Brief 25b D6: shown under the sync and AI training pricing. No percentages.
+export const EXCLUSIVE_PRICING_NOTE = 'Some songs are offered as exclusive. Request a quote to license one outright for sync, AI training or both.';
+
 export const AI_PRICING = {
   heading: 'AI training',
   lead: 'License cleared songs to train AI models. Every song is opted in by its artist, with signed rights documentation.',

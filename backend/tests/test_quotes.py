@@ -77,20 +77,44 @@ def test_honeypot_discards_silently(env):
     assert r.status_code == 200 and env.quotes() == [] and env.sender.await_count == 0
 
 
-def test_buyout_on_allowed_track(env):
-    r = env.client.post("/api/sync/quotes", json=body(kind="buyout", track_id="t1", use="Exclusive buyout"))
-    assert r.status_code == 200
+def test_exclusive_quote_on_exclusive_track(env):
+    r = env.client.post("/api/sync/quotes", json=body(kind="exclusive", track_id="t1", use="Exclusive license",
+                                                      uses=["sync"]))
+    assert r.status_code == 200, r.text
     [q] = env.quotes()
-    assert q["kind"] == "buyout" and q["track_title"] == "Golden Hour" and q["artist_display_name"] == "J Riv"
+    assert q["kind"] == "exclusive" and q["uses"] == ["sync"] and q["track_title"] == "Golden Hour"
+    subject = env.sender.await_args.kwargs["subject"]
+    assert subject == "Exclusive license quote: Golden Hour (sync)"
 
 
-def test_buyout_on_not_allowed_track_409(env):
-    r = env.client.post("/api/sync/quotes", json=body(kind="buyout", track_id="t2", use="Exclusive buyout"))
+def test_exclusive_quote_on_non_exclusive_track_409(env):
+    r = env.client.post("/api/sync/quotes", json=body(kind="exclusive", track_id="t2", use="Exclusive license",
+                                                      uses=["sync"]))
     assert r.status_code == 409 and env.quotes() == [] and env.sender.await_count == 0
 
 
-def test_buyout_without_track_409(env):
-    assert env.client.post("/api/sync/quotes", json=body(kind="buyout", use="Exclusive buyout")).status_code == 409
+def test_exclusive_quote_for_unlisted_use_409(env):
+    # t1 is listed for sync only; AI training is not available on it.
+    r = env.client.post("/api/sync/quotes", json=body(kind="exclusive", track_id="t1", use="Exclusive license",
+                                                      uses=["sync", "ai"]))
+    assert r.status_code == 409
+
+
+def test_exclusive_quote_needs_uses_422(env):
+    r = env.client.post("/api/sync/quotes", json=body(kind="exclusive", track_id="t1", use="Exclusive license"))
+    assert r.status_code == 422 and "Choose sync, AI training or both." in r.text
+
+
+def test_exclusive_quote_sold_use_409(env):
+    env.db._db.track_submissions.update_one({"id": "t1"}, {"$set": {"exclusive_sold": {"sync": "L1"}}})
+    r = env.client.post("/api/sync/quotes", json=body(kind="exclusive", track_id="t1", use="Exclusive license",
+                                                      uses=["sync"]))
+    assert r.status_code == 409
+
+
+def test_exclusive_without_track_409(env):
+    assert env.client.post("/api/sync/quotes", json=body(kind="exclusive", use="Exclusive license",
+                                                         uses=["sync"])).status_code == 409
 
 
 def test_email_failure_still_200_and_stored(env, monkeypatch):

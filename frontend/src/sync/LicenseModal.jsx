@@ -21,7 +21,42 @@ const LIMITS = {
   campaign: 'Up to $100,000 total media spend during the term, starting on the license date. Includes out-of-home, retail, events and trade shows.',
   broadcast: 'Ads: up to $250,000 spend for the term, starting on the license date, in one country. Programs and films: perpetual in that country, plus festivals worldwide.',
   enterprise: 'Tell us what you need and we will send a custom quote.',
-  buyout: 'Exclusive sync rights for this track. Priced by quote. The track leaves the library during your exclusive term.',
+};
+
+// Brief 25b D3: an exclusive song is never sold to multiple buyers. Its only offer is one
+// outright license per use, by quote.
+const EXCLUSIVE_TEXT = 'This song is offered as an exclusive license. License it outright for sync, AI training or both.';
+const EXCLUSIVE_CHOICES = [['sync', 'Sync', ['sync']], ['ai', 'AI training', ['ai']], ['both', 'Both', ['sync', 'ai']]];
+
+const ExclusivePanel = ({ track, available }) => {
+  const choices = EXCLUSIVE_CHOICES.filter(([, , uses]) => uses.every((u) => available.includes(u)));
+  const [pick, setPick] = useState(choices[0]?.[0] || 'sync');
+  const [asking, setAsking] = useState(false);
+  const uses = (choices.find(([k]) => k === pick) || choices[0] || [null, null, []])[2];
+  return (
+    <div data-testid="license-exclusive">
+      <p className="text-sm text-slate-300">{EXCLUSIVE_TEXT}</p>
+      <div className="mt-3 flex flex-wrap gap-2" role="radiogroup">
+        {choices.map(([k, label]) => (
+          <button key={k} type="button" role="radio" aria-checked={pick === k} data-testid={`exclusive-choice-${k}`}
+            onClick={() => { setPick(k); setAsking(false); }}
+            className={`rounded-full border px-4 py-1.5 text-sm ${pick === k ? 'border-electric-light bg-electric/[0.12] text-white' : 'border-white/10 text-slate-300'}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+      {asking ? (
+        <QuoteForm key={pick} kind="exclusive" uses={uses} track={track}
+          message={`Exclusive license for "${track.track_name}" by ${track.artist_display_name}: ${uses.map((u) => (u === 'ai' ? 'AI training' : 'sync')).join(' and ')}`}
+          onDone={() => {}} />
+      ) : (
+        <button type="button" onClick={() => setAsking(true)} data-testid="exclusive-request-quote"
+          className="mt-4 rounded-full bg-gradient-brand px-6 py-2.5 text-sm font-semibold text-white">
+          Request a quote
+        </button>
+      )}
+    </div>
+  );
 };
 
 // First of next month in UTC, as "Nov 1" (brief item 10.5 monthly-cap reset).
@@ -43,9 +78,11 @@ const LicenseModal = ({ track, config, onClose, refreshConfig, getToken, isSigne
   const [errors, setErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
 
-  // AI training tab (Brief 23 D): shown only when the track is opted into AI training.
-  const aiAvailable = !!track.ai_training;
-  const [tab, setTab] = useState('sync');
+  // Brief 25b D3: tabs only for the uses the song is listed for. Older payloads without
+  // available_for fall back to sync plus the AI flag.
+  const available = track.available_for || ['sync', ...(track.ai_training ? ['ai'] : [])];
+  const aiAvailable = available.includes('ai');
+  const [tab, setTab] = useState(available.includes('sync') ? 'sync' : 'ai');
   const [aiContact, setAiContact] = useState(false);
 
   // Subscription plan path (Brief 19 item 10).
@@ -82,7 +119,7 @@ const LicenseModal = ({ track, config, onClose, refreshConfig, getToken, isSigne
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const isQuote = sel === 'enterprise' || sel === 'buyout';
+  const isQuote = sel === 'enterprise';
   const tier = tierMap[sel];
   const hasTerms = !!tier?.terms;
   const needsTerritory = !!tier?.needs_territory;
@@ -97,11 +134,6 @@ const LicenseModal = ({ track, config, onClose, refreshConfig, getToken, isSigne
   const options = [
     ...cfg.tiers.map((t) => ({ id: t.id, label: t.label, desc: t.description, price: fmtMoney(t.price_cents) })),
     { id: 'enterprise', label: 'Enterprise', desc: 'Major campaigns, films, games', price: 'Quote' },
-    {
-      id: 'buyout', label: 'Exclusive buyout', price: 'Quote',
-      desc: track.buyout_allowed ? 'Exclusive rights to this track' : 'Not offered for this track',
-      disabled: !track.buyout_allowed,
-    },
   ];
 
   const total = useMemo(() => {
@@ -203,9 +235,13 @@ const LicenseModal = ({ track, config, onClose, refreshConfig, getToken, isSigne
     <Modal open title={`License "${track.track_name}"`} onClose={busy ? () => {} : onClose}>
       <p className="-mt-2 mb-4 text-sm text-slate-400">{track.artist_display_name}</p>
 
-      {aiAvailable && (
+      {track.exclusive ? (
+        <ExclusivePanel track={track} available={available} />
+      ) : (
+      <>
+      {available.length > 1 && (
         <div className="mb-4 flex gap-1 border-b border-white/10" role="tablist">
-          {[['sync', 'Sync'], ['ai', 'AI training']].map(([k, l]) => (
+          {[['sync', 'Sync'], ['ai', 'AI training']].filter(([k]) => available.includes(k)).map(([k, l]) => (
             <button key={k} type="button" role="tab" aria-selected={tab === k} data-testid={`license-tab-${k}`}
               onClick={() => setTab(k)}
               className={`-mb-px border-b-2 px-4 py-2 text-sm ${tab === k ? 'border-electric text-white' : 'border-transparent text-slate-400 hover:text-white'}`}>
@@ -215,10 +251,10 @@ const LicenseModal = ({ track, config, onClose, refreshConfig, getToken, isSigne
         </div>
       )}
 
-      {tab === 'ai' ? (
+      {tab === 'ai' && aiAvailable ? (
         <div data-testid="license-ai-tab">
           <p className="text-sm text-slate-300">
-            License this song to train AI models. Personal, Research and Commercial licenses, single songs or up to 10,000, plus monthly plans, are coming soon.
+            License this song to train AI models. Contact sales for a Personal, Research or Commercial license.
           </p>
           {aiContact ? (
             <QuoteForm kind="ai_training" track={track}
@@ -357,7 +393,7 @@ const LicenseModal = ({ track, config, onClose, refreshConfig, getToken, isSigne
           )}
 
           {isQuote ? (
-            <QuoteForm kind={sel === 'buyout' ? 'buyout' : 'enterprise'} track={track} onDone={() => {}} />
+            <QuoteForm kind="enterprise" track={track} onDone={() => {}} />
           ) : (
             <form onSubmit={submit} noValidate className="mt-4">
               <div className="space-y-3">
@@ -402,6 +438,8 @@ const LicenseModal = ({ track, config, onClose, refreshConfig, getToken, isSigne
             </form>
           )}
         </>
+      )}
+      </>
       )}
       </>
       )}

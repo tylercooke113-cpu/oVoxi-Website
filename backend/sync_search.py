@@ -10,11 +10,12 @@ from dataclasses import dataclass, field
 from typing import Mapping, Optional
 
 from sync_constants import BPM_MAX, BPM_MIN, GENRES, MOODS, VOCALS
-from sync_public import LISTING_FILTER
+from sync_public import AI_LISTING_FILTER, LISTING_FILTER, SYNC_LISTING_FILTER
 
 PAGE_SIZE = 25
 MAX_DURATION_S = 900
 SORTS = ("newest", "popular")
+USES = ("sync", "ai")                    # Brief 25b D2: "Available for" filter
 
 
 class SearchParamError(ValueError):
@@ -28,6 +29,7 @@ class LibraryQuery:
     bpm: Optional[tuple] = None
     vocals: Optional[str] = None
     duration: Optional[tuple] = None
+    uses: list = field(default_factory=list)
     sort: Optional[str] = None           # None: server picks the default
     cursor: Optional[dict] = None
 
@@ -92,6 +94,7 @@ def parse_params(params: Mapping) -> LibraryQuery:
         bpm=_range(params.get("bpm"), BPM_MIN, BPM_MAX, "BPM"),
         vocals=vocals,
         duration=_range(params.get("length"), 0, MAX_DURATION_S, "Length"),
+        uses=_list(params.get("use"), USES, "use"),
         sort=sort,
     )
     if params.get("cursor") and not sort:
@@ -101,8 +104,15 @@ def parse_params(params: Mapping) -> LibraryQuery:
 
 
 def build_filter(q: LibraryQuery) -> dict:
-    """Listing rule (PRD-03 3.2) AND every chosen filter. Within genre or mood: any."""
-    f = dict(LISTING_FILTER)
+    """Listing rule (PRD-03 3.2) AND every chosen filter. Within genre or mood: any.
+    "Available for" with one use narrows to tracks listed for that use; both or none
+    means listed for either."""
+    if q.uses == ["sync"]:
+        f = dict(SYNC_LISTING_FILTER)
+    elif q.uses == ["ai"]:
+        f = dict(AI_LISTING_FILTER)
+    else:
+        f = dict(LISTING_FILTER)
     if q.genres:
         f["genre"] = {"$in": q.genres}
     if q.moods:

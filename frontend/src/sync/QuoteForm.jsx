@@ -2,15 +2,16 @@ import React, { useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { syncApi, errorMessage } from './api';
 
-const USES = ['Exclusive buyout', 'National TV campaign', 'Feature film', 'Game', 'Other'];
+const USES = ['Exclusive license', 'National TV campaign', 'Feature film', 'Game', 'Other'];
 const BUDGETS = ['Under $5,000', '$5,000 to $25,000', '$25,000 to $100,000', 'Over $100,000'];
 const input = 'h-10 w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 text-sm text-white placeholder:text-slate-600 focus:border-electric focus:outline-none';
 
 // Self-contained so Brief 20's Pricing page can reuse it with no track.
-export default function QuoteForm({ kind, track, onDone, message }) {
+// kind 'exclusive' (Brief 25b D4) also sends `uses`: ['sync'], ['ai'] or both.
+export default function QuoteForm({ kind, track, onDone, message, uses }) {
   const [f, setF] = useState({
     name: '', company: '', email: '',
-    use: kind === 'buyout' ? 'Exclusive buyout' : 'National TV campaign',
+    use: kind === 'exclusive' ? 'Exclusive license' : 'National TV campaign',
     territory: '', term: '', budget: BUDGETS[1], details: message || '', website: '',
   });
   const [busy, setBusy] = useState(false);
@@ -23,7 +24,7 @@ export default function QuoteForm({ kind, track, onDone, message }) {
     if (!f.name.trim() || !f.email.trim()) { setErr('Enter your name and email.'); return; }
     setBusy(true); setErr('');
     try {
-      await syncApi.quote({ kind, track_id: track?.id || null, ...f });
+      await syncApi.quote({ kind, track_id: track?.id || null, ...f, ...(kind === 'exclusive' ? { uses } : {}) });
       setDone(true);
       if (onDone) onDone();
     } catch (e2) { setBusy(false); setErr(errorMessage(e2, 'Could not send your request. Try again.')); }

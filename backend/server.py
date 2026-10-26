@@ -1239,12 +1239,13 @@ class RegisterRequest(BaseModel):
 
 class QuoteRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    kind: Literal["enterprise", "buyout", "ai_training"]
+    kind: Literal["enterprise", "exclusive", "ai_training"]
     track_id: Optional[str] = Field(default=None, max_length=64)
+    uses: List[Literal["sync", "ai"]] = Field(default_factory=list, max_length=2)   # kind "exclusive"
     name: str = Field(min_length=1, max_length=120)
     company: str = Field(default="", max_length=120)
     email: EmailStr
-    use: Literal["Exclusive buyout", "National TV campaign", "Feature film", "Game", "Other"]
+    use: Literal["Exclusive license", "National TV campaign", "Feature film", "Game", "Other"]
     territory: str = Field(default="", max_length=120)
     term: str = Field(default="", max_length=120)
     budget: Literal["Under $5,000", "$5,000 to $25,000", "$25,000 to $100,000", "Over $100,000"]
@@ -1260,6 +1261,15 @@ class QuoteRequest(BaseModel):
     @classmethod
     def _clean_details(cls, v: str) -> str:
         return quotes.clean_multiline(v, 2000)
+
+    @model_validator(mode="after")
+    def _uses_rule(self):
+        self.uses = [u for u in ("sync", "ai") if u in self.uses]
+        if self.kind == "exclusive" and not self.uses:
+            raise ValueError("Choose sync, AI training or both.")
+        if self.kind != "exclusive":
+            self.uses = []
+        return self
 
 
 class AdminReissue(BaseModel):
@@ -2993,6 +3003,88 @@ async def admin_loop_license(request: Request, track_id: str, index: int,
         "creator_name", "creator_email", "source", "loop_name", "license_uploaded_at")}}
 
 
+class AdminExclusiveLicense(BaseModel):
+    """Brief 25b D5: record an exclusive license sold by quote."""
+    model_config = ConfigDict(extra="forbid")
+    uses: List[Literal["sync", "ai"]] = Field(..., min_length=1, max_length=2)
+    buyer_name: str = Field(..., min_length=1, max_length=120)
+    buyer_company: str = Field(default="", max_length=120)
+    buyer_email: EmailStr
+    price_cents_sync: Optional[int] = Field(default=None, ge=1)
+    price_cents_ai: Optional[int] = Field(default=None, ge=1)
+    term: str = Field(default=exclusive.DEFAULT_TERM, max_length=120)
+    territory: str = Field(default=exclusive.DEFAULT_TERRITORY, max_length=120)
+    quote_id: Optional[str] = Field(default=None, max_length=64)
+
+    @field_validator("buyer_name", "buyer_company", "term", "territory")
+    @classmethod
+    def _clean_inline(cls, v: str) -> str:
+        return quotes.clean(v, 120)
+
+
+def _money(cents: Optional[int]) -> str:
+    return f"${cents / 100:,.2f}" if cents else ""
+
+
+async def _email_exclusive_license(doc: dict, lic: dict) -> None:
+    """Agreement 3.4(e): tell the artist and every co-owner, with fields of use, term,
+    territory and price. No percentage (decision 6). An email failure never undoes the sale."""
+    from xml.sax.saxutils import escape
+    track = doc.get("track_name") or "Your song"
+    uses = exclusive.uses_label(lic["uses"])
+    lines = [f"{track} was licensed exclusively for {uses}.",
+             f"Term: {lic['term']}", f"Territory: {lic['territory']}"]
+    if lic.get("price_cents_sync"):
+        lines.append(f"Price for sync: {_money(lic['price_cents_sync'])}")
+    if lic.get("price_cents_ai"):
+        lines.append(f"Price for AI training: {_money(lic['price_cents_ai'])}")
+    lines.append(f"Total price: {_money(lic['total_cents'])}")
+    lines.append("While this license lasts, the song is not licensed to anyone else for these uses. "
+                 "Your share is paid to your OVOXI Wallet as set out in your agreement.")
+    text = "\n".join(lines)
+    html = "".join(f"<p style='margin:4px 0'>{escape(x)}</p>" for x in lines)
+    recipients = [await _uploader_email(doc), *(_cosign_interests_by_email(doc).keys())]
+    for to in dict.fromkeys(filter(None, recipients)):
+        try:
+            await send_email(to=to, subject=f"{track} was licensed exclusively for {uses}",
+                             html=html, text=text, reply_to=REPLY_TO_COSIGN,
+                             idempotency_key=f"exclusive-{lic['id']}-{to}")
+        except Exception as exc:
+            logger.error("exclusive license email failed for %s: %s", lic["id"], exc)
+
+
+@api_router.post("/admin/sync/tracks/{track_id}/exclusive-licenses")
+@limiter.limit("30/minute")
+async def admin_record_exclusive_license(request: Request, track_id: str, payload: AdminExclusiveLicense,
+                                         admin: dict = Depends(require_admin)):
+    """Brief 25b D5: record an exclusive license. The song comes down at once for the
+    licensed use(s), the sale is logged, and the artist and co-owners are emailed."""
+    doc = await db.track_submissions.find_one({"id": track_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Track not found")
+    try:
+        lic = exclusive.build_exclusive_license(
+            track=doc, uses=payload.uses, buyer_name=payload.buyer_name,
+            buyer_company=payload.buyer_company, buyer_email=payload.buyer_email,
+            price_cents_sync=payload.price_cents_sync, price_cents_ai=payload.price_cents_ai,
+            granted_by=admin.get("sub"), now=datetime.now(timezone.utc),
+            term=payload.term, territory=payload.territory, quote_id=payload.quote_id)
+        await exclusive.record_exclusive_license(db, lic)
+    except exclusive.ExclusiveError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    await _log_admin_action(admin, "exclusive_license", track_id,
+                            f"{exclusive.uses_label(lic['uses'])}, {_money(lic['total_cents'])}, {lic['id']}")
+    await _email_exclusive_license(doc, lic)
+    return {k: v for k, v in lic.items() if k != "_id"}
+
+
+@api_router.get("/admin/sync/exclusive-licenses")
+@limiter.limit("60/minute")
+async def admin_list_exclusive_licenses(request: Request, admin: dict = Depends(require_admin)):
+    rows = await db.exclusive_licenses.find({}, {"_id": 0}).sort("granted_at", -1).to_list(500)
+    return rows
+
+
 class AdminLoopReview(BaseModel):
     model_config = ConfigDict(extra="forbid")
     result: Literal["approved", "rejected"]
@@ -3525,9 +3617,11 @@ async def sync_quote(request: Request, payload: QuoteRequest):
     if payload.track_id:
         track = await db.track_submissions.find_one(
             {"id": payload.track_id}, {"_id": 0, **{f: 0 for f in MATCH_DETAIL_FIELDS}})
-    if payload.kind == "buyout":
-        if not track or not is_listed(track) or not exclusive.is_exclusive(track):
-            raise HTTPException(status_code=409, detail="Exclusive licenses are not offered for this track.")
+    if payload.kind == "exclusive":
+        # Brief 25b D4: only for an exclusive song, and only for uses still available.
+        if (not track or not is_listed(track) or not exclusive.is_exclusive(track)
+                or not all(exclusive.use_available(track, u) and listed_for(track, u) for u in payload.uses)):
+            raise HTTPException(status_code=409, detail="This exclusive license is not available for this song.")
     q = quotes.build_quote(payload.model_dump(), ip=get_real_client_ip(request),
                            user_agent=request.headers.get("user-agent") or "", track=track, now=now)
     try:

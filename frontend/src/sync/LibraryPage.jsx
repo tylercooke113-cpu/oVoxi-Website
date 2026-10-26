@@ -16,7 +16,9 @@ const GENRES = ['Hip-Hop', 'R&B', 'Afrobeats', 'Trap', 'Soul', 'Pop',
   'Electronic', 'Latin', 'Reggaeton', 'Afropop', 'Other'];
 const LENGTHS = [['', 'Any'], ['0-60', 'Under 1:00'], ['60-180', '1 to 3 min'], ['180-900', '3 min +']];
 const VOCALS = [['', 'Any'], ['vocal', 'Vocal'], ['instrumental', 'Instrumental']];
-const PARAM_KEYS = ['genre', 'mood', 'bpm', 'vocals', 'length', 'sort'];
+// Brief 25b D2: "Available for" (sync, AI training).
+const USES = [['sync', 'Sync'], ['ai', 'AI training']];
+const PARAM_KEYS = ['use', 'genre', 'mood', 'bpm', 'vocals', 'length', 'sort'];
 
 const listOf = (v) => (v ? v.split(',').filter(Boolean) : []);
 
@@ -60,6 +62,11 @@ const FilterRail = ({ params, set, onClear }) => {
 
   return (
     <>
+      <Group title="Available for">
+        <div className="flex flex-wrap gap-1.5" data-testid="filter-use">
+          {USES.map(([v, l]) => <Chip key={v} on={listOf(params.get('use')).includes(v)} onClick={() => toggle('use', v)}>{l}</Chip>)}
+        </div>
+      </Group>
       <Group title="Genre">
         <div className="flex flex-wrap gap-1.5">
           {GENRES.map((g) => <Chip key={g} on={listOf(params.get('genre')).includes(g)} onClick={() => toggle('genre', g)}>{g}</Chip>)}
@@ -141,6 +148,7 @@ const LibraryInner = () => {
   if (state.missing) return <NotFound />;
 
   const active = [
+    ...listOf(params.get('use')).map((v) => ['use', v, USES.find(([u]) => u === v)?.[1] || v]),
     ...listOf(params.get('genre')).map((v) => ['genre', v, v]),
     ...listOf(params.get('mood')).map((v) => ['mood', v, v]),
     ...(params.get('bpm') ? [['bpm', null, `${params.get('bpm').replace('-', ' to ')} BPM`]] : []),

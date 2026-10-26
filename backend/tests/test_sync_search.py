@@ -260,3 +260,24 @@ def test_bad_params_are_422(api):
     mp.setenv("SYNC_LIBRARY_ENABLED", "true")
     resp = client.get("/api/sync/tracks?genre=Polka")
     assert resp.status_code == 422 and "Unknown genre" in resp.json()["detail"]
+
+
+# Brief 25b D2: "Available for" filter; AI-training songs are listed too.
+def test_available_for_filter(mdb):
+    mdb.track_submissions.insert_many([
+        track(1),                                                           # sync only
+        track(2, consent={"ai_training": True, "sync": False}, sync_status=None, ai_status="cleared"),
+        track(3, consent={"ai_training": True, "sync": True}, ai_status="cleared"),   # both
+        track(4, consent={"ai_training": True, "sync": True}, ai_status="cleared",
+              exclusive_sold={"sync": "L1"}),                               # sync sold: AI only now
+    ])
+    ids = lambda p: sorted(r["id"] for r in run(mdb, p))
+    assert ids({}) == ["t001", "t002", "t003", "t004"]
+    assert ids({"use": "sync"}) == ["t001", "t003"]
+    assert ids({"use": "ai"}) == ["t002", "t003", "t004"]
+    assert ids({"use": "ai,sync"}) == ["t001", "t002", "t003", "t004"]
+
+
+def test_available_for_bad_value_rejected():
+    with pytest.raises(SearchParamError):
+        parse_params({"use": "radio"})

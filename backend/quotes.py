@@ -7,7 +7,7 @@ import re
 import uuid
 from datetime import datetime
 
-USES = ("Exclusive buyout", "National TV campaign", "Feature film", "Game", "Other")
+USES = ("Exclusive license", "National TV campaign", "Feature film", "Game", "Other")
 BUDGETS = ("Under $5,000", "$5,000 to $25,000", "$25,000 to $100,000", "Over $100,000")
 
 # Inline fields reject all control characters and braces. Details keep newlines (see clean_multiline).
@@ -45,4 +45,5 @@ def build_quote(payload: dict, *, ip: str, user_agent: str, track: dict | None, 
         "name": payload["name"], "company": payload.get("company") or "", "email": payload["email"],
         "use": payload["use"], "territory": payload.get("territory") or "", "term": payload.get("term") or "",
         "budget": payload["budget"], "details": payload.get("details") or "",
+        "uses": list(payload.get("uses") or []),          # Brief 25b D4: exclusive quotes only
     }

@@ -69,11 +69,17 @@ def license_email(order: dict, *, download_url: str, reissued: bool = False) -> 
 def quote_email(q: dict) -> tuple[str, str, str]:
     """Internal notification for a licensing quote request (Brief 18). Details keep line breaks."""
     track = q.get("track_title") or "no track"
-    subject = f"Licensing quote request: {q['kind']}, {track}"
+    if q.get("kind") == "exclusive":
+        from exclusive import uses_label
+        subject = f"Exclusive license quote: {track} ({uses_label(q.get('uses') or [])})"
+    else:
+        subject = f"Licensing quote request: {q['kind']}, {track}"
     rows = [("Kind", q.get("kind")), ("Track", q.get("track_title") or "(none)"),
             ("Artist", q.get("artist_display_name") or "(none)"), ("Name", q.get("name")),
             ("Company", q.get("company") or "(none)"), ("Email", q.get("email")),
-            ("Use", q.get("use")), ("Territory", q.get("territory") or "(none)"),
+            ("Use", q.get("use")),
+            *([("Exclusive for", ", ".join(q.get("uses") or []))] if q.get("kind") == "exclusive" else []),
+            ("Territory", q.get("territory") or "(none)"),
             ("Term", q.get("term") or "(none)"), ("Budget", q.get("budget"))]
     details = q.get("details") or ""
     html = "".join(f"<p style='margin:2px 0'><b>{escape(k)}:</b> {escape(str(v))}</p>" for k, v in rows)

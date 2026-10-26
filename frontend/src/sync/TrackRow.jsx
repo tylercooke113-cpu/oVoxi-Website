@@ -22,8 +22,19 @@ export const PlayButton = ({ track, size = 40 }) => {
   );
 };
 
+// Brief 25b D2: what the song can be licensed for, and whether it is exclusive.
+export const availabilityLabels = (track) => [
+  ...((track.available_for || []).includes('sync') ? ['Sync'] : []),
+  ...((track.available_for || []).includes('ai') ? ['AI training'] : []),
+  ...(track.exclusive ? ['Exclusive'] : []),
+];
+
 export const Tags = ({ track }) => (
   <div className="mt-1.5 flex flex-wrap gap-1.5">
+    {availabilityLabels(track).map((t) => (
+      <span key={t} data-testid={`label-${t}`}
+        className="rounded-full border border-cyan/40 px-2 py-0.5 text-[11px] text-cyan">{t}</span>
+    ))}
     {[track.genre, ...(track.moods || [])].filter(Boolean).map((t) => (
       <span key={t} className="rounded-full border border-white/10 px-2 py-0.5 text-[11px] text-slate-300">{t}</span>
     ))}
