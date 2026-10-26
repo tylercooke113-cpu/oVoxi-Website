@@ -237,7 +237,7 @@ def test_sync_stores_sole_attestation(client, fake_db):
     assert inserted_doc(fake_db)["intake"]["sync_sole_attested_at"]
 
 
-@pytest.mark.parametrize("ipi", [None, "12345678", "1234567890", "12345abc901"])
+@pytest.mark.parametrize("ipi", [None, "12345678", "123456789012", "12345abc901"])
 def test_bad_ipi_rejected(client, fake_db, ipi):
     assert_rejected(post(client, sync_body(ipi=ipi)), fake_db)
 

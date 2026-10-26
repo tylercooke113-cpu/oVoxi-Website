@@ -3,7 +3,7 @@ import { PageHero } from '../components/PageHero';
 import { Reveal } from '../components/Reveal';
 import { BRAND } from '../content';
 
-const LAST_UPDATED = 'October 23, 2026';
+const LAST_UPDATED = 'October 26, 2026';
 
 const Mail = () => (
   <a href={`mailto:${BRAND.email}`} className="text-cyan hover:underline">{BRAND.email}</a>
@@ -145,6 +145,14 @@ const SECTIONS = [
           terms shown at checkout. Subscriptions renew automatically until cancelled. Taxes are added at
           checkout where required. Refunds, chargebacks, download limits and permitted uses are governed
           by the applicable license terms.
+        </p>
+        <p>
+          <strong className="text-white">Cancelling a subscription.</strong> You can cancel at any time in
+          My account, under Subscription, or by emailing tyler@ovoxi.net. Cancellation takes effect at the
+          end of your current billing period: you keep access until then, you will not be charged again,
+          and we do not give partial refunds for the remaining time unless the law requires it. We confirm
+          every cancellation by email. For annual plans, we email you a reminder before each renewal with
+          the price, the renewal date and how to cancel.
         </p>
         <p>
           You may browse and preview the OVOXI Catalog without an account. Previews are for evaluating

@@ -278,3 +278,29 @@ describe('Oct 26 changes', () => {
     expect(writersMissingPro(r)).toHaveLength(0);
   });
 });
+
+// Oct 26: "Other" answers need the typed name, and IPI takes 9 to 11 digits.
+describe('Other answers and IPI lengths', () => {
+  test('genre Other needs which genre', () => {
+    const s = completeSong({ form: { artist_name: 'A', track_name: 'T', genre: 'Other', genre_other: ' ' } });
+    expect(songMissing(s)).toContain('which genre');
+    const ok = completeSong({ form: { artist_name: 'A', track_name: 'T', genre: 'Other', genre_other: 'Drill' } });
+    expect(songMissing(ok)).not.toContain('which genre');
+  });
+
+  test('distributor Other needs which distributor', () => {
+    expect(isIntakeValid({ ...SYNC_INTAKE, distributor: 'Other', distributor_other: '' })).toBe(false);
+    const filled = { ...SYNC_INTAKE, distributor: 'Other', distributor_other: ' Ditto Music ' };
+    expect(isIntakeValid(filled)).toBe(true);
+    expect(buildIntakePayload(filled).distributor_other).toBe('Ditto Music');
+    expect(buildIntakePayload({ ...SYNC_INTAKE, distributor_other: 'x' }).distributor_other).toBeNull();
+  });
+
+  test.each(['123456789', '1234567890', '00123456789'])('IPI %s is accepted', (ipi) => {
+    expect(isIntakeValid({ ...SYNC_INTAKE, ipi })).toBe(true);
+  });
+
+  test.each(['12345678', '123456789012'])('IPI %s is refused', (ipi) => {
+    expect(isIntakeValid({ ...SYNC_INTAKE, ipi })).toBe(false);
+  });
+});

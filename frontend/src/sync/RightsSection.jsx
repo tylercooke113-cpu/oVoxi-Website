@@ -11,7 +11,10 @@ import {
   SelectValue,
 } from '../components/ui/select';
 import {
+  IPI_MESSAGE,
   IPI_PATTERN,
+  IPI_PLACEHOLDER,
+  cleanIpi,
   MAX_PARTIES,
   PRO_ORGS,
   PUBLISHER_ROLES,
@@ -377,10 +380,10 @@ const RightsSection = ({ value, onChange, disabled, requirePro = false }) => {
                       <Input
                         aria-label={`Writer ${i + 1} IPI`}
                         inputMode="numeric"
-                        maxLength={11}
+                        maxLength={20}
                         value={w.ipi}
-                        onChange={(e) => setWriter(i, { ipi: e.target.value.replace(/\D/g, '') })}
-                        placeholder="9 or 11 digits"
+                        onChange={(e) => setWriter(i, { ipi: cleanIpi(e.target.value) })}
+                        placeholder={IPI_PLACEHOLDER}
                         disabled={disabled}
                         className={FIELD_CLASS}
                       />
@@ -392,7 +395,7 @@ const RightsSection = ({ value, onChange, disabled, requirePro = false }) => {
                       disabled={disabled} className={FIELD_CLASS} />
                   )}
                   {w.ipi && !IPI_PATTERN.test(w.ipi) && (
-                    <p className="text-xs text-red-400">IPI must be 9 or 11 digits.</p>
+                    <p className="text-xs text-red-400">{IPI_MESSAGE}</p>
                   )}
                   {requirePro && (!w.society || !w.ipi) && (
                     <p className="text-xs text-amber-300">Sync placements need this writer's PRO and IPI.</p>

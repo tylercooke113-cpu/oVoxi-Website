@@ -70,6 +70,7 @@ export const uploadOne = async (song, { getToken, api, onProgress }) => {
     artist_name: song.form.artist_name,
     track_name: song.form.track_name,
     genre: song.form.genre,
+    genre_other: song.form.genre === 'Other' ? (song.form.genre_other || '').trim() : null,
     filename: song.file.name,
     file_size: song.file.size,
     consent_ai_training: song.consentAi,

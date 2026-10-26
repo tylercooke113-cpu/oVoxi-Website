@@ -32,7 +32,7 @@ from pymongo.errors import DuplicateKeyError
 from pydantic import BaseModel, Field, ConfigDict, EmailStr, field_validator, model_validator
 from sync_constants import (
     MOODS, MAX_MOODS, VOCALS, SAMPLE_DECLARATIONS, CONTENT_ID_ANSWERS,
-    DISTRIBUTORS, PRO_ORGS, IPI_PATTERN, MUSICAL_KEYS, BPM_MIN, BPM_MAX, COUNTRIES,
+    DISTRIBUTORS, PRO_ORGS, IPI_PATTERN, IPI_MESSAGE, OTHER_TEXT_MAX, clean_ipi, MUSICAL_KEYS, BPM_MIN, BPM_MAX, COUNTRIES,
     PLANS, SUB_DAY_CAP,
     COSIGN_TOKEN_TTL_DAYS, COSIGN_MAX_RESENDS, COSIGN_RESEND_COOLDOWN_MIN,
     AI_TOOLS, AI_TOOLS_DETAIL_MAX, AI_TOOLS_FULL_MESSAGE,
@@ -713,6 +713,7 @@ class ArtistCreate(BaseModel):
     email: EmailStr
     spotify_url: str = Field(..., min_length=1, max_length=300)
     genre: str
+    genre_other: Optional[str] = Field(default=None, max_length=OTHER_TEXT_MAX)
     bio: str = Field(..., min_length=1, max_length=2000)
     website: str = Field(default="")
 
@@ -723,6 +724,11 @@ class ArtistCreate(BaseModel):
             raise ValueError(f'genre must be one of: {", ".join(sorted(VALID_GENRES))}')
         return v
 
+    @model_validator(mode="after")
+    def _genre_other(self):
+        self.genre_other = other_answer(self.genre, self.genre_other, GENRE_OTHER_MESSAGE)
+        return self
+
 
 class Artist(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -731,9 +737,24 @@ class Artist(BaseModel):
     email: str
     spotify_url: str
     genre: str
+    genre_other: Optional[str] = None
     bio: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     tracks: List[dict] = []
+
+
+GENRE_OTHER_MESSAGE = "Enter which genre."
+DISTRIBUTOR_OTHER_MESSAGE = "Enter which distributor you use."
+
+
+def other_answer(choice, text, message):
+    """The typed answer for an "Other" choice: required when Other is picked, dropped otherwise."""
+    text = (text or "").strip()
+    if choice != "Other":
+        return None
+    if not text:
+        raise ValueError(message)
+    return text
 
 
 def _one_of(value, allowed, label):
@@ -750,6 +771,7 @@ class SyncIntake(BaseModel):
     samples: Optional[str] = None
     samples_attested: bool = False
     distributor: str
+    distributor_other: Optional[str] = Field(default=None, max_length=OTHER_TEXT_MAX)  # required when "Other"
     content_id: str
     pro_not_affiliated: bool = False        # kept for old clients; refused for sync (3.5)
     pro_name: Optional[str] = None
@@ -775,6 +797,12 @@ class SyncIntake(BaseModel):
     def _distributor(cls, v):
         return _one_of(v, DISTRIBUTORS, "distributor")
 
+    @model_validator(mode="after")
+    def _distributor_other(self):
+        self.distributor_other = other_answer(self.distributor, self.distributor_other,
+                                              DISTRIBUTOR_OTHER_MESSAGE)
+        return self
+
     @field_validator("content_id")
     @classmethod
     def _content_id(cls, v):
@@ -789,8 +817,9 @@ class SyncIntake(BaseModel):
         if self.pro_name == "Other" and not other:
             raise ValueError("Enter which PRO you use.")
         self.pro_other = other if self.pro_name == "Other" else None
+        self.ipi = clean_ipi(self.ipi)
         if not self.ipi or not re.fullmatch(IPI_PATTERN, self.ipi):
-            raise ValueError("IPI must be 9 or 11 digits.")
+            raise ValueError(IPI_MESSAGE)
         if not self.sync_sole_attested:
             raise ValueError(SYNC_SOLE_MESSAGE)
         return self
@@ -887,6 +916,7 @@ class PresignRequest(BaseModel):
     artist_name: str = Field(..., min_length=1, max_length=120)
     track_name: str = Field(..., min_length=1, max_length=120)
     genre: str
+    genre_other: Optional[str] = Field(default=None, max_length=OTHER_TEXT_MAX)  # required when "Other"
     filename: str = Field(..., min_length=1, max_length=200)
     file_size: int = Field(..., gt=0)
     pro_registered: bool = False
@@ -972,6 +1002,7 @@ class VaultMetadataPatch(BaseModel):
     key: Optional[str] = None
     moods: Optional[List[str]] = None
     genre: Optional[str] = None
+    genre_other: Optional[str] = Field(default=None, max_length=OTHER_TEXT_MAX)
 
     @field_validator("bpm")
     @classmethod
@@ -1009,6 +1040,8 @@ class VaultMetadataPatch(BaseModel):
     def _something(self):
         if self.bpm is None and self.key is None and self.moods is None and self.genre is None:
             raise ValueError("Nothing to change.")
+        if self.genre is not None:
+            self.genre_other = other_answer(self.genre, self.genre_other, GENRE_OTHER_MESSAGE)
         return self
 
 
@@ -1749,6 +1782,10 @@ async def presign_upload(request: Request, payload: PresignRequest, clerk_payloa
     agreement = await _require_signed_agreement(clerk_payload)
     if payload.genre not in VALID_GENRES:
         raise HTTPException(status_code=400, detail=f"Invalid genre")
+    try:
+        genre_other = other_answer(payload.genre, payload.genre_other, GENRE_OTHER_MESSAGE)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
     # The uploader's name in the splits must be the licensor on their signed agreement.
     account_name = account_legal_name(agreement)
     if account_name and payload.rights and _norm_name(payload.rights.self_legal_name) != _norm_name(account_name):
@@ -1878,6 +1915,7 @@ async def presign_upload(request: Request, payload: PresignRequest, clerk_payloa
     doc['agreement_id'] = agreement["id"] if agreement else None
     # Held until the artist is approved: not processed, not listed, no co-owner emails.
     doc['awaiting_approval'] = not approved
+    doc['genre_other'] = genre_other
     doc['metadata'] = {
         "moods": payload.moods,
         "vocals": payload.vocals,
@@ -1893,6 +1931,7 @@ async def presign_upload(request: Request, payload: PresignRequest, clerk_payloa
     if payload.consent_sync:
         doc['intake'].update({
             "distributor": payload.sync_intake.distributor,
+            "distributor_other": payload.sync_intake.distributor_other,
             "content_id": payload.sync_intake.content_id,
             "pro_not_affiliated": payload.sync_intake.pro_not_affiliated,
             "pro_name": payload.sync_intake.pro_name,
@@ -2525,7 +2564,8 @@ async def _owned_track(track_id: str, clerk_payload: dict) -> dict:
 async def patch_vault_metadata(request: Request, track_id: str, payload: VaultMetadataPatch,
                                clerk_payload: dict = Depends(require_artist)):
     await _owned_track(track_id, clerk_payload)
-    fields = metadata_patch_fields(payload.bpm, payload.key, payload.moods, payload.genre)
+    fields = metadata_patch_fields(payload.bpm, payload.key, payload.moods, payload.genre,
+                                   payload.genre_other)
     await db.track_submissions.update_one(
         {"id": track_id, "clerk_user_id": clerk_payload["sub"]}, {"$set": fields})
     await _run_clearance(track_id)
@@ -2623,7 +2663,8 @@ async def change_vault_consent(request: Request, track_id: str, payload: Consent
         # Dotted paths: the samples and AI-tools answers already on the track are kept.
         i = payload.sync_intake
         fields.update({
-            "intake.distributor": i.distributor, "intake.content_id": i.content_id,
+            "intake.distributor": i.distributor, "intake.distributor_other": i.distributor_other,
+            "intake.content_id": i.content_id,
             "intake.pro_not_affiliated": False, "intake.pro_name": i.pro_name,
             "intake.pro_other": i.pro_other,
             "intake.ipi": i.ipi, "intake.sync_sole_attested_at": now_iso,

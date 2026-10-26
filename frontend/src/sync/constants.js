@@ -55,8 +55,13 @@ export const PRO_ORGS = [
   'APRA AMCOS', 'SACEM', 'GEMA', 'SAMRO', 'COSON', 'Other',
 ];
 
-// IPI name numbers: 11 digits, or 9 for older CAE numbers (PRD-03 decision 8).
-export const IPI_PATTERN = /^(\d{9}|\d{11})$/;
+// IPI name numbers are 11 digits. PROs often show them without the leading zeros, so
+// ASCAP shows 9 or 10 digits and older CAE numbers are 9. Accept 9 to 11 (Oct 26).
+export const IPI_PATTERN = /^\d{9,11}$/;
+export const IPI_MESSAGE = 'IPI must be 9 to 11 digits.';
+export const IPI_PLACEHOLDER = '9 to 11 digits';
+// Keep only digits: some PROs print the number with spaces or dots.
+export const cleanIpi = (v) => (v || '').replace(/\D/g, '');
 
 // Rights (splits). See docs/PRD-02 section 3.
 export const MAX_PARTIES = 4;

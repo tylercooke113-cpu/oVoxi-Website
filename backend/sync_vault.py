@@ -77,7 +77,8 @@ def slugify_profile(name: str) -> str:
 
 
 def metadata_patch_fields(bpm: Optional[float], key: Optional[str],
-                          moods: Optional[list], genre: Optional[str]) -> dict:
+                          moods: Optional[list], genre: Optional[str],
+                          genre_other: Optional[str] = None) -> dict:
     """$set fields for an artist edit. A BPM or key sent from the Vault is the
     artist's confirmed value (PRD-03 4.4): never held again by detection."""
     fields = {}
@@ -97,4 +98,5 @@ def metadata_patch_fields(bpm: Optional[float], key: Optional[str],
         fields["metadata.moods"] = moods
     if genre is not None:
         fields["genre"] = genre
+        fields["genre_other"] = genre_other if genre == "Other" else None
     return fields

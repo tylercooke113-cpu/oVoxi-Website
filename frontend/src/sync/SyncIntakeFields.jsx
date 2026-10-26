@@ -4,7 +4,9 @@ import { Label } from '../components/ui/label';
 import { Checkbox } from '../components/ui/checkbox';
 import { RadioGroup, RadioGroupItem } from '../components/ui/radio-group';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
-import { CONTENT_ID_OPTIONS, DISTRIBUTORS, IPI_PATTERN, PRO_ORGS, PRO_REQUIRED_MESSAGE } from './constants';
+import {
+  CONTENT_ID_OPTIONS, DISTRIBUTORS, IPI_MESSAGE, IPI_PATTERN, IPI_PLACEHOLDER, PRO_ORGS, PRO_REQUIRED_MESSAGE, cleanIpi,
+} from './constants';
 
 // The sync questions (PRD-03 4.1; Brief 25b C2), used in the upload form and when adding
 // sync from the Vault. Samples moved to DeclarationsFields (asked once, for every use).
@@ -13,15 +15,17 @@ import { CONTENT_ID_OPTIONS, DISTRIBUTORS, IPI_PATTERN, PRO_ORGS, PRO_REQUIRED_M
 // checkbox with PRO_REQUIRED_MESSAGE under it. Unticking calls onNotAffiliated(false).
 
 export const EMPTY_INTAKE = {
-  distributor: '', content_id: '', pro_name: '', pro_other: '', ipi: '', sync_sole_attested: false,
+  distributor: '', distributor_other: '', content_id: '', pro_name: '', pro_other: '', ipi: '', sync_sole_attested: false,
 };
 
 export const isIntakeValid = (i) => !!(i.distributor && i.content_id && i.pro_name
+  && (i.distributor !== 'Other' || (i.distributor_other || '').trim())
   && (i.pro_name !== 'Other' || (i.pro_other || '').trim())
   && IPI_PATTERN.test(i.ipi || '') && i.sync_sole_attested);
 
 export const buildIntakePayload = (i) => ({
   distributor: i.distributor,
+  distributor_other: i.distributor === 'Other' ? (i.distributor_other || '').trim() : null,
   content_id: i.content_id,
   pro_not_affiliated: false,
   pro_name: i.pro_name,
@@ -57,12 +61,17 @@ const SyncIntakeFields = ({ value, onChange, disabled, onNotAffiliated, notAffil
     <div className="space-y-5">
       <div className="space-y-2">
         <Label className="text-slate-300">Distributor *</Label>
-        <Select value={value.distributor} onValueChange={(v) => set({ distributor: v })} disabled={disabled}>
+        <Select value={value.distributor} onValueChange={(v) => set({ distributor: v, ...(v !== 'Other' ? { distributor_other: '' } : {}) })} disabled={disabled}>
           <SelectTrigger className="border-white/10 bg-ink text-white"><SelectValue placeholder="Select distributor" /></SelectTrigger>
           <SelectContent className="border-white/10 bg-ink-2 text-white">
             {DISTRIBUTORS.map((d) => <SelectItem key={d} value={d}>{d}</SelectItem>)}
           </SelectContent>
         </Select>
+        {value.distributor === 'Other' && (
+          <Input aria-label="Which distributor?" placeholder="Which distributor do you use? *" maxLength={80}
+            value={value.distributor_other || ''} onChange={(e) => set({ distributor_other: e.target.value })}
+            disabled={disabled} className={FIELD} data-testid="sync-distributor-other" />
+        )}
       </div>
 
       <div className="space-y-2">
@@ -90,10 +99,10 @@ const SyncIntakeFields = ({ value, onChange, disabled, onNotAffiliated, notAffil
             </SelectContent>
           </Select>
           <div>
-            <Input aria-label="IPI number" inputMode="numeric" maxLength={11} value={value.ipi} placeholder="IPI: 9 or 11 digits"
-              onChange={(e) => set({ ipi: e.target.value.replace(/\D/g, '') })} disabled={disabled} className={FIELD} />
+            <Input aria-label="IPI number" inputMode="numeric" maxLength={20} value={value.ipi} placeholder={`IPI: ${IPI_PLACEHOLDER}`}
+              onChange={(e) => set({ ipi: cleanIpi(e.target.value) })} disabled={disabled} className={FIELD} />
             {value.ipi && !IPI_PATTERN.test(value.ipi) && (
-              <p className="mt-1 text-xs text-red-400">IPI must be 9 or 11 digits.</p>
+              <p className="mt-1 text-xs text-red-400">{IPI_MESSAGE}</p>
             )}
           </div>
         </div>

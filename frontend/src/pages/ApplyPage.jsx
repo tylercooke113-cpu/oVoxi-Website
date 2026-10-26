@@ -31,6 +31,7 @@ const ApplyPage = () => {
     email: '',
     spotify_url: '',
     genre: '',
+    genre_other: '',
     bio: '',
     website: '',
   });
@@ -40,13 +41,17 @@ const ApplyPage = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!form.name || !form.email || !form.spotify_url || !form.genre || !form.bio) {
+    if (!form.name || !form.email || !form.spotify_url || !form.genre || !form.bio
+        || (form.genre === 'Other' && !form.genre_other.trim())) {
       toast.error('Please fill in all required fields.');
       return;
     }
     setSubmitting(true);
     try {
-      await axios.post(`${API}/artists`, form);
+      await axios.post(`${API}/artists`, {
+        ...form,
+        genre_other: form.genre === 'Other' ? form.genre_other.trim() : null,
+      });
       toast.success('Application received. Create your account to get started.');
       navigate('/signup');
     } catch (err) {
@@ -116,7 +121,7 @@ const ApplyPage = () => {
                   <Label className="text-slate-300">Genre *</Label>
                   <Select
                     value={form.genre}
-                    onValueChange={(v) => setForm((f) => ({ ...f, genre: v }))}
+                    onValueChange={(v) => setForm((f) => ({ ...f, genre: v, ...(v !== 'Other' ? { genre_other: '' } : {}) }))}
                   >
                     <SelectTrigger
                       data-testid="apply-genre-select"
@@ -130,6 +135,17 @@ const ApplyPage = () => {
                       ))}
                     </SelectContent>
                   </Select>
+                  {form.genre === 'Other' && (
+                    <Input
+                      aria-label="Which genre?"
+                      placeholder="Which genre? *"
+                      maxLength={80}
+                      value={form.genre_other}
+                      onChange={update('genre_other')}
+                      data-testid="apply-genre-other"
+                      className="border-white/10 bg-ink text-white placeholder:text-slate-600 focus-visible:ring-electric"
+                    />
+                  )}
                 </div>
               </div>
 

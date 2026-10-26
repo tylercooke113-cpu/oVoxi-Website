@@ -45,7 +45,7 @@ let _songSeq = 0;
 // One song in the batch. `key` is stable for React and status tracking.
 export const emptySong = (overrides = {}) => ({
   key: `song-${++_songSeq}`,
-  form: { artist_name: '', track_name: '', genre: '' },
+  form: { artist_name: '', track_name: '', genre: '', genre_other: '' },
   file: null,
   moods: [],
   vocals: '',
@@ -70,12 +70,13 @@ export const emptySong = (overrides = {}) => ({
 // A new song seeded from the one before it. Only the fields in brief A3 carry over;
 // everything else starts empty.
 export const carryOverSong = (prev) => emptySong({
-  form: { artist_name: prev.form.artist_name, track_name: '', genre: '' },
+  form: { artist_name: prev.form.artist_name, track_name: '', genre: '', genre_other: '' },
   consentAi: prev.consentAi,
   consentSync: prev.consentSync,
   intake: {
     ...EMPTY_INTAKE,
     distributor: prev.intake.distributor,
+    distributor_other: prev.intake.distributor_other || '',
     pro_name: prev.intake.pro_name,
     ipi: prev.intake.ipi,
   },
@@ -108,6 +109,7 @@ export const songMissing = (song) => {
   if (!form.artist_name) missing.push('artist name');
   if (!form.track_name) missing.push('track name');
   if (!form.genre) missing.push('genre');
+  else if (form.genre === 'Other' && !(form.genre_other || '').trim()) missing.push('which genre');
   if (moods.length < 1) missing.push('mood');
   if (!vocals) missing.push('vocals');
   const bpmNumber = parseFloat(bpm);
@@ -255,7 +257,7 @@ const SongForm = ({ value, onChange, index, disabled, agreementStatus, getToken 
         <Label className="text-slate-300">Genre *</Label>
         <Select
           value={value.form.genre}
-          onValueChange={(v) => patch({ form: { ...value.form, genre: v } })}
+          onValueChange={(v) => patch({ form: { ...value.form, genre: v, ...(v !== 'Other' ? { genre_other: '' } : {}) } })}
           disabled={disabled}
         >
           <SelectTrigger
@@ -270,6 +272,18 @@ const SongForm = ({ value, onChange, index, disabled, agreementStatus, getToken 
             ))}
           </SelectContent>
         </Select>
+        {value.form.genre === 'Other' && (
+          <Input
+            aria-label="Which genre?"
+            placeholder="Which genre? *"
+            maxLength={80}
+            value={value.form.genre_other || ''}
+            onChange={(e) => patch({ form: { ...value.form, genre_other: e.target.value } })}
+            disabled={disabled}
+            data-testid={tid('upload-genre-other')}
+            className="border-white/10 bg-ink text-white placeholder:text-slate-600 focus-visible:ring-electric"
+          />
+        )}
       </div>
 
       {/* Moods */}

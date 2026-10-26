@@ -9,7 +9,7 @@ from typing import List, Optional
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from sync_constants import (
-    EMAIL_MAX_LENGTH, IPI_PATTERN, MAX_PARTIES, PRO_ORGS, PUBLISHER_ROLES,
+    EMAIL_MAX_LENGTH, IPI_MESSAGE, IPI_PATTERN, MAX_PARTIES, clean_ipi, PRO_ORGS, PUBLISHER_ROLES,
     TOTAL_BP, WRITER_ROLES,
 )
 
@@ -71,10 +71,11 @@ class RightsPartyIn(BaseModel):
     @field_validator("ipi_name_number")
     @classmethod
     def _ipi(cls, v):
+        v = clean_ipi(v)
         if v in (None, ""):
             return None
         if not re.fullmatch(IPI_PATTERN, v):
-            raise ValueError("IPI must be 9 or 11 digits.")
+            raise ValueError(IPI_MESSAGE)
         return v
 
     @model_validator(mode="after")

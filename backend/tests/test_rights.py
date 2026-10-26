@@ -102,10 +102,21 @@ def test_role_must_fit_side(side, role):
     rejects(body, "Invalid role")
 
 
-@pytest.mark.parametrize("ipi", ["12345678", "1234567890", "12345abc901"])
-def test_party_ipi_must_be_9_or_11_digits(ipi):
+@pytest.mark.parametrize("ipi", ["12345678", "123456789012", "12345abc901"])
+def test_party_ipi_must_be_9_to_11_digits(ipi):
     rejects(manual(master_owners=[party("Tyler Example", 10000, ipi_name_number=ipi)]),
-            r"IPI must be 9 or 11 digits\.")
+            r"IPI must be 9 to 11 digits\.")
+
+
+@pytest.mark.parametrize("ipi, stored", [
+    ("123456789", "123456789"),        # older CAE number
+    ("1234567890", "1234567890"),      # ASCAP shows 10 digits (leading zero dropped)
+    ("00123456789", "00123456789"),    # full 11-digit IPI name number
+    ("00 123.456-789", "00123456789"),  # spaces, dots and dashes are dropped
+])
+def test_party_ipi_accepts_every_pro_format(ipi, stored):
+    body = manual(master_owners=[party("Tyler Example", 10000, ipi_name_number=ipi)])
+    assert TrackRightsIn(**body).master_owners[0].ipi_name_number == stored
 
 
 def test_unknown_society_rejected():

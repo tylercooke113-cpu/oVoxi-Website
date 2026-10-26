@@ -2,6 +2,8 @@
 
 Must stay in step with frontend/src/sync/constants.js.
 """
+import re
+
 
 MOODS = (
     "Uplifting", "Happy", "Hopeful", "Confident", "Energetic",
@@ -49,8 +51,16 @@ PRO_ORGS = (
     "APRA AMCOS", "SACEM", "GEMA", "SAMRO", "COSON", "Other",
 )
 
-# IPI name numbers: 11 digits, or 9 for older CAE numbers (PRD-03 decision 8).
-IPI_PATTERN = r"^(\d{9}|\d{11})$"
+# IPI name numbers are 11 digits. PROs often show them without the leading zeros, so
+# ASCAP shows 9 or 10 digits and older CAE numbers are 9. Accept 9 to 11 (Oct 26).
+IPI_PATTERN = r"^\d{9,11}$"
+IPI_MESSAGE = "IPI must be 9 to 11 digits."
+OTHER_TEXT_MAX = 80   # "Other" answers: which distributor, genre or PRO
+
+
+def clean_ipi(v):
+    """Drop spaces, dots and dashes some PROs print inside an IPI number."""
+    return re.sub(r"[\s.\-]", "", v) if isinstance(v, str) else v
 
 # Rights (splits). See docs/PRD-02 section 3.
 MAX_PARTIES = 4
