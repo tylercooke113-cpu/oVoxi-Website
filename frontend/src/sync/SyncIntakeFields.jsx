@@ -4,18 +4,20 @@ import { Label } from '../components/ui/label';
 import { Checkbox } from '../components/ui/checkbox';
 import { RadioGroup, RadioGroupItem } from '../components/ui/radio-group';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
-import { CONTENT_ID_OPTIONS, DISTRIBUTORS, IPI_PATTERN, PRO_ORGS } from './constants';
+import { CONTENT_ID_OPTIONS, DISTRIBUTORS, IPI_PATTERN, PRO_ORGS, PRO_REQUIRED_MESSAGE } from './constants';
 
 // The sync questions (PRD-03 4.1; Brief 25b C2), used in the upload form and when adding
 // sync from the Vault. Samples moved to DeclarationsFields (asked once, for every use).
-// Sync needs a PRO (Agreement 3.5): ticking "not affiliated" calls onNotAffiliated, and the
-// caller turns sync off and shows PRO_REQUIRED_MESSAGE.
+// Sync needs a PRO (Agreement 3.5). Ticking "not affiliated" calls onNotAffiliated(true): the
+// caller turns sync off and passes notAffiliated, and this box then shows only the ticked
+// checkbox with PRO_REQUIRED_MESSAGE under it. Unticking calls onNotAffiliated(false).
 
 export const EMPTY_INTAKE = {
-  distributor: '', content_id: '', pro_name: '', ipi: '', sync_sole_attested: false,
+  distributor: '', content_id: '', pro_name: '', pro_other: '', ipi: '', sync_sole_attested: false,
 };
 
 export const isIntakeValid = (i) => !!(i.distributor && i.content_id && i.pro_name
+  && (i.pro_name !== 'Other' || (i.pro_other || '').trim())
   && IPI_PATTERN.test(i.ipi || '') && i.sync_sole_attested);
 
 export const buildIntakePayload = (i) => ({
@@ -23,6 +25,7 @@ export const buildIntakePayload = (i) => ({
   content_id: i.content_id,
   pro_not_affiliated: false,
   pro_name: i.pro_name,
+  pro_other: i.pro_name === 'Other' ? (i.pro_other || '').trim() : null,
   ipi: i.ipi,
   sync_sole_attested: i.sync_sole_attested,
 });
@@ -31,8 +34,25 @@ const CHECKBOX = 'mt-0.5 rounded-[3px] border-white/30 data-[state=checked]:bord
 const RADIO = 'mt-0.5 border-white/30 text-electric data-[state=checked]:border-electric [&_svg]:fill-electric';
 const FIELD = 'border-white/10 bg-ink text-white placeholder:text-slate-600 focus-visible:ring-electric';
 
-const SyncIntakeFields = ({ value, onChange, disabled, onNotAffiliated }) => {
+const NotAffiliatedBox = ({ checked, onToggle, disabled }) => (
+  <label className="flex cursor-pointer items-start gap-3 text-sm text-slate-300">
+    <Checkbox checked={checked} onCheckedChange={(v) => onToggle(v === true)}
+      disabled={disabled} className={CHECKBOX} data-testid="sync-not-affiliated" />
+    I'm not affiliated with a PRO.
+  </label>
+);
+
+const SyncIntakeFields = ({ value, onChange, disabled, onNotAffiliated, notAffiliated = false }) => {
   const set = (patch) => onChange({ ...value, ...patch });
+  if (notAffiliated) {
+    return (
+      <div className="space-y-2">
+        <Label className="text-slate-300">Performing rights (PRO)</Label>
+        <NotAffiliatedBox checked onToggle={onNotAffiliated} disabled={disabled} />
+        <p className="text-xs text-amber-200" data-testid="sync-pro-notice">{PRO_REQUIRED_MESSAGE}</p>
+      </div>
+    );
+  }
   return (
     <div className="space-y-5">
       <div className="space-y-2">
@@ -63,7 +83,7 @@ const SyncIntakeFields = ({ value, onChange, disabled, onNotAffiliated }) => {
       <div className="space-y-3">
         <Label className="text-slate-300">Performing rights (PRO) *</Label>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Select value={value.pro_name} onValueChange={(v) => set({ pro_name: v })} disabled={disabled}>
+          <Select value={value.pro_name} onValueChange={(v) => set({ pro_name: v, ...(v !== 'Other' ? { pro_other: '' } : {}) })} disabled={disabled}>
             <SelectTrigger aria-label="PRO" className="border-white/10 bg-ink text-white"><SelectValue placeholder="Select PRO" /></SelectTrigger>
             <SelectContent className="border-white/10 bg-ink-2 text-white">
               {PRO_ORGS.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}
@@ -77,14 +97,13 @@ const SyncIntakeFields = ({ value, onChange, disabled, onNotAffiliated }) => {
             )}
           </div>
         </div>
-        <p className="text-xs text-slate-500">Your IPI number is in your PRO account. Every writer in the splits needs one too.</p>
-        {onNotAffiliated && (
-          <label className="flex cursor-pointer items-start gap-3 text-sm text-slate-300">
-            <Checkbox checked={false} onCheckedChange={(v) => v === true && onNotAffiliated()}
-              disabled={disabled} className={CHECKBOX} data-testid="sync-not-affiliated" />
-            I'm not affiliated with a PRO.
-          </label>
+        {value.pro_name === 'Other' && (
+          <Input aria-label="Which PRO?" placeholder="Which PRO do you use? *" maxLength={80}
+            value={value.pro_other || ''} onChange={(e) => set({ pro_other: e.target.value })}
+            disabled={disabled} className={FIELD} data-testid="sync-pro-other" />
         )}
+        <p className="text-xs text-slate-500">Your IPI number is in your PRO account. Every writer in the splits needs one too.</p>
+        {onNotAffiliated && <NotAffiliatedBox checked={false} onToggle={onNotAffiliated} disabled={disabled} />}
       </div>
 
       <label className="flex cursor-pointer items-start gap-3 text-sm text-slate-300">

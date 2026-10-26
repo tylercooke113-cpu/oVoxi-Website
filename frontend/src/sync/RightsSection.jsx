@@ -43,6 +43,7 @@ export const emptyRights = () => ({
   owns_everything: false,
   self_legal_name: '',
   legal_name_touched: false,
+  account_legal_name: '',     // licensor on the signed agreement (Oct 26); never sent
   writers: [newWriter()],
   master_owners: [newOwner()],
   attested: false,
@@ -75,8 +76,17 @@ const partyProblem = (parties, selfCf, { email = true } = {}) => {
 };
 
 // Brief 25b C2 (Agreement 3.5): with sync on, every writer needs a PRO and an IPI.
+// "Other" also needs the PRO's name.
 export const writersMissingPro = (r) => (r.owns_everything ? []
-  : r.writers.filter((w) => !w.society || !IPI_PATTERN.test(w.ipi || '')));
+  : r.writers.filter((w) => !w.society || !IPI_PATTERN.test(w.ipi || '')
+    || (w.society === 'Other' && !(w.society_other || '').trim())));
+
+const normName = (v) => (v || '').split(/\s+/).filter(Boolean).join(' ').toLowerCase();
+
+// Oct 26: the uploader's legal name must be the one on their signed agreement.
+export const legalNameMismatch = (r) => !!r.account_legal_name
+  && normName(r.self_legal_name) !== normName(r.account_legal_name);
+export const LEGAL_NAME_MISMATCH = 'This does not match the legal name on your account.';
 
 // Lower-cased signing emails of everyone in the splits who is not the uploader. Loop
 // creators must appear here with the same email (Agreement 3.6(a)).
@@ -90,6 +100,7 @@ export const rightsEmails = (r) => {
 
 export const isRightsValid = (r, { requirePro = false } = {}) => {
   if (!r.self_legal_name.trim() || !r.attested) return false;
+  if (legalNameMismatch(r)) return false;
   if (r.owns_everything) return true;
   const selfCf = r.self_legal_name.trim().toLowerCase();
   if (requirePro && writersMissingPro(r).length) return false;
@@ -105,6 +116,7 @@ export const buildRightsPayload = (r) => {
   const writerRow = (p) => ({
     legal_name: p.legal_name.trim(), share_bp: toBp(p.pct), role: p.role,
     society: p.society || null, ipi_name_number: p.ipi || null, email: emailFor(p),
+    society_other: p.society === 'Other' ? (p.society_other || '').trim() || null : null,
   });
   const publisherRow = (p) => ({
     legal_name: p.legal_name.trim(), share_bp: toBp(p.pct), role: p.role,
@@ -266,7 +278,11 @@ const RightsSection = ({ value, onChange, disabled, requirePro = false }) => {
           disabled={disabled}
           className={FIELD_CLASS}
         />
-        <p className="text-xs text-slate-500">As registered with your PRO, not your artist name.</p>
+        {legalNameMismatch(r) ? (
+          <p className="text-xs text-red-400" data-testid="upload-rights-legal-name-error">{LEGAL_NAME_MISMATCH}</p>
+        ) : (
+          <p className="text-xs text-slate-500">The legal name on your Artist Agreement, not your artist name.</p>
+        )}
       </div>
 
       {!r.owns_everything && (
@@ -370,6 +386,11 @@ const RightsSection = ({ value, onChange, disabled, requirePro = false }) => {
                       />
                     </div>
                   </div>
+                  {w.society === 'Other' && (
+                    <Input aria-label={`Writer ${i + 1} PRO name`} placeholder="Which PRO?" maxLength={80}
+                      value={w.society_other || ''} onChange={(e) => setWriter(i, { society_other: e.target.value })}
+                      disabled={disabled} className={FIELD_CLASS} />
+                  )}
                   {w.ipi && !IPI_PATTERN.test(w.ipi) && (
                     <p className="text-xs text-red-400">IPI must be 9 or 11 digits.</p>
                   )}

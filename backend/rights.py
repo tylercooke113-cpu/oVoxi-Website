@@ -37,6 +37,7 @@ class RightsPartyIn(BaseModel):
     share_bp: int = Field(..., ge=1, le=TOTAL_BP)
     role: Optional[str] = None
     society: Optional[str] = None
+    society_other: Optional[str] = Field(default=None, max_length=80)   # when society is "Other"
     ipi_name_number: Optional[str] = None
     email: Optional[str] = Field(default=None, max_length=EMAIL_MAX_LENGTH)
 
@@ -75,6 +76,17 @@ class RightsPartyIn(BaseModel):
         if not re.fullmatch(IPI_PATTERN, v):
             raise ValueError("IPI must be 9 or 11 digits.")
         return v
+
+    @model_validator(mode="after")
+    def _other_pro(self):
+        other = (self.society_other or "").strip()
+        if self.society == "Other":
+            if not other:
+                raise ValueError(f"Enter which PRO {self.legal_name} uses.")
+            self.society_other = other
+        else:
+            self.society_other = None
+        return self
 
 
 class TrackRightsIn(BaseModel):
@@ -137,6 +149,7 @@ def _party(p: RightsPartyIn, side: str, self_name: str) -> dict:
         "legal_name": p.legal_name,
         "ipi_name_number": p.ipi_name_number,
         "society": p.society,
+        "society_other": p.society_other,
         "role": p.role if side != "master_owners" else None,
         "share_bp": p.share_bp,
         "is_self": is_self,
@@ -160,6 +173,7 @@ def build_rights(rights: TrackRightsIn, *, intake, clerk_user_id: str, now_iso: 
                 "legal_name": name,
                 "ipi_name_number": intake.ipi if affiliated else None,
                 "society": intake.pro_name if affiliated else None,
+                "society_other": getattr(intake, "pro_other", None) if affiliated else None,
                 "role": DEFAULT_ROLES["writers"],
                 "share_bp": TOTAL_BP,
                 "is_self": True,

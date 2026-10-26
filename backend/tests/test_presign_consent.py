@@ -300,3 +300,18 @@ def test_exclusive_default_off(client, fake_db):
     resp = post(client, base())
     assert resp.status_code == 200, resp.text
     assert inserted_doc(fake_db)["consent"]["exclusive"] is False
+
+
+# --------------------------------------------------------------------------- PRO "Other" (Oct 26)
+
+def test_pro_other_needs_name(client, fake_db):
+    resp = post(client, sync_body(pro_name="Other"))
+    assert resp.status_code == 422 and "Enter which PRO you use." in resp.text
+
+
+def test_pro_other_stored(client, fake_db):
+    resp = post(client, sync_body(pro_name="Other", pro_other="  KODA  "))
+    assert resp.status_code == 200, resp.text
+    doc = inserted_doc(fake_db)
+    assert doc["intake"]["pro_other"] == "KODA"
+    assert doc["rights"]["writers"][0]["society_other"] == "KODA"        # 100% shortcut row

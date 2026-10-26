@@ -10,7 +10,7 @@ import { EMPTY_DECLARATIONS, buildDeclarationsPayload, declarationsMissing, lice
 import { api, errorMessage } from './api';
 import { PENDING_REASONS, reasonText } from './labels';
 import {
-  BPM_MAX, BPM_MIN, LOOPS_NO_AI_MESSAGE, MAJOR_KEYS, MAX_MOODS, MINOR_KEYS, MOODS, PRO_REQUIRED_MESSAGE,
+  BPM_MAX, BPM_MIN, LOOPS_NO_AI_MESSAGE, MAJOR_KEYS, MAX_MOODS, MINOR_KEYS, MOODS,
 } from './constants';
 
 // Per-track "Uses and details" panel in the Vault (PRD-03 4.2, 4.3, 4.4).
@@ -221,6 +221,14 @@ const UseStatus = ({ track, use, label }) => {
 };
 
 const CatalogStatus = ({ track }) => {
+  if (track.awaiting_approval) {
+    return (
+      <>
+        <p className="text-sm font-medium text-amber-300" data-testid={`vault-awaiting-${track.id}`}>● Waiting for account approval</p>
+        <p className="mt-1 text-xs text-slate-500">Received. We process and list it once your artist account is approved.</p>
+      </>
+    );
+  }
   if (!track.consent.sync && !track.consent.ai_training) {
     return (
       <>
@@ -493,11 +501,9 @@ const TrackSyncPanel = ({ track, getToken, onUpdated, status }) => {
             </p>
             {track.needs_declarations ? (
               <p className="text-sm text-amber-200">Answer the samples and AI tools questions for this song first.</p>
-            ) : proNotice ? (
-              <p className="text-sm text-amber-200" data-testid="vault-pro-notice">{PRO_REQUIRED_MESSAGE}</p>
             ) : (
               <SyncIntakeFields value={intake} onChange={setIntake} disabled={busy}
-                onNotAffiliated={() => setProNotice(true)} />
+                notAffiliated={proNotice} onNotAffiliated={(v) => setProNotice(v)} />
             )}
           </>
         ) : (

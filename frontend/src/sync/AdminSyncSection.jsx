@@ -165,7 +165,26 @@ const AdminSyncSection = ({ getToken, submissions, onChanged }) => {
 
   useEffect(() => { loadProfiles(); }, [loadProfiles]);
 
-  const catalogTracks = (submissions || []).filter((s) => s.consent && (s.consent.sync || s.consent.ai_training));
+  const catalogTracks = (submissions || []).filter((s) => s.consent && (s.consent.sync || s.consent.ai_training)
+    && !s.awaiting_approval);
+
+  // Oct 26: accounts with songs held until approval, one row per account.
+  const waiting = Object.values((submissions || []).filter((s) => s.awaiting_approval).reduce((acc, s) => {
+    const a = acc[s.clerk_user_id] || { uid: s.clerk_user_id, artist: s.artist_name, songs: [] };
+    a.songs.push(s.track_name);
+    acc[s.clerk_user_id] = a;
+    return acc;
+  }, {}));
+
+  const approve = async (a) => {
+    if (!window.confirm(`Approve ${a.artist} as an artist? Their ${a.songs.length} held song(s) start processing and they get an email.`)) return;
+    setBusy(a.uid);
+    try {
+      const r = await api.adminApproveArtist(getToken, a.uid);
+      toast.success(`Approved. ${r.released} song(s) released for processing.`);
+      onChanged();
+    } catch (err) { toast.error(errorMessage(err)); } finally { setBusy(null); }
+  };
 
   const delist = async (s) => {
     const next = !s.sync_delisted_by_admin;
@@ -184,6 +203,27 @@ const AdminSyncSection = ({ getToken, submissions, onChanged }) => {
   return (
     <div className="flex flex-col gap-8" data-testid="admin-sync">
       <AdminOrdersSection getToken={getToken} />
+      <section data-testid="admin-waiting-approval">
+        <h3 className="mb-3 font-heading text-lg font-semibold text-white">Artists waiting for approval</h3>
+        {waiting.length === 0 ? <p className="text-sm text-slate-500">Nobody is waiting.</p> : (
+          <div className="overflow-x-auto rounded-2xl border border-white/10">
+            <table className="w-full text-left text-sm">
+              <tbody>
+                {waiting.map((a) => (
+                  <tr key={a.uid} className="border-b border-white/5">
+                    <td className="px-4 py-3 text-white">{a.artist}</td>
+                    <td className="px-4 py-3 text-slate-400">{a.songs.length} song(s): {a.songs.join(', ')}</td>
+                    <td className="px-4 py-3 text-slate-500">{a.uid}</td>
+                    <td className="px-4 py-3 text-right">
+                      <Toggle on={false} busy={busy === a.uid} onClick={() => approve(a)} label="Approve artist" />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
       <section>
         <h3 className="mb-3 font-heading text-lg font-semibold text-white">Sync profiles</h3>
         {!profiles ? <p className="text-sm text-slate-500">Loading…</p> : profiles.length === 0 ? (

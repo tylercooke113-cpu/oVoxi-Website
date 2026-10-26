@@ -396,15 +396,56 @@ def test_agreement_status_accepts_pending_user(fake_db, clerk, monkeypatch):
         server.app.dependency_overrides.clear()
 
 
-def test_presign_refuses_pending_user(fake_db, clerk, monkeypatch):
+def test_presign_holds_pending_user(fake_db, clerk, monkeypatch):
+    # Oct 26: an account awaiting approval may upload; the song is held, unprocessed.
     monkeypatch.setattr(server.limiter, "enabled", False)
+    monkeypatch.delenv("ARTIST_APPROVAL_REQUIRED", raising=False)
     _r2(monkeypatch)
     server.app.dependency_overrides[server.verify_clerk_token] = lambda: {"sub": "pending_user", "metadata": {}}
     try:
         r = TestClient(server.app).post("/api/upload/presign", json=PRESIGN_BODY)
-        assert r.status_code == 403, r.text
+        assert r.status_code == 200, r.text
+        doc = fake_db.track_submissions.insert_one.await_args.args[0]
+        assert doc["awaiting_approval"] is True
     finally:
         server.app.dependency_overrides.clear()
+
+
+def test_presign_approved_artist_not_held(fake_db, clerk, monkeypatch):
+    monkeypatch.setattr(server.limiter, "enabled", False)
+    _r2(monkeypatch)
+    server.app.dependency_overrides[server.verify_clerk_token] = lambda: {"sub": "a1", "metadata": {"role": "artist"}}
+    try:
+        r = TestClient(server.app).post("/api/upload/presign", json=PRESIGN_BODY)
+        assert r.status_code == 200, r.text
+        assert fake_db.track_submissions.insert_one.await_args.args[0]["awaiting_approval"] is False
+    finally:
+        server.app.dependency_overrides.clear()
+
+
+def test_presign_legal_name_must_match_agreement(fake_db, clerk, monkeypatch):
+    monkeypatch.setattr(server.limiter, "enabled", False)
+    _r2(monkeypatch)
+    fake_db.artist_agreements.find_one = AsyncMock(return_value={
+        "id": "a", "version": "v1", "signed_at": "x",
+        "fields": {"entity_type": "individual", "legal_name": "Jane  Q Smith"}})
+    server.app.dependency_overrides[server.verify_clerk_token] = lambda: {"sub": "a1", "metadata": {"role": "artist"}}
+    try:
+        body = {**PRESIGN_BODY, "rights": {**PRESIGN_BODY["rights"], "self_legal_name": "Stage Name"}}
+        r = TestClient(server.app).post("/api/upload/presign", json=body)
+        assert r.status_code == 422 and r.json()["detail"] == "This does not match the legal name on your account."
+        body = {**PRESIGN_BODY, "rights": {**PRESIGN_BODY["rights"], "self_legal_name": "jane q smith"}}
+        r = TestClient(server.app).post("/api/upload/presign", json=body)
+        assert r.status_code == 200, r.text                      # case and spacing ignored
+    finally:
+        server.app.dependency_overrides.clear()
+
+
+def test_account_legal_name_company_uses_company():
+    assert server.account_legal_name({"fields": {"entity_type": "company", "company_name": "Beat Co LLC",
+                                                 "legal_name": "Jane Smith"}}) == "Beat Co LLC"
+    assert server.account_legal_name({"fields": {"entity_type": "individual", "legal_name": "Jane"}}) == "Jane"
+    assert server.account_legal_name(None) is None
 
 
 def test_presign_enforced_unsigned_artist_403(client, fake_db, monkeypatch):

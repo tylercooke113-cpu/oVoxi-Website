@@ -252,12 +252,19 @@ def _artist_approval_required() -> bool:
 
 
 async def require_artist(payload: dict = Depends(verify_clerk_token)) -> dict:
-    role = _role(payload)
-    if role in ("artist", "admin"):
-        return payload
-    if role is None and not _artist_approval_required():
+    """Artist routes. Approved artists and admins, plus signed-in accounts awaiting approval
+    (Oct 26): they may upload and use the Vault, but their songs are held, unprocessed and
+    unlisted, until they are approved (is_approved). Any other role is refused."""
+    if _role(payload) in ("artist", "admin", None):
         return payload
     raise HTTPException(status_code=403, detail="Forbidden")
+
+
+def is_approved(payload: dict) -> bool:
+    """role=artist or admin; or anyone, when ARTIST_APPROVAL_REQUIRED=false."""
+    return _role(payload) in ("artist", "admin") or not _artist_approval_required()
+
+
 require_admin = require_role("admin")
 
 
@@ -302,7 +309,7 @@ async def _run_clearance(submission_id: str) -> None:
 async def _claim_next() -> Optional[dict]:
     now = datetime.now(timezone.utc).isoformat()
     return await db.track_submissions.find_one_and_update(
-        {"status": "uploaded"},
+        {"status": "uploaded", "awaiting_approval": {"$ne": True}},
         {
             "$set": {
                 "status": "scanning",
@@ -746,6 +753,7 @@ class SyncIntake(BaseModel):
     content_id: str
     pro_not_affiliated: bool = False        # kept for old clients; refused for sync (3.5)
     pro_name: Optional[str] = None
+    pro_other: Optional[str] = Field(default=None, max_length=80)   # required when pro_name is "Other"
     ipi: Optional[str] = None
     sync_sole_attested: bool = False        # Agreement 3.1 / 3.3: sync is exclusive to OVOXI
 
@@ -777,6 +785,10 @@ class SyncIntake(BaseModel):
         if self.pro_not_affiliated or not self.pro_name:
             raise ValueError(PRO_REQUIRED_MESSAGE)
         _one_of(self.pro_name, PRO_ORGS, "PRO")
+        other = (self.pro_other or "").strip()
+        if self.pro_name == "Other" and not other:
+            raise ValueError("Enter which PRO you use.")
+        self.pro_other = other if self.pro_name == "Other" else None
         if not self.ipi or not re.fullmatch(IPI_PATTERN, self.ipi):
             raise ValueError("IPI must be 9 or 11 digits.")
         if not self.sync_sole_attested:
@@ -1544,7 +1556,22 @@ async def set_clerk_public_metadata(user_id: str, patch: dict) -> None:
 async def _current_agreement(uid: str) -> Optional[dict]:
     return await db.artist_agreements.find_one(
         {"user_id": uid, "version": artist_agreement.current_version()},
-        {"_id": 0, "id": 1, "version": 1, "signed_at": 1})
+        {"_id": 0, "id": 1, "version": 1, "signed_at": 1, "fields": 1})
+
+
+def account_legal_name(agreement: Optional[dict]) -> Optional[str]:
+    """The licensor named on the signed Artist Agreement: the company for company accounts,
+    otherwise the person's legal name. Splits must use this exact name for the uploader."""
+    f = (agreement or {}).get("fields") or {}
+    name = f.get("company_name") if f.get("entity_type") == "company" else f.get("legal_name")
+    return (name or "").strip() or None
+
+
+def _norm_name(v: str) -> str:
+    return " ".join((v or "").split()).casefold()
+
+
+LEGAL_NAME_MISMATCH = "This does not match the legal name on your account."
 
 
 async def _require_signed_agreement(clerk_payload: dict) -> Optional[dict]:
@@ -1577,7 +1604,8 @@ async def agreement_status(request: Request, clerk_payload: dict = Depends(verif
         "enforced": artist_agreement.enforced(),
         "required": _role(clerk_payload) != "admin",
         "signed": signed is not None,
-        "agreement": signed,
+        "agreement": {k: v for k, v in (signed or {}).items() if k != "fields"} or None,
+        "legal_name": account_legal_name(signed),
         "prefill": None,
         "previous_signed": await db.artist_agreements.find_one(
             {"user_id": uid, "version": {"$ne": version}}, {"_id": 1}) is not None,
@@ -1721,6 +1749,11 @@ async def presign_upload(request: Request, payload: PresignRequest, clerk_payloa
     agreement = await _require_signed_agreement(clerk_payload)
     if payload.genre not in VALID_GENRES:
         raise HTTPException(status_code=400, detail=f"Invalid genre")
+    # The uploader's name in the splits must be the licensor on their signed agreement.
+    account_name = account_legal_name(agreement)
+    if account_name and payload.rights and _norm_name(payload.rights.self_legal_name) != _norm_name(account_name):
+        raise HTTPException(status_code=422, detail=LEGAL_NAME_MISMATCH)
+    approved = is_approved(clerk_payload)
 
     ext = Path(payload.filename).suffix.lower()
     if ext not in AUDIO_CONTENT_TYPES:
@@ -1741,14 +1774,21 @@ async def presign_upload(request: Request, payload: PresignRequest, clerk_payloa
             {"clerk_user_id": uid, "upload_date": {"$gte": since}}
         ) >= MAX_UPLOADS_PER_DAY:
             raise HTTPException(status_code=429, detail="Daily upload limit reached")
-        if await db.track_submissions.count_documents({
+        if approved and await db.track_submissions.count_documents({
             "clerk_user_id": uid,
+            "awaiting_approval": {"$ne": True},
             "$or": [
                 {"status": {"$in": ["uploaded", "scanning", "mastering", "processing"]}},
                 {"status": "pending", "upload_date": {"$gte": one_hour_ago}},
             ],
         }) >= MAX_OPEN_SUBMISSIONS:
             raise HTTPException(status_code=429, detail="Too many uploads in progress")
+        MAX_HELD = int(os.environ.get("MAX_PENDING_APPROVAL_UPLOADS", "25"))
+        if not approved and await db.track_submissions.count_documents({
+            "clerk_user_id": uid, "awaiting_approval": True, "status": {"$ne": "failed"},
+        }) >= MAX_HELD:
+            raise HTTPException(status_code=429, detail=(
+                f"You can upload up to {MAX_HELD} songs before your account is approved."))
 
     submission_id = str(uuid.uuid4())
     safe_artist = _slugify(payload.artist_name)
@@ -1836,6 +1876,8 @@ async def presign_upload(request: Request, payload: PresignRequest, clerk_payloa
                       "exclusive": payload.consent_exclusive}
     doc['consent_grant_version'] = GRANT_VERSION
     doc['agreement_id'] = agreement["id"] if agreement else None
+    # Held until the artist is approved: not processed, not listed, no co-owner emails.
+    doc['awaiting_approval'] = not approved
     doc['metadata'] = {
         "moods": payload.moods,
         "vocals": payload.vocals,
@@ -1854,6 +1896,7 @@ async def presign_upload(request: Request, payload: PresignRequest, clerk_payloa
             "content_id": payload.sync_intake.content_id,
             "pro_not_affiliated": payload.sync_intake.pro_not_affiliated,
             "pro_name": payload.sync_intake.pro_name,
+            "pro_other": payload.sync_intake.pro_other,
             "ipi": payload.sync_intake.ipi,
             "sync_sole_attested_at": now_iso,
         })
@@ -1923,7 +1966,7 @@ async def complete_upload(request: Request, payload: CompleteUploadRequest, back
     # Co-owner Consent requests (Brief 22 C3). Sent after the response (Brief 25b C6):
     # each email could take up to 10 s, and the upload must not wait for them. Safe to
     # repeat: existing requests are left alone, and an email failure never fails the upload.
-    if sub.get("cosign_required"):
+    if sub.get("cosign_required") and not sub.get("awaiting_approval"):
         background.add_task(_dispatch_cosign_quietly, sub)
 
     return {"status": "uploaded", "submission_id": payload.submission_id}
@@ -1933,12 +1976,16 @@ async def complete_upload(request: Request, payload: CompleteUploadRequest, back
 @limiter.limit("30/minute")
 async def get_vault_tracks(request: Request, clerk_payload: dict = Depends(verify_clerk_token)):
     clerk_user_id = clerk_payload.get('sub')
+    # Backup release path: an artist approved by hand in Clerk gets their held songs
+    # processed the next time they open the Vault.
+    if is_approved(clerk_payload):
+        await _release_held_uploads(clerk_user_id)
     subs = await db.track_submissions.find(
         {'clerk_user_id': clerk_user_id},
         {'_id': 0, 'id': 1, 'artist_name': 1, 'track_name': 1, 'genre': 1,
          'upload_date': 1, 'status': 1, 'stem_paths': 1, 'mastered_r2_key': 1,
          'consent': 1, 'metadata': 1, 'sync_status': 1, 'checks': 1, 'on_sync_profile': 1,
-         'cosign_required': 1, 'cosign_status': 1},
+         'cosign_required': 1, 'cosign_status': 1, 'awaiting_approval': 1},
     ).sort('upload_date', -1).to_list(1000)
 
     cosign_by_track = await _cosign_views_for_tracks([s.get('id') for s in subs])
@@ -1980,6 +2027,7 @@ async def get_vault_tracks(request: Request, clerk_payload: dict = Depends(verif
             'stem_urls': stem_urls,
             'mastered_url': mastered_url,
             'cosign': cosign_by_track.get(s.get('id'), []),
+            'awaiting_approval': s.get('awaiting_approval') is True,
             **vault_track_view(s),
         })
     return result
@@ -2085,6 +2133,25 @@ async def _send_cosign_request(req: dict, token: str, uploader_name: str,
             {"$set": {"sent_at": now, "last_sent_at": now}, "$inc": {"send_count": 1}})
     else:
         logger.warning("cosign invite not sent req=%s status=%s", req["id"], result.get("status"))
+
+
+async def _release_held_uploads(uid: str) -> int:
+    """Start processing an approved artist's held songs (Oct 26). Songs whose file already
+    arrived (status "uploaded") join the worker queue; their co-owner emails go out now.
+    Returns how many were released. Safe to repeat."""
+    held = await db.track_submissions.find(
+        {"clerk_user_id": uid, "awaiting_approval": True}, {"_id": 0}).to_list(500)
+    if not held:
+        return 0
+    now_iso = datetime.now(timezone.utc).isoformat()
+    await db.track_submissions.update_many(
+        {"clerk_user_id": uid, "awaiting_approval": True},
+        {"$set": {"awaiting_approval": False, "approved_at": now_iso}})
+    for sub in held:
+        if sub.get("status") == "uploaded" and sub.get("cosign_required"):
+            await _dispatch_cosign_quietly(sub)
+    logger.info("Released %d held uploads for %s", len(held), uid)
+    return len(held)
 
 
 async def _dispatch_cosign_quietly(sub: dict) -> None:
@@ -2526,6 +2593,7 @@ async def change_vault_consent(request: Request, track_id: str, payload: Consent
         if rights.get("owns_everything") and (rights.get("writers") or []):
             # The 100% shortcut takes the uploader's PRO from the sync answers.
             rights = {**rights, "writers": [{**w, "society": payload.sync_intake.pro_name,
+                                             "society_other": payload.sync_intake.pro_other,
                                              "ipi_name_number": payload.sync_intake.ipi}
                                             if w.get("is_self") else w for w in rights["writers"]]}
             shortcut_rights = rights
@@ -2557,6 +2625,7 @@ async def change_vault_consent(request: Request, track_id: str, payload: Consent
         fields.update({
             "intake.distributor": i.distributor, "intake.content_id": i.content_id,
             "intake.pro_not_affiliated": False, "intake.pro_name": i.pro_name,
+            "intake.pro_other": i.pro_other,
             "intake.ipi": i.ipi, "intake.sync_sole_attested_at": now_iso,
         })
         if shortcut_rights is not None:
@@ -3114,6 +3183,30 @@ async def admin_loop_licenses_review(request: Request, track_id: str, payload: A
     return await db.track_submissions.find_one(
         {"id": track_id}, {"_id": 0, "id": 1, "sync_status": 1, "ai_status": 1,
                            "on_sync_profile": 1, "loop_licenses_reviewed": 1})
+
+
+@api_router.post("/admin/artists/{user_id}/approve")
+@limiter.limit("30/minute")
+async def admin_approve_artist(request: Request, user_id: str, admin: dict = Depends(require_admin)):
+    """Oct 26: approve an artist in one step. Sets role=artist in Clerk, starts processing
+    their held songs and emails them."""
+    if not re.fullmatch(r"user_[A-Za-z0-9]+", user_id):
+        raise HTTPException(status_code=422, detail="Invalid user id")
+    await set_clerk_public_metadata(user_id, {"role": "artist"})
+    released = await _release_held_uploads(user_id)
+    await _log_admin_action(admin, "approve_artist", user_id, f"released {released}")
+    try:
+        u = await fetch_clerk_user(user_id)
+        body = ("Your OVOXI artist account is approved. Your songs are being processed now, and "
+                "you can check each one in your Vault. Songs that clear our checks are listed in "
+                "the OVOXI Catalog.")
+        await send_email(to=u["email"], subject="Your OVOXI artist account is approved",
+                         html=f"<p>{body}</p><p><a href=\"https://ovoxi.net/vault\">Open your Vault</a></p>",
+                         text=body + "\n\nhttps://ovoxi.net/vault", reply_to=REPLY_TO_COSIGN,
+                         idempotency_key=f"approved-{user_id}")
+    except Exception as exc:
+        logger.error("approval email failed for %s: %s", user_id, exc)
+    return {"user_id": user_id, "role": "artist", "released": released}
 
 
 @api_router.post("/admin/sync/profiles/{slug}/hide")

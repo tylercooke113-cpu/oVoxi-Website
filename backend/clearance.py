@@ -95,7 +95,8 @@ def check_content_id(doc: dict) -> dict:
 def writers_missing_pro(rights: dict) -> list:
     """Names of writers without both a PRO and an IPI (Agreement 3.5: every writer)."""
     return [p.get("legal_name") or "A writer" for p in ((rights or {}).get("writers") or [])
-            if not (p.get("society") and p.get("ipi_name_number"))]
+            if not (p.get("society") and p.get("ipi_name_number"))
+            or (p.get("society") == "Other" and not p.get("society_other"))]
 
 
 def check_pro(doc: dict) -> dict:
@@ -103,6 +104,8 @@ def check_pro(doc: dict) -> dict:
     "Not affiliated" no longer passes; such a song may be offered for AI training only."""
     intake = doc.get("intake") or {}
     if intake.get("pro_not_affiliated") is True or not (intake.get("pro_name") and intake.get("ipi")):
+        return _fail("pro")
+    if intake.get("pro_name") == "Other" and not intake.get("pro_other"):
         return _fail("pro")
     if writers_missing_pro(doc.get("rights")):
         return _fail("pro_writers")

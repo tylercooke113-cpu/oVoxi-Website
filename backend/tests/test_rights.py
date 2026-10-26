@@ -305,3 +305,11 @@ def test_build_rights_shortcut_without_intake():
     doc = build_rights(TrackRightsIn(**body), intake=None, clerk_user_id="u1", now_iso="t")
     assert doc["writers"][0]["society"] is None
     assert len(doc["master_owners"]) == 1
+
+
+def test_writer_other_pro_needs_name():
+    rejects(manual(writers=[party("Tyler Example", 10000, role="CA", society="Other", ipi_name_number="00123456789")]),
+            "Enter which PRO Tyler Example uses")
+    ok = TrackRightsIn(**manual(writers=[party("Tyler Example", 10000, role="CA", society="Other",
+                                               society_other=" KODA ", ipi_name_number="00123456789")]))
+    assert ok.writers[0].society_other == "KODA"

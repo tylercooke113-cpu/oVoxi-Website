@@ -13,6 +13,8 @@ import { emptySong, carryOverSong, songMissing } from './SongForm';
 import { emptyRights } from '../sync/RightsSection';
 import { runBatch, TOO_MANY_MESSAGE } from './useBatchUpload';
 import { EMPTY_DECLARATIONS, buildDeclarationsPayload, emptyLoop } from './declarations';
+import { legalNameMismatch, writersMissingPro } from '../sync/RightsSection';
+import { isIntakeValid, buildIntakePayload } from '../sync/SyncIntakeFields';
 
 const ORIGINAL = { ...EMPTY_DECLARATIONS, samples: 'original', samples_attested: true,
   ai_tools: 'none', ai_tools_attested: true };
@@ -108,7 +110,7 @@ describe('carryOverSong', () => {
     expect(next.form.artist_name).toBe('Carry Me');
     expect(next.consentAi).toBe(true);
     expect(next.consentSync).toBe(true);
-    expect(next.consentExclusive).toBe(true);
+    expect(next.consentExclusive).toBe(false);          // Oct 26: exclusive is a Vault switch only
     expect(next.intake.distributor).toBe('DistroKid');
     expect(next.intake.pro_name).toBe('ASCAP');
     expect(next.intake.ipi).toBe('123456789');
@@ -251,5 +253,28 @@ describe('Brief 25b upload rules', () => {
     expect(res).toEqual({ stopReason: null, failed: 1 });
     expect(states[songs[0].key].warning).toMatch(/Vault/);
     expect(states[songs[1].key].status).toBe('failed');
+  });
+});
+
+
+describe('Oct 26 changes', () => {
+  test('legal name must match the account, ignoring case and spacing', () => {
+    const r = (name) => ({ ...completeSong().rights, self_legal_name: name, account_legal_name: 'Jane Q Smith' });
+    expect(legalNameMismatch(r('jane  q smith'))).toBe(false);
+    expect(legalNameMismatch(r('Stage Name'))).toBe(true);
+    expect(songMissing(completeSong({ rights: r('Stage Name') }))).toContain('your legal name as on your account');
+    expect(legalNameMismatch({ ...completeSong().rights, account_legal_name: '' })).toBe(false);  // admins
+  });
+
+  test('PRO "Other" needs the PRO name, in the sync answers and on writer rows', () => {
+    expect(isIntakeValid({ ...SYNC_INTAKE, pro_name: 'Other' })).toBe(false);
+    expect(isIntakeValid({ ...SYNC_INTAKE, pro_name: 'Other', pro_other: 'KODA' })).toBe(true);
+    expect(buildIntakePayload({ ...SYNC_INTAKE, pro_name: 'Other', pro_other: ' KODA ' }).pro_other).toBe('KODA');
+    expect(buildIntakePayload(SYNC_INTAKE).pro_other).toBeNull();
+    const r = loopRights();
+    r.writers[1] = { ...r.writers[1], society: 'Other', society_other: '' };
+    expect(writersMissingPro(r)).toHaveLength(1);
+    r.writers[1].society_other = 'KODA';
+    expect(writersMissingPro(r)).toHaveLength(0);
   });
 });

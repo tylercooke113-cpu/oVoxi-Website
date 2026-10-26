@@ -144,7 +144,7 @@ const DeclarationsFields = ({ value, onChange, disabled, idPrefix = 'decl', with
           <label className="flex cursor-pointer items-start gap-3 pt-1 text-sm text-slate-300">
             <Checkbox checked={value.ai_tools_attested} data-testid={tid('ai-tools-attested')}
               onCheckedChange={(v) => set({ ai_tools_attested: v === true })} disabled={disabled} className={CHECKBOX} />
-            I confirm this answer is accurate. OVOXI and its buyers rely on it.
+            I confirm this answer is accurate.
           </label>
         )}
       </div>

@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Upload, Music2 } from 'lucide-react';
 import { openAgreementPdf, formatSignedDate } from '../agreement/agreementApi';
@@ -12,7 +12,6 @@ import {
   SelectValue,
 } from '../components/ui/select';
 import { Checkbox } from '../components/ui/checkbox';
-import { RadioGroup, RadioGroupItem } from '../components/ui/radio-group';
 import {
   MOODS,
   MAX_MOODS,
@@ -22,9 +21,10 @@ import {
   MAJOR_KEYS,
   MINOR_KEYS,
   LOOPS_NO_AI_MESSAGE,
-  PRO_REQUIRED_MESSAGE,
 } from '../sync/constants';
-import RightsSection, { emptyRights, isRightsValid, rightsEmails, writersMissingPro } from '../sync/RightsSection';
+import RightsSection, {
+  emptyRights, isRightsValid, legalNameMismatch, rightsEmails, writersMissingPro,
+} from '../sync/RightsSection';
 import SyncIntakeFields, { EMPTY_INTAKE, isIntakeValid, buildIntakePayload } from '../sync/SyncIntakeFields';
 import DeclarationsFields from './DeclarationsFields';
 import { EMPTY_DECLARATIONS, declarationsMissing, usesLoops } from './declarations';
@@ -55,9 +55,9 @@ export const emptySong = (overrides = {}) => ({
   keyUnsure: false,
   consentAi: false,
   consentSync: false,
-  consentExclusive: false,       // Brief 25b: song-level exclusive choice
+  consentExclusive: false,       // always non-exclusive at upload; Exclusive is a Vault switch (Oct 26)
   declarations: EMPTY_DECLARATIONS,
-  proNotice: false,              // "not affiliated" was picked: sync was turned off
+  proNotice: false,              // "not affiliated" is ticked: sync is off, the PRO box explains why
   intake: EMPTY_INTAKE,
   rights: emptyRights(),
   status: 'draft', // draft | queued | uploading | received | failed
@@ -73,7 +73,6 @@ export const carryOverSong = (prev) => emptySong({
   form: { artist_name: prev.form.artist_name, track_name: '', genre: '' },
   consentAi: prev.consentAi,
   consentSync: prev.consentSync,
-  consentExclusive: prev.consentExclusive,
   intake: {
     ...EMPTY_INTAKE,
     distributor: prev.intake.distributor,
@@ -84,6 +83,7 @@ export const carryOverSong = (prev) => emptySong({
     ...emptyRights(),
     self_legal_name: prev.rights.self_legal_name,
     legal_name_touched: prev.rights.legal_name_touched,
+    account_legal_name: prev.rights.account_legal_name,
   },
 });
 
@@ -117,7 +117,8 @@ export const songMissing = (song) => {
   if (!consentAi && !consentSync) missing.push('how it can be used');
   if (consentAi && usesLoops(declarations)) missing.push('AI training off (songs with loops are sync only)');
   missing.push(...declarationsMissing(declarations, { rightsEmails: rightsEmails(rights), requireFiles: true }));
-  if (!isRightsValid(rights, { requirePro: consentSync })) {
+  if (legalNameMismatch(rights)) missing.push('your legal name as on your account');
+  else if (!isRightsValid(rights, { requirePro: consentSync })) {
     missing.push(consentSync && writersMissingPro(rights).length ? "every writer's PRO and IPI" : 'splits');
   }
   if (consentSync && !isIntakeValid(intake)) missing.push('sync details');
@@ -127,8 +128,6 @@ export const songMissing = (song) => {
 
 const CHECKBOX_CLASS =
   'mt-0.5 rounded-[3px] border-white/30 data-[state=checked]:border-electric data-[state=checked]:bg-electric data-[state=checked]:text-white focus-visible:ring-electric';
-const RADIO_CLASS =
-  'mt-0.5 border-white/30 text-electric data-[state=checked]:border-electric focus-visible:ring-electric [&_svg]:fill-electric';
 
 // Controlled single-song form. `value` is a song object; `onChange` merges a partial
 // into it. `index` keeps data-testids and ids unique across the batch.
@@ -144,14 +143,7 @@ const SongForm = ({ value, onChange, index, disabled, agreementStatus, getToken 
 
   const update = (key) => (e) => {
     const v = e.target.value;
-    const next = { form: { ...value.form, [key]: v } };
-    // Prefill the legal name from the artist name until the artist edits it (PRD-02 10.1).
-    if (key === 'artist_name') {
-      next.rights = value.rights.legal_name_touched
-        ? value.rights
-        : { ...value.rights, self_legal_name: v };
-    }
-    patch(next);
+    patch({ form: { ...value.form, [key]: v } });
   };
 
 
@@ -166,19 +158,35 @@ const SongForm = ({ value, onChange, index, disabled, agreementStatus, getToken 
     }
   };
 
+  // Oct 26: prefill the legal name from the signed Artist Agreement (not the artist name),
+  // and keep the account name on the splits so a different name is flagged.
+  const accountName = agreementStatus?.legal_name || '';
+  useEffect(() => {
+    if (!accountName || value.rights.account_legal_name === accountName) return;
+    patch({ rights: {
+      ...value.rights,
+      account_legal_name: accountName,
+      self_legal_name: value.rights.legal_name_touched && value.rights.self_legal_name
+        ? value.rights.self_legal_name : accountName,
+    } });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accountName, value.rights.account_legal_name]);
+
   const toggleSync = (checked) => {
     patch({ consentSync: checked, proNotice: false, intake: checked ? value.intake : EMPTY_INTAKE });
   };
 
-  // Agreement 3.5: "not affiliated with a PRO" means AI training only.
-  const notAffiliated = () => patch({ consentSync: false, intake: EMPTY_INTAKE, proNotice: true });
+  // Agreement 3.5: "not affiliated with a PRO" means AI training only. Ticking it unchecks
+  // sync but keeps the PRO box open with the reason; unticking turns sync back on.
+  const notAffiliated = (checked) => (checked
+    ? patch({ consentSync: false, intake: EMPTY_INTAKE, proNotice: true })
+    : patch({ consentSync: true, proNotice: false }));
 
   // Agreement 3.6: songs with loops are sync only.
   const setDeclarations = (d) => patch(usesLoops(d)
     ? { declarations: d, consentAi: false }
     : { declarations: d });
   const loopSong = usesLoops(value.declarations);
-  const exclusiveOffered = !!agreementStatus?.exclusive_supported;
 
   const handleFile = (f) => {
     if (!f) return;
@@ -392,7 +400,7 @@ const SongForm = ({ value, onChange, index, disabled, agreementStatus, getToken 
 
       <div className="border-t border-white/10" />
 
-      {/* Consent (Brief 25b C1: sync first, then AI training, then the exclusive choice) */}
+      {/* Consent (Brief 25b C1: sync first, then AI training). Exclusive is a Vault switch. */}
       <div className="space-y-3">
         <Label className="text-slate-300">How can this upload be used? *</Label>
         {[
@@ -437,31 +445,6 @@ const SongForm = ({ value, onChange, index, disabled, agreementStatus, getToken 
             </span>
           </label>
         ))}
-        {value.proNotice && !value.consentSync && (
-          <p className="rounded-lg border border-amber-400/35 bg-amber-400/[0.06] p-3 text-xs text-amber-100"
-            data-testid={tid('pro-notice')}>{PRO_REQUIRED_MESSAGE}</p>
-        )}
-        {exclusiveOffered && (value.consentAi || value.consentSync) && (
-          <RadioGroup
-            value={value.consentExclusive ? 'exclusive' : 'non_exclusive'}
-            onValueChange={(v) => patch({ consentExclusive: v === 'exclusive' })}
-            disabled={disabled}
-            className="ml-8 gap-2"
-            data-testid={tid('exclusive-choice')}
-          >
-            {[
-              ['non_exclusive', 'Non-exclusive. Multiple buyers can license this song.'],
-              ['exclusive', 'Exclusive. Give an option for buyers to purchase this license outright for a higher price.'],
-            ].map(([v, label]) => (
-              <label key={v} className={`flex cursor-pointer items-start gap-2.5 rounded-lg border px-3 py-2.5 text-sm ${
-                (value.consentExclusive ? 'exclusive' : 'non_exclusive') === v
-                  ? 'border-electric/60 bg-electric/[0.06] text-white' : 'border-white/10 text-slate-300'}`}>
-                <RadioGroupItem value={v} className={RADIO_CLASS} />
-                <span>{label}</span>
-              </label>
-            ))}
-          </RadioGroup>
-        )}
         {!value.consentAi && !value.consentSync && (
           <p className="text-xs text-red-400">Choose at least one.</p>
         )}
@@ -487,8 +470,8 @@ const SongForm = ({ value, onChange, index, disabled, agreementStatus, getToken 
       <RightsSection value={value.rights} onChange={(r) => patch({ rights: r })} disabled={disabled}
         requirePro={value.consentSync} />
 
-      {/* Sync details */}
-      {value.consentSync && (
+      {/* Sync details (stays open, PRO box only, while "not affiliated" is ticked) */}
+      {(value.consentSync || value.proNotice) && (
         <div
           data-testid={tid('upload-sync-panel')}
           className="space-y-6 rounded-2xl border border-cyan/25 bg-cyan/[0.03] p-5 sm:p-6"
@@ -500,7 +483,7 @@ const SongForm = ({ value, onChange, index, disabled, agreementStatus, getToken 
             </p>
           </div>
           <SyncIntakeFields value={value.intake} onChange={(i) => patch({ intake: i })}
-            disabled={disabled} onNotAffiliated={notAffiliated} />
+            disabled={disabled} onNotAffiliated={notAffiliated} notAffiliated={value.proNotice} />
         </div>
       )}
 

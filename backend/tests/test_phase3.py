@@ -406,3 +406,14 @@ def test_cleared_track_keeps_fingerprint_and_duration(pipeline):
     assert status == "mastering"
     assert extra == {"fingerprint_result": "CLEARED", "metadata.duration_s": 183.46}
     server._run_clearance.assert_not_awaited()
+
+
+def test_pro_other_needs_names():
+    doc = cleared_doc()
+    doc["intake"].update(pro_name="Other", pro_other=None)
+    assert evaluate(doc)["checks"]["pro"]["reason"] == "pro"
+    doc["intake"].update(pro_other="KODA")
+    doc["rights"]["writers"][0].update(society="Other", society_other=None)
+    assert evaluate(doc)["checks"]["pro"]["reason"] == "pro_writers"
+    doc["rights"]["writers"][0]["society_other"] = "KODA"
+    assert evaluate(doc)["checks"]["pro"]["result"] == "pass"

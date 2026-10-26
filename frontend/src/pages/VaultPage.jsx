@@ -160,6 +160,14 @@ const VaultPage = () => {
           </div>
         </div>
 
+        {/* Oct 26: uploads are allowed before approval and held until then. */}
+        {isSignedIn && !['artist', 'admin'].includes(user?.publicMetadata?.role) && (
+          <div className="mb-6 rounded-xl border border-amber-400/35 bg-amber-400/[0.06] p-4 text-sm text-amber-100"
+            data-testid="vault-pending-approval">
+            Your artist account is pending approval. We will email you when you're cleared and able to list your songs in the OVOXI Catalog.
+          </div>
+        )}
+
         <div className="mb-6 flex gap-1 border-b border-white/10" role="tablist">
           {[['tracks', 'My Tracks'], ['profile', 'Sync Profile']].map(([key, label]) => (
             <button key={key} type="button" role="tab" aria-selected={tab === key} onClick={() => setTab(key)}

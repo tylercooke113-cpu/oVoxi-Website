@@ -74,6 +74,9 @@ export const api = {
     (await axios.get(`${API}/admin/sync/profiles`, await authed(getToken))).data,
   adminDelist: async (getToken, id, delisted) =>
     (await axios.post(`${API}/admin/sync/tracks/${id}/delist`, { delisted }, await authed(getToken))).data,
+  // Oct 26: approve an artist (sets role in Clerk, processes held songs, emails them).
+  adminApproveArtist: async (getToken, userId) =>
+    (await axios.post(`${API}/admin/artists/${encodeURIComponent(userId)}/approve`, null, await authed(getToken))).data,
   // Brief 25b D5 / D1 / F: exclusive sales and the two reviews.
   adminRecordExclusive: async (getToken, id, body) =>
     (await axios.post(`${API}/admin/sync/tracks/${id}/exclusive-licenses`, body, await authed(getToken))).data,
