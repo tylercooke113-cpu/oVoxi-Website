@@ -69,7 +69,7 @@ export default function ConsentPrompt() {
             <ToggleRow id="consent-analytics" label="Analytics and session replay"
               checked={analytics} onChange={setAnalytics} />
             <ToggleRow id="consent-advertising"
-              label="Advertising and data sharing (selling or sharing personal information)"
+              label="Advertising and data sharing"
               checked={gpc ? false : advertising} onChange={setAdvertising} disabled={gpc}
               note={gpc ? GPC_NOTE : undefined} />
           </div>

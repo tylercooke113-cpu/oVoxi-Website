@@ -74,7 +74,7 @@ const SECTIONS = [
         <ul className={UL}>
           <li>Essential (always on)</li>
           <li>Analytics and session replay</li>
-          <li>Advertising and data sharing (selling or sharing personal information)</li>
+          <li>Advertising and data sharing</li>
         </ul>
         <p>Your choice applies for the rest of that visit. If you are in the European Economic Area, the United Kingdom or Switzerland, a choice to reject is remembered on that device for 6 months instead of being asked again each visit.</p>
       </>
