@@ -4,6 +4,7 @@ import { Menu, X } from 'lucide-react';
 import { useUser, useAuth } from '@clerk/clerk-react';
 import { publicApi } from '../sync/api';
 import { accountFlags } from '../lib/account';
+import { readFlag, writeFlag } from '../lib/siteFlags';
 import BuyerAccessModal from './BuyerAccessModal';
 
 const Logo = () => (
@@ -23,28 +24,27 @@ export const Header = () => {
   const [open, setOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [buyerPrompt, setBuyerPrompt] = useState(false);
-  const [pricingVisible, setPricingVisible] = useState(() => {
-    try { return sessionStorage.getItem('ovoxi_pricing_visible') === '1'; } catch { return false; }
-  });
-  const [catalogVisible, setCatalogVisible] = useState(() => {
-    try { return sessionStorage.getItem('ovoxi_library_visible') === '1'; } catch { return false; }
-  });
+  // Until Clerk loads, assume a signed-out visit (the safe default).
+  const [pricingVisible, setPricingVisible] = useState(() => readFlag('pricing_visible', false));
+  const [catalogVisible, setCatalogVisible] = useState(() => readFlag('library_visible', false));
 
   // B5 / Brief 23 C1: the Pricing and catalog links follow /api/sync/pricing. `visible` gates
   // Pricing; `library_visible` (SYNC_LIBRARY_ENABLED or admin) gates the catalog links. Fetch
-  // once per load; cache the flags so links do not flash on the next load.
+  // once per load and again on sign-in or sign-out. Flags are cached per auth state, so an
+  // admin's flags never show after logout.
   useEffect(() => {
     if (!isLoaded) return undefined;
+    const signedIn = !!authedIn;
+    setPricingVisible(readFlag('pricing_visible', signedIn));
+    setCatalogVisible(readFlag('library_visible', signedIn));
     let alive = true;
     publicApi.pricing(getToken, authedIn)
       .then((d) => {
         if (!alive) return;
         setPricingVisible(!!d.visible);
         setCatalogVisible(!!d.library_visible);
-        try {
-          sessionStorage.setItem('ovoxi_pricing_visible', d.visible ? '1' : '0');
-          sessionStorage.setItem('ovoxi_library_visible', d.library_visible ? '1' : '0');
-        } catch { /* ignore */ }
+        writeFlag('pricing_visible', signedIn, !!d.visible);
+        writeFlag('library_visible', signedIn, !!d.library_visible);
       })
       .catch(() => {});
     return () => { alive = false; };

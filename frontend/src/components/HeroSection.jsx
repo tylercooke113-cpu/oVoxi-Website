@@ -5,18 +5,23 @@ import { HeroCanvas } from './HeroCanvas';
 import { PrimaryCTA, GhostCTA } from './CtaButtons';
 import { BRAND } from '../content';
 import { publicApi } from '../sync/api';
+import { readFlag, writeFlag } from '../lib/siteFlags';
 
 export const HeroSection = () => {
   const { getToken, isSignedIn, isLoaded } = useAuth();
-  const [catalogVisible, setCatalogVisible] = useState(() => {
-    try { return sessionStorage.getItem('ovoxi_library_visible') === '1'; } catch { return false; }
-  });
-  // Same rule as Header: library_visible = SYNC_LIBRARY_ENABLED or admin.
+  const [catalogVisible, setCatalogVisible] = useState(() => readFlag('library_visible', false));
+  // Same rule as Header: library_visible = SYNC_LIBRARY_ENABLED or admin, cached per auth state.
   useEffect(() => {
     if (!isLoaded) return undefined;
+    const signedIn = !!isSignedIn;
+    setCatalogVisible(readFlag('library_visible', signedIn));
     let alive = true;
     publicApi.pricing(getToken, isSignedIn)
-      .then((d) => { if (alive) setCatalogVisible(!!d.library_visible); })
+      .then((d) => {
+        if (!alive) return;
+        setCatalogVisible(!!d.library_visible);
+        writeFlag('library_visible', signedIn, !!d.library_visible);
+      })
       .catch(() => {});
     return () => { alive = false; };
   }, [getToken, isSignedIn, isLoaded]);
