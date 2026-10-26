@@ -180,21 +180,27 @@ def display_status(lic: dict, now: datetime) -> str:
     return "active"
 
 
+def initials(name: str) -> str:
+    """"Jordan Smith" -> "J. S." Used on the public page in place of a person's name."""
+    letters = [part[0].upper() for part in (name or "").split() if part[:1].isalpha()]
+    return " ".join(f"{c}." for c in letters)
+
+
 def public_view(lic: dict, now: datetime) -> dict:
-    """Allowlist for the public verification page. No email, price, IPI or client."""
+    """Allowlist for the public verification page (Privacy Policy section 5): the song, the
+    license type, the term and the licensee's company or initials. No email, price, IPI,
+    project, client or terms version."""
     scope = lic.get("scope") or {}
     return {
         "license_id": lic.get("license_id"),
         "track_title": lic.get("track_title"),
         "artist_display_name": lic.get("artist_display_name"),
         "license_label": lic.get("license_label"),
-        "licensed_to": lic.get("licensee_company") or lic.get("licensee_name") or "",
-        "project_name": (lic.get("project") or {}).get("name") or "",
+        "licensed_to": lic.get("licensee_company") or initials(lic.get("licensee_name") or ""),
         "territory": scope.get("territory"),
         "term_label": scope.get("term_label"),
         "term_end": scope.get("term_end"),
         "issued_at": lic.get("issued_at"),
-        "terms_version": lic.get("terms_version"),
         "status": display_status(lic, now),
         "refunded_at": lic.get("refunded_at"),
     }
@@ -205,6 +211,10 @@ def owner_view(lic: dict, now: datetime, files=None) -> dict:
     scope = lic.get("scope") or {}
     view = public_view(lic, now)
     view.update({
+        # The owner sees their own full details, kept off the public page.
+        "licensed_to": lic.get("licensee_company") or lic.get("licensee_name") or "",
+        "project_name": (lic.get("project") or {}).get("name") or "",
+        "terms_version": lic.get("terms_version"),
         "source": lic.get("source") or "single",
         "licensee_company": lic.get("licensee_company") or "",
         "client": (lic.get("project") or {}).get("client") or "",

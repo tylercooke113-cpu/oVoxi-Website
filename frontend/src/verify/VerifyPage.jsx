@@ -49,7 +49,7 @@ export default function VerifyPage() {
     const full = l.status === 'active' || l.status === 'expired';
     const rows = full
       ? [['License ID', l.license_id], ['Track', `${l.track_title} by ${l.artist_display_name}`], ['License type', l.license_label],
-         ['Licensed to', l.licensed_to], ['Project', l.project_name], ['Territory', l.territory], ['Term', l.term_label],
+         ['Licensed to', l.licensed_to], ['Territory', l.territory], ['Term', l.term_label],
          ['Issued', fmt(l.issued_at)]]
       : [['License ID', l.license_id], ['Track', `${l.track_title} by ${l.artist_display_name}`], ['License type', l.license_label], ['Issued', fmt(l.issued_at)]];
     card = (

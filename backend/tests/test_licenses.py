@@ -133,11 +133,25 @@ def test_public_view_allowlist():
     lic = lic_mod.build_license_from_order(make_order(test_mode=False), TRACK, NOW)
     pv = lic_mod.public_view(lic, NOW)
     assert set(pv) == {"license_id", "track_title", "artist_display_name", "license_label", "licensed_to",
-                       "project_name", "territory", "term_label", "term_end", "issued_at", "terms_version",
-                       "status", "refunded_at"}
+                       "territory", "term_label", "term_end", "issued_at", "status", "refunded_at"}
     assert pv["licensed_to"] == "Rivera Studio"
-    for leaked in ("buyer_email", "client", "cue_sheet", "media_spend_cap_cents", "include_stems"):
+    for leaked in ("buyer_email", "client", "cue_sheet", "media_spend_cap_cents", "include_stems",
+                   "project_name", "terms_version"):
         assert leaked not in pv
+
+
+def test_public_view_shows_initials_without_a_company():
+    lic = lic_mod.build_license_from_order(make_order(test_mode=False), TRACK, NOW)
+    lic = {**lic, "licensee_company": "", "licensee_name": "Jordan  Rivera"}
+    assert lic_mod.public_view(lic, NOW)["licensed_to"] == "J. R."
+    owner = lic_mod.owner_view(lic, NOW)
+    assert owner["licensed_to"] == "Jordan  Rivera" and owner["project_name"]
+
+
+def test_initials():
+    assert lic_mod.initials("Jordan Smith") == "J. S."
+    assert lic_mod.initials("cher") == "C."
+    assert lic_mod.initials("") == ""
 
 
 # --------------------------------------------------------------------------- HTTP: account + verify
