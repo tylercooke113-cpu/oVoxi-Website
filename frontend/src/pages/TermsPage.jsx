@@ -16,7 +16,7 @@ const SECTIONS = [
       <>
         <p>
           These Terms of Service ("Terms") are an agreement between you and OVOXI, Inc., a Delaware
-          corporation, of 6 Catherine Court, Milford CT 06460 ("OVOXI", "we", "us" or "our"). They
+          corporation, of 2389 Main St. Ste 100, Glastonbury, CT, 06033, United States ("OVOXI", "we", "us" or "our"). They
           govern your use of {BRAND.domain} and every related service we operate (the "Platform").
         </p>
         <p>
@@ -126,7 +126,8 @@ const SECTIONS = [
           Wallet until you do.
         </p>
         <p>
-          Your OVOXI Wallet is a record of what we owe you. It is not a bank or deposit account, does not
+          Your OVOXI Wallet is a record of amounts credited to you under the applicable agreements and does
+          not itself create or modify any payment obligation. It is not a bank or deposit account, does not
           earn interest, and its balance cannot be spent, transferred or withdrawn on the Platform except
           through the scheduled payments. We may hold amounts tied to a claim, a refund, a chargeback or
           suspected fraud, and we may correct errors, including by deducting an overpayment from later
@@ -179,7 +180,7 @@ const SECTIONS = [
           Millennium Copyright Act. If you believe material on the Platform infringes your copyright,
           send a notice to our designated agent:
         </p>
-        <p>OVOXI, Inc., Attn: Copyright Agent, 6 Catherine Court, Milford CT 06460, <Mail /></p>
+        <p>OVOXI, Inc., Attn: Copyright Agent, 2389 Main St. Ste 100, Glastonbury, CT, 06033, United States, <Mail /></p>
         <p>
           Your notice must include: your physical or electronic signature; identification of the
           copyrighted work; identification of the material you say infringes it and where it appears on
@@ -315,7 +316,7 @@ const SECTIONS = [
   {
     heading: '19. Contact',
     body: (
-      <p>OVOXI, Inc., 6 Catherine Court, Milford CT 06460, <Mail /></p>
+      <p>OVOXI, Inc., 2389 Main St. Ste 100, Glastonbury, CT, 06033, United States, <Mail /></p>
     ),
   },
 ];

@@ -20,7 +20,7 @@ const SECTIONS = [
       <>
         <p>
           {BRAND.name} ("{BRAND.name}", "we", "us" or "our") is OVOXI, Inc., a Delaware corporation,
-          of 6 Catherine Court, Milford CT 06460. We operate {BRAND.domain}.
+          of 2389 Main St. Ste 100, Glastonbury, CT, 06033, United States. We operate {BRAND.domain}.
         </p>
         <p>
           Through the site, artists license their music to us for AI training and for sync, and we
@@ -361,7 +361,7 @@ const SECTIONS = [
     body: (
       <p>
         For questions about this policy or your information, email <MailLink /> or write to OVOXI,
-        Inc., 6 Catherine Court, Milford CT 06460.
+        Inc., 2389 Main St. Ste 100, Glastonbury, CT, 06033, United States.
       </p>
     ),
   },
