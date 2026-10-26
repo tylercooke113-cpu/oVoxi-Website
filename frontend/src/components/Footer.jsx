@@ -3,6 +3,14 @@ import { Link } from 'react-router-dom';
 import { Mail } from 'lucide-react';
 import { BRAND } from '../content';
 
+// Brief 26: these four links appear on every page (Privacy Policy section 6).
+export const LEGAL_LINKS = [
+  { label: 'Privacy Policy', to: '/privacy', testid: 'footer-link-privacy' },
+  { label: 'Data Collection Policy', to: '/data-policy', testid: 'footer-link-data-policy' },
+  { label: 'Do Not Sell or Share My Personal Information', to: '/privacy-choices', testid: 'footer-link-privacy-choices' },
+  { label: 'Terms of Service', to: '/terms', testid: 'footer-link-terms' },
+];
+
 const COLUMNS = [
   {
     heading: 'Company',
@@ -59,13 +67,12 @@ export const Footer = () => (
         <p className="text-xs text-slate-500">
           © {new Date().getFullYear()} OVOXI · {BRAND.domain}
         </p>
-        <div className="flex items-center gap-6 text-xs text-slate-500">
-          <Link to="/privacy" data-testid="footer-link-privacy" className="hover:text-slate-300 transition-colors">
-            Privacy
-          </Link>
-          <Link to="/terms" data-testid="footer-link-terms" className="hover:text-slate-300 transition-colors">
-            Terms
-          </Link>
+        <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs text-slate-500">
+          {LEGAL_LINKS.map((l) => (
+            <Link key={l.to} to={l.to} data-testid={l.testid} className="hover:text-slate-300 transition-colors">
+              {l.label}
+            </Link>
+          ))}
         </div>
       </div>
     </div>

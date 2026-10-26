@@ -25,6 +25,11 @@ import DownloadPage from './sync/DownloadPage';
 import AccountPage from './account/AccountPage';
 import VerifyPage from './verify/VerifyPage';
 import LicenseTermsPage from './pages/LicenseTermsPage';
+import PrivacyChoicesPage from './pages/PrivacyChoicesPage';
+import DataPolicyPage from './pages/DataPolicyPage';
+import ConsentManager from './privacy/ConsentManager';
+import ConsentPrompt from './privacy/ConsentPrompt';
+import AnalyticsBridge from './privacy/AnalyticsBridge';
 
 const NEW_MARKETING = process.env.REACT_APP_NEW_MARKETING === 'true';
 const MarketingPage = lazy(() => import('./marketing/MarketingPage'));
@@ -83,6 +88,8 @@ function AppContent() {
           <Route path='/license-terms' element={<LicenseTermsPage />} />
           <Route path='/appeal/:submissionId' element={<AppealPage />} />
           <Route path='/privacy' element={<PrivacyPage />} />
+          <Route path='/privacy-choices' element={<PrivacyChoicesPage />} />
+          <Route path='/data-policy' element={<DataPolicyPage />} />
           <Route path='/terms' element={<TermsPage />} />
           <Route path='/cosign/:token' element={<CosignPage />} />
           {/* PRD-03 phase 5: the library is gated server-side by SYNC_LIBRARY_ENABLED (admins always). */}
@@ -101,6 +108,9 @@ function AppContent() {
         </Routes>
       </main>
       {!isMarketingHome && <Footer />}
+      <ConsentManager />
+      <AnalyticsBridge />
+      <ConsentPrompt />
       <Toaster theme='dark' position='bottom-right' richColors />
     </>
   );

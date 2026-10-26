@@ -7,6 +7,7 @@ import { accountApi, errorMessage } from '../sync/api';
 import { accountFlags } from '../lib/account';
 import BuyerAccessModal from '../components/BuyerAccessModal';
 import SubscriptionTab from './SubscriptionTab';
+import PrivacyChoicesPanel from '../privacy/PrivacyChoicesPanel';
 
 const CHIP = {
   active: 'text-green-400 border-green-400/25 bg-green-400/[0.08]',
@@ -104,7 +105,8 @@ export default function AccountPage() {
   const { getToken } = useAuth();
   const [data, setData] = useState(null);
   const [error, setError] = useState(false);
-  const [tab, setTab] = useState(params.get('tab') === 'subscription' ? 'sub' : 'lic');
+  const initialTab = { subscription: 'sub', privacy: 'privacy' }[params.get('tab')] || 'lic';
+  const [tab, setTab] = useState(initialTab);
   const [q, setQ] = useState('');
   const [licFilter, setLicFilter] = useState('all'); // 'all' | 'subscription' (set by "View my projects")
   const started = useRef(false);
@@ -130,9 +132,22 @@ export default function AccountPage() {
       && (!s || [l.track_title, l.project_name, l.license_id].some((x) => (x || '').toLowerCase().includes(s))));
   }, [licenses, q, licFilter]);
 
-  // An artist without buyer access gets the prompt, not the account page (Brief 23 C3).
+  // An artist without buyer access gets the prompt, not the account page (Brief 23 C3),
+  // except for Privacy choices, which every account has (Brief 26).
   const f = accountFlags(user, isSignedIn);
-  if (isLoaded && isSignedIn && f.isArtist && !f.hasBuyerAccess && !f.isAdmin) {
+  const privacyOnly = isLoaded && isSignedIn && f.isArtist && !f.hasBuyerAccess && !f.isAdmin;
+  if (privacyOnly && tab === 'privacy') {
+    return (
+      <div className="min-h-screen bg-ink pt-24 pb-16 px-6">
+        <div className="mx-auto max-w-2xl">
+          <h1 className="font-heading text-3xl font-semibold text-white">Privacy choices</h1>
+          <p className="mt-1 mb-6 text-sm text-slate-400">How OVOXI may use your data when you are signed in.</p>
+          <PrivacyChoicesPanel source="account" />
+        </div>
+      </div>
+    );
+  }
+  if (privacyOnly) {
     return (
       <div className="min-h-screen bg-ink">
         <BuyerAccessModal onClose={() => navigate('/vault')} onGranted={() => {}} />
@@ -153,12 +168,14 @@ export default function AccountPage() {
         <h1 className="font-heading text-3xl font-semibold text-white">My account</h1>
         <p className="mt-1 text-sm text-slate-400">{[name, company, email].filter(Boolean).join(' · ')}</p>
         <div className="mt-6 flex gap-1 border-b border-white/10">
-          {[['lic', 'Licenses'], ['sub', 'Subscription']].map(([k, l]) => (
+          {[['lic', 'Licenses'], ['sub', 'Subscription'], ['privacy', 'Privacy choices']].map(([k, l]) => (
             <button key={k} onClick={() => setTab(k)}
               className={`-mb-px border-b-2 px-4 py-2.5 text-sm ${tab === k ? 'border-electric text-white' : 'border-transparent text-slate-400 hover:text-white'}`}>{l}</button>
           ))}
         </div>
-        {tab === 'sub' ? (
+        {tab === 'privacy' ? (
+          <div className="mt-5 max-w-2xl"><PrivacyChoicesPanel source="account" /></div>
+        ) : tab === 'sub' ? (
           <SubscriptionTab getToken={getToken} onViewProjects={viewSubscriptionProjects} />
         ) : licenses.length === 0 ? (
           <div className="mt-5 rounded-2xl border border-dashed border-white/10 p-7 text-center text-slate-400">

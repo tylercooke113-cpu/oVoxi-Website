@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { LEGAL_LINKS } from '../../components/Footer';
 import { useMarketingPath } from '../MarketingPathContext';
 import { Reveal } from '../components/Reveal';
 
@@ -39,25 +40,18 @@ export default function Close() {
           <span className="font-jetmono text-[13px] text-ovx-faint uppercase tracking-[0.12em]">
             OVOXI
           </span>
-          <div className="flex gap-8">
+          <div className="flex flex-wrap gap-x-8 gap-y-3">
             <a
               href="mailto:hello@ovoxi.net"
               className="font-body text-sm text-ovx-faint hover:text-white transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-ovx-cyan focus-visible:ring-offset-2 focus-visible:ring-offset-black"
             >
               Contact
             </a>
-            <Link
-              to="/privacy"
-              className="font-body text-sm text-ovx-faint hover:text-white transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-ovx-cyan focus-visible:ring-offset-2 focus-visible:ring-offset-black"
-            >
-              Privacy
-            </Link>
-            <Link
-              to="/terms"
-              className="font-body text-sm text-ovx-faint hover:text-white transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-ovx-cyan focus-visible:ring-offset-2 focus-visible:ring-offset-black"
-            >
-              Terms
-            </Link>
+            {LEGAL_LINKS.map((l) => (
+              <Link key={l.to} to={l.to} className="font-body text-sm text-ovx-faint hover:text-white transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-ovx-cyan focus-visible:ring-offset-2 focus-visible:ring-offset-black">
+                {l.label}
+              </Link>
+            ))}
           </div>
         </footer>
       </div>
