@@ -58,6 +58,12 @@ def vault_track_view(doc: dict) -> dict:
         "on_sync_profile": bool(doc.get("on_sync_profile")) if (sync_on or ai_on) else False,
         # Older uploads never answered the samples / AI-tools questions (Brief 25b D1).
         "needs_declarations": not (intake.get("samples") and intake.get("ai_tools")),
+        # The artist's own loop list (Agreement 3.6) and whether each license is on file.
+        "loops": [{"creator_name": lp.get("creator_name"), "loop_name": lp.get("loop_name"),
+                   "source": lp.get("source"), "has_license": bool(lp.get("license_key"))}
+                  for lp in (intake.get("loops") or [])],
+        "loop_license_status": ((doc.get("loop_licenses_reviewed") or {}).get("result") or
+                                ("pending" if intake.get("loops") else None)),
         "delisted_by_admin": doc.get("sync_delisted_by_admin") is True,
         "cosign_required": doc.get("cosign_required") is True,
         "cosign_status": doc.get("cosign_status"),

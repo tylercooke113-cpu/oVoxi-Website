@@ -13,7 +13,19 @@ MAX_MOODS = 3
 
 VOCALS = ("vocal", "instrumental")
 
-SAMPLE_DECLARATIONS = ("original", "cleared_sample", "royalty_free_loop")
+SAMPLE_DECLARATIONS = ("original", "cleared_sample", "royalty_free_loop")   # every value ever stored
+
+# Brief 25b (Agreement 3.6): samples of other recordings are not allowed at all. A song
+# with royalty-free loops may be offered for sync only, after each loop creator is listed
+# in the splits and consents, and Tyler approves each loop license.
+UPLOAD_SAMPLE_CHOICES = ("original", "royalty_free_loop")
+MAX_LOOPS = 4
+LOOP_SOURCES = ("Splice", "Loopmasters / Loopcloud", "Producer directly", "Other")
+LOOP_LICENSE_TYPES = {"application/pdf": ".pdf", "image/png": ".png", "image/jpeg": ".jpg"}
+LOOP_LICENSE_MAX_BYTES = 10 * 1024 * 1024
+SAMPLES_NOT_ALLOWED_MESSAGE = "Songs that sample other recordings can't be uploaded."
+LOOPS_NO_AI_MESSAGE = ("Songs with loops or samples can't be offered for AI training. Most loop and "
+                       "sample licenses, including Splice and Loopmasters, don't allow it.")
 
 # AI-tools disclosure (Brief 25b Part D1, Agreement 9(e)). "full" is refused at upload;
 # "partial" needs an admin review before the track clears.

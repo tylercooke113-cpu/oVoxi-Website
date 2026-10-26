@@ -284,7 +284,7 @@ def test_ai_only_stores_manual_rights(client, fake_db):
     assert resp.status_code == 200, resp.text
     doc = inserted_doc(fake_db)
     # Brief 25b D1: every upload stores samples and AI tools; no sync fields for AI-only.
-    assert set(doc["intake"]) == {"samples", "samples_attested_at", "ai_tools",
+    assert set(doc["intake"]) == {"samples", "samples_attested_at", "loops", "ai_tools",
                                   "ai_tools_detail", "ai_tools_attested_at"}
     assert [p["share_bp"] for p in doc["rights"]["publishers"]] == [5000, 5000]
 

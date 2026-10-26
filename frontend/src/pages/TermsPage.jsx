@@ -95,6 +95,12 @@ const SECTIONS = [
           may be offered for AI training only.
         </p>
         <p>
+          Songs may not contain samples of other recordings or compositions. A song that uses a
+          royalty-free loop may be offered for sync only, after each loop creator is listed on the song
+          and gives their consent, and after we approve the loop's license. Songs with loops can't be
+          offered for AI training.
+        </p>
+        <p>
           When you upload a song, you confirm that every statement you make about it is true, including
           its ownership splits, its co-owners, its samples, any part made with artificial intelligence
           tools, its performing rights organization details and its Content ID status. We may refuse,

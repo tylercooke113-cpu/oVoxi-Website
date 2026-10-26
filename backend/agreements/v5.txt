@@ -92,6 +92,8 @@ IN CONSIDERATION OF the mutual covenants in this Agreement, including the Licens
 
 3.5 Sync and Performing Rights Organizations. A Licensed Work may be opted into the Sync Field of Use only if every writer of its musical composition is affiliated with a performing rights organization and that organization and the writer's IPI number are entered on the Platform. A Licensed Work without that information may be opted into the AI Training Field of Use only.
 
+3.6 Samples and Loops. A Licensed Work may not contain a sample or interpolation of any other sound recording or musical composition. A Licensed Work that contains a royalty-free loop or other licensed sound may be opted into the Sync Field of Use only, and only after (a) the creator of each loop is listed on the Platform as a holder of rights in the Licensed Work, with their share of the writing, publishing and master, (b) each creator has given their consent under the Licensee's Co-owner Consent and License, and (c) the license for each loop has been provided on the Platform and approved by the Licensee. A Licensed Work that contains a loop may not be opted into the AI Training Field of Use.
+
 ## 4. Permitted Use; Modification; Stems
 
 4.1 The Licensee is permitted to use the Licensed Works, within their Opted-In Uses, in the following ways: (a) for all Licensed Works: Use, Distribute, Sell / License, Reproduce / Copy, Display / Make available, Modify / Adapt, Sublicense to third parties; store, host, index, catalog and create metadata for; and market and offer for license; (b) for the AI Training Field of Use: Train AI/ML models, Develop AI/ML systems, Test and evaluate models, Machine-learning/data processing, Creating copies necessary for those activities, Storing and transmitting the recordings to authorised AI licensees, Allowing authorised third parties to do the above; and (c) for the Sync Field of Use: Licensing music for sync, advertising, film, television, video, games, social media, online content, trailers/promotional content, reproduction and distribution of productions containing the music.
@@ -152,7 +154,7 @@ IN CONSIDERATION OF the mutual covenants in this Agreement, including the Licens
 
 - (a) the Licensor owns or controls all rights in the sound recording and the underlying composition needed to grant the License, or has written authority from every co-writer, co-owner, publisher, label and other rights holder to grant it on their behalf;
 
-- (b) the Licensed Work contains no samples, interpolations or other third-party material that has not been fully cleared for the Opted-In Uses;
+- (b) the Licensed Work contains no sample or interpolation of any other sound recording or musical composition, and every loop or other licensed sound in it is disclosed on the Platform as described in Section 3.6;
 
 - (c) every performer whose voice or performance appears in the Licensed Work has consented to the Opted-In Uses, including use of their voice for the AI Training Field of Use;
 

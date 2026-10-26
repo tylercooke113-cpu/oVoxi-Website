@@ -442,3 +442,5 @@ def test_cosign_v3_renders_without_version_or_placeholders():
     text = cosign.render_text(values, "cosign_v3")
     assert "{{" not in text.replace(aa.SIGNATURE_MARKER, "")
     assert "version" not in text.lower()
+    assert "exclusive for the AI Training Field of Use and for the Sync Field of Use" in text
+    assert "non-exclusive for the Sync" not in text

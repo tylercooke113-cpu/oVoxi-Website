@@ -34,7 +34,7 @@ IN CONSIDERATION OF the Licensee's payment of the Co-owner's share of the Revenu
 
 ## 2. Grant of License
 
-2.1 The Co-owner grants to the Licensee, for the Co-owner's Interest in the Work, the License described in Section 3 of the Artist Agreement, on the terms of the Artist Agreement, as if the Co-owner were the Licensor and the Work were its only Licensed Work, with the changes set out in Section 4 of this Consent. The License is exclusive for the AI Training Field of Use and non-exclusive for the Sync Field of Use, except that it is exclusive for the Sync Field of Use while the Work is under an Exclusive Election, and applies to each field of use only while that use is opted in for the Work on the Platform.
+2.1 The Co-owner grants to the Licensee, for the Co-owner's Interest in the Work, the License described in Section 3 of the Artist Agreement, on the terms of the Artist Agreement, as if the Co-owner were the Licensor and the Work were its only Licensed Work, with the changes set out in Section 4 of this Consent. The License is exclusive for the AI Training Field of Use and for the Sync Field of Use, and applies to each field of use only while that use is opted in for the Work on the Platform.
 
 2.2 The Co-owner authorizes the Uploader to select and change the Opted-In Uses for the Work on the Platform, and to make or withdraw the Exclusive Election described in Section 3.4 of the Artist Agreement for the Work, and agrees to be bound by those selections and elections as they are recorded on the Platform. The Licensee shall give the Co-owner the notice described in Section 3.4(e) of the Artist Agreement for any Exclusive License of the Work.
 

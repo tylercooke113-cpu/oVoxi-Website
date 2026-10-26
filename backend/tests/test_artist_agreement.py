@@ -522,6 +522,8 @@ def test_v5_text_sync_and_ai_exclusive_pro_rule_40pct():
     assert "to license them for sync through others" not in text
     assert "3.4 Exclusive Election and Exclusive Licenses." in text
     assert "3.5 Sync and Performing Rights Organizations." in text
+    assert "3.6 Samples and Loops." in text
+    assert "contains no sample or interpolation of any other sound recording" in text
     assert "forty percent (40%)" in text
     assert "\u2014" not in text
 

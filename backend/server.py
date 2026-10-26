@@ -36,6 +36,8 @@ from sync_constants import (
     PLANS, SUB_DAY_CAP,
     COSIGN_TOKEN_TTL_DAYS, COSIGN_MAX_RESENDS, COSIGN_RESEND_COOLDOWN_MIN,
     AI_TOOLS, AI_TOOLS_DETAIL_MAX, AI_TOOLS_FULL_MESSAGE,
+    UPLOAD_SAMPLE_CHOICES, MAX_LOOPS, LOOP_SOURCES, LOOP_LICENSE_TYPES, LOOP_LICENSE_MAX_BYTES,
+    SAMPLES_NOT_ALLOWED_MESSAGE, LOOPS_NO_AI_MESSAGE,
 )
 from consent_ledger import record_grants, record_withdrawals, GRANT_VERSION
 import artist_agreement
@@ -60,7 +62,7 @@ from sync_vault import (
     slugify_profile, vault_track_view,
 )
 from rights import TrackRightsIn, build_rights, EMAIL_PATTERN as RIGHTS_EMAIL_PATTERN
-from clearance import clearance_fields
+from clearance import clearance_fields, _creator_emails as rights_emails
 from metadata_reconcile import reconcile as reconcile_metadata
 from starlette.middleware.cors import CORSMiddleware
 from slowapi import Limiter
@@ -583,7 +585,7 @@ async def _process_stems(submission_id: str, r2_key: str, artist_name: str, trac
                 return float(dur)
 
             duration_s = await asyncio.to_thread(_ffprobe)
-            acr_result = await asyncio.to_thread(acrcloud_check.scan_file, scan_path)
+            acr_result = await asyncio.to_thread(acrcloud_check.scan_file, scan_path, duration_s)
 
         acr_status = acr_result["status"]
         logger.info("ACRCloud result submission=%s status=%s", submission_id, acr_status)
@@ -596,7 +598,8 @@ async def _process_stems(submission_id: str, r2_key: str, artist_name: str, trac
 
         if acr_status != "CLEARED":
             extra = {f: acr_result[f] for f in ("matched_title", "matched_artist",
-                     "matched_label", "matched_isrc", "confidence", "acrid", "raw_code")
+                     "matched_label", "matched_isrc", "confidence", "acrid", "raw_code",
+                     "matched_offset_s")
                      if acr_result.get(f) is not None}
             extra.update(scan_fields)
             await _set_status(submission_id, acr_status, extra)
@@ -748,7 +751,9 @@ class SyncIntake(BaseModel):
     @field_validator("samples")
     @classmethod
     def _samples(cls, v):
-        return None if v is None else _one_of(v, SAMPLE_DECLARATIONS, "samples declaration")
+        if v == "cleared_sample":
+            raise ValueError(SAMPLES_NOT_ALLOWED_MESSAGE)
+        return None if v is None else _one_of(v, UPLOAD_SAMPLE_CHOICES, "samples declaration")
 
     @model_validator(mode="after")
     def _attested(self):
@@ -778,12 +783,44 @@ class SyncIntake(BaseModel):
         return self
 
 
+class LoopIn(BaseModel):
+    """One royalty-free loop in a song (Agreement 3.6). The creator must also be in the splits."""
+    model_config = ConfigDict(extra="forbid")
+
+    creator_name: str = Field(..., min_length=1, max_length=120)
+    creator_email: str = Field(..., min_length=3, max_length=200)
+    source: str
+    loop_name: str = Field(..., min_length=1, max_length=200)
+
+    @field_validator("creator_name", "loop_name")
+    @classmethod
+    def _strip(cls, v):
+        v = v.strip()
+        if not v:
+            raise ValueError("Enter the loop creator and the loop name.")
+        return v
+
+    @field_validator("creator_email")
+    @classmethod
+    def _email(cls, v):
+        v = v.strip().lower()
+        if not RIGHTS_EMAIL_PATTERN.fullmatch(v):
+            raise ValueError("Enter a valid email for each loop creator.")
+        return v
+
+    @field_validator("source")
+    @classmethod
+    def _source(cls, v):
+        return _one_of(v, LOOP_SOURCES, "loop source")
+
+
 class Declarations(BaseModel):
-    """Asked on every upload and in the Vault (Brief 25b D1): samples and AI tools."""
+    """Asked on every upload and in the Vault (Brief 25b D1): samples, loops and AI tools."""
     model_config = ConfigDict(extra="forbid")
 
     samples: str
     samples_attested: bool
+    loops: List[LoopIn] = Field(default_factory=list)
     ai_tools: str
     ai_tools_detail: str = Field(default="", max_length=AI_TOOLS_DETAIL_MAX)
     ai_tools_attested: bool
@@ -791,7 +828,9 @@ class Declarations(BaseModel):
     @field_validator("samples")
     @classmethod
     def _samples(cls, v):
-        return _one_of(v, SAMPLE_DECLARATIONS, "samples declaration")
+        if v == "cleared_sample":
+            raise ValueError(SAMPLES_NOT_ALLOWED_MESSAGE)
+        return _one_of(v, UPLOAD_SAMPLE_CHOICES, "samples declaration")
 
     @field_validator("ai_tools")
     @classmethod
@@ -811,10 +850,22 @@ class Declarations(BaseModel):
         if self.ai_tools == "partial" and not detail:
             raise ValueError("Tell us which parts used AI, and which tool.")
         self.ai_tools_detail = detail if self.ai_tools == "partial" else ""
+        if self.samples == "royalty_free_loop":
+            if not 1 <= len(self.loops) <= MAX_LOOPS:
+                raise ValueError(f"List each loop you used (1 to {MAX_LOOPS}).")
+        elif self.loops:
+            raise ValueError("Only list loops when the song uses royalty-free loops.")
         return self
 
-    def intake_fields(self, now_iso: str) -> dict:
-        return {"samples": self.samples, "samples_attested_at": now_iso,
+    def intake_fields(self, now_iso: str, previous_loops: Optional[list] = None) -> dict:
+        """previous_loops: the stored loops, so an unchanged loop keeps its license file."""
+        prev = {(p.get("creator_email"), p.get("loop_name")): p for p in (previous_loops or [])}
+        loops = []
+        for lp in self.loops:
+            old = prev.get((lp.creator_email, lp.loop_name)) or {}
+            loops.append({**lp.model_dump(), "license_key": old.get("license_key"),
+                          "license_uploaded_at": old.get("license_uploaded_at")})
+        return {"samples": self.samples, "samples_attested_at": now_iso, "loops": loops,
                 "ai_tools": self.ai_tools, "ai_tools_detail": self.ai_tools_detail or None,
                 "ai_tools_attested_at": now_iso}
 
@@ -880,6 +931,8 @@ class PresignRequest(BaseModel):
             raise ValueError("Choose at least one use for this upload.")
         if self.declarations is None:
             raise ValueError("Answer the samples and AI tools questions.")
+        if self.declarations.samples == "royalty_free_loop" and self.consent_ai_training:
+            raise ValueError(LOOPS_NO_AI_MESSAGE)
         if self.consent_sync and self.sync_intake is None:
             raise ValueError("Sync details are required when sync is selected.")
         if not self.consent_sync and self.sync_intake is not None:
@@ -1313,7 +1366,7 @@ class Appeal(BaseModel):
 # PRD-03 3.6 / decision 13: ACRCloud match detail is never returned by any API.
 # It is written by the pipeline and visible only in the database.
 MATCH_DETAIL_FIELDS = ("matched_title", "matched_artist", "matched_label",
-                       "matched_isrc", "confidence", "acrid", "raw_code")
+                       "matched_isrc", "confidence", "acrid", "raw_code", "matched_offset_s")
 
 
 class TrackSubmission(BaseModel):
@@ -1728,6 +1781,15 @@ async def presign_upload(request: Request, payload: PresignRequest, clerk_payloa
         if not (version and artist_agreement.supports_exclusive(version)):
             raise HTTPException(status_code=409, detail="Exclusive songs are not available yet.")
         scopes.append("exclusive")
+    if payload.declarations.loops:
+        # Agreement 3.6(a): every loop creator must be a rights holder in the splits,
+        # so the Co-owner Consent goes to them like any co-owner.
+        listed = rights_emails({"rights": build_rights(
+            payload.rights, intake=payload.sync_intake, clerk_user_id=clerk_user_id, now_iso=now_iso)})
+        missing = [lp.creator_name for lp in payload.declarations.loops if lp.creator_email not in listed]
+        if missing:
+            raise HTTPException(status_code=422, detail=(
+                "Add each loop creator to the splits with the same email: " + ", ".join(missing) + "."))
     try:
         await record_grants(
             db, user_id=clerk_user_id, track_id=submission_id, scopes=scopes,
@@ -2430,6 +2492,9 @@ async def change_vault_consent(request: Request, track_id: str, payload: Consent
 
     # PRD-03 3.4: every change is a new consent event, written first. Grants are gated;
     # withdrawals never are, so an artist can always opt out.
+    if (payload.scope == "ai_training" and want
+            and (doc.get("intake") or {}).get("samples") in ("royalty_free_loop", "cleared_sample")):
+        raise HTTPException(status_code=409, detail=LOOPS_NO_AI_MESSAGE)
     agreement = await _require_signed_agreement(clerk_payload) if want else None
 
     try:
@@ -2468,6 +2533,74 @@ async def change_vault_consent(request: Request, track_id: str, payload: Consent
     return {"id": track_id, **vault_track_view(doc)}
 
 
+def _loop_keys(loops) -> list:
+    return [(lp.get("creator_email"), lp.get("loop_name"), lp.get("license_key")) for lp in (loops or [])]
+
+
+class LoopLicensePresign(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    filename: str = Field(..., min_length=1, max_length=200)
+    content_type: str
+    file_size: int = Field(..., gt=0)
+
+
+def _owned_loop(doc: dict, index: int) -> dict:
+    loops = (doc.get("intake") or {}).get("loops") or []
+    if not 0 <= index < len(loops):
+        raise HTTPException(status_code=404, detail="Loop not found")
+    return loops[index]
+
+
+@api_router.post("/vault/tracks/{track_id}/loops/{index}/license/presign")
+@limiter.limit("20/minute")
+async def presign_loop_license(request: Request, track_id: str, index: int, payload: LoopLicensePresign,
+                               clerk_payload: dict = Depends(require_artist)):
+    """Agreement 3.6(c): upload the license for one loop (PDF, PNG or JPG, up to 10 MB)."""
+    doc = await _owned_track(track_id, clerk_payload)
+    _owned_loop(doc, index)
+    ext = LOOP_LICENSE_TYPES.get(payload.content_type)
+    if not ext:
+        raise HTTPException(status_code=422, detail="Upload the license as a PDF, PNG or JPG.")
+    if payload.file_size > LOOP_LICENSE_MAX_BYTES:
+        raise HTTPException(status_code=422, detail="The license file must be 10 MB or smaller.")
+    key = f"loop-licenses/{track_id}/{index}-{uuid.uuid4().hex}{ext}"
+    await db.track_submissions.update_one(
+        {"id": track_id, "clerk_user_id": clerk_payload["sub"]},
+        {"$set": {f"intake.loops.{index}.pending_license_key": key,
+                  f"intake.loops.{index}.pending_license_size": payload.file_size}})
+    url = r2_client.generate_presigned_url(
+        "put_object", Params={"Bucket": R2_BUCKET, "Key": key, "ContentType": payload.content_type},
+        ExpiresIn=900)
+    return {"presigned_url": url, "content_type": payload.content_type}
+
+
+@api_router.post("/vault/tracks/{track_id}/loops/{index}/license/complete")
+@limiter.limit("20/minute")
+async def complete_loop_license(request: Request, track_id: str, index: int,
+                                clerk_payload: dict = Depends(require_artist)):
+    doc = await _owned_track(track_id, clerk_payload)
+    loop = _owned_loop(doc, index)
+    key = loop.get("pending_license_key")
+    if not key:
+        raise HTTPException(status_code=409, detail="Start the license upload first.")
+    try:
+        head = await asyncio.to_thread(r2_client.head_object, Bucket=R2_BUCKET, Key=key)
+    except ClientError:
+        raise HTTPException(status_code=400, detail="License file not found. Upload it again.")
+    if head.get("ContentLength", 0) > LOOP_LICENSE_MAX_BYTES:
+        raise HTTPException(status_code=400, detail="The license file must be 10 MB or smaller.")
+    now_iso = datetime.now(timezone.utc).isoformat()
+    await db.track_submissions.update_one(
+        {"id": track_id, "clerk_user_id": clerk_payload["sub"]},
+        {"$set": {f"intake.loops.{index}.license_key": key,
+                  f"intake.loops.{index}.license_uploaded_at": now_iso,
+                  f"intake.loops.{index}.pending_license_key": None,
+                  "loop_licenses_reviewed": None}})    # a new file needs a new review
+    await _run_clearance(track_id)
+    doc = await _owned_track(track_id, clerk_payload)
+    return {"id": track_id, **vault_track_view(doc)}
+
+
 @api_router.post("/vault/tracks/{track_id}/declarations")
 @limiter.limit("10/minute")
 async def set_vault_declarations(request: Request, track_id: str, payload: Declarations,
@@ -2478,12 +2611,22 @@ async def set_vault_declarations(request: Request, track_id: str, payload: Decla
     doc = await _owned_track(track_id, clerk_payload)
     if is_legacy(doc):
         raise HTTPException(status_code=409, detail="This track has no usage choices recorded.")
+    if payload.samples == "royalty_free_loop" and (doc.get("consent") or {}).get("ai_training"):
+        raise HTTPException(status_code=409, detail=LOOPS_NO_AI_MESSAGE + " Turn off AI training first.")
+    if payload.loops:
+        listed = rights_emails(doc)
+        missing = [lp.creator_name for lp in payload.loops if lp.creator_email not in listed]
+        if missing:
+            raise HTTPException(status_code=422, detail=(
+                "Add each loop creator to the splits with the same email: " + ", ".join(missing) + "."))
     now_iso = datetime.now(timezone.utc).isoformat()
-    new = payload.intake_fields(now_iso)
     old = doc.get("intake") or {}
+    new = payload.intake_fields(now_iso, previous_loops=old.get("loops"))
     fields = {f"intake.{k}": v for k, v in new.items()}
     if (old.get("ai_tools"), old.get("ai_tools_detail")) != (new["ai_tools"], new["ai_tools_detail"]):
         fields["ai_tools_reviewed"] = None
+    if _loop_keys(old.get("loops")) != _loop_keys(new["loops"]):
+        fields["loop_licenses_reviewed"] = None
     await db.track_submissions.update_one(
         {"id": track_id, "clerk_user_id": clerk_payload["sub"]}, {"$set": fields})
     await _run_clearance(track_id)
@@ -2802,6 +2945,52 @@ async def admin_ai_tools_review(request: Request, track_id: str, payload: AdminA
         {"id": track_id}, {"_id": 0, "id": 1, "sync_status": 1, "ai_status": 1,
                            "on_sync_profile": 1, "ai_tools_reviewed": 1})
     return doc
+
+
+@api_router.get("/admin/sync/tracks/{track_id}/loops/{index}/license")
+@limiter.limit("60/minute")
+async def admin_loop_license(request: Request, track_id: str, index: int,
+                             admin: dict = Depends(require_admin)):
+    """A short-lived link to view one uploaded loop license."""
+    doc = await db.track_submissions.find_one({"id": track_id}, {"_id": 0, "intake": 1})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Track not found")
+    loop = _owned_loop(doc, index)
+    if not loop.get("license_key"):
+        raise HTTPException(status_code=404, detail="No license uploaded for this loop")
+    return {"url": _signed_get(loop["license_key"], ttl=600), **{k: loop.get(k) for k in (
+        "creator_name", "creator_email", "source", "loop_name", "license_uploaded_at")}}
+
+
+class AdminLoopReview(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    result: Literal["approved", "rejected"]
+    reason: str = Field(default="", max_length=500)
+
+
+@api_router.post("/admin/sync/tracks/{track_id}/loop-licenses-review")
+@limiter.limit("30/minute")
+async def admin_loop_licenses_review(request: Request, track_id: str, payload: AdminLoopReview,
+                                     admin: dict = Depends(require_admin)):
+    """Agreement 3.6(c): approve or reject all loop licenses on a track. Approving needs a
+    license on file for every loop; any later change to the loops or files resets it."""
+    doc = await db.track_submissions.find_one({"id": track_id}, {"_id": 0, "id": 1, "intake": 1})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Track not found")
+    loops = (doc.get("intake") or {}).get("loops") or []
+    if (doc.get("intake") or {}).get("samples") != "royalty_free_loop" or not loops:
+        raise HTTPException(status_code=409, detail="This track has no loops to review.")
+    if payload.result == "approved" and any(not lp.get("license_key") for lp in loops):
+        raise HTTPException(status_code=409, detail="Every loop needs a license file before approval.")
+    review = {"result": payload.result, "by": admin.get("sub"),
+              "at": datetime.now(timezone.utc).isoformat(),
+              "license_keys": [lp.get("license_key") for lp in loops]}
+    await db.track_submissions.update_one({"id": track_id}, {"$set": {"loop_licenses_reviewed": review}})
+    await _log_admin_action(admin, f"loop_licenses_{payload.result}", track_id, payload.reason)
+    await _run_clearance(track_id)
+    return await db.track_submissions.find_one(
+        {"id": track_id}, {"_id": 0, "id": 1, "sync_status": 1, "ai_status": 1,
+                           "on_sync_profile": 1, "loop_licenses_reviewed": 1})
 
 
 @api_router.post("/admin/sync/profiles/{slug}/hide")

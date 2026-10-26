@@ -49,11 +49,41 @@ def check_fingerprint(doc: dict) -> dict:
     return _fail("fingerprint_scan_error")
 
 
-def check_samples(doc: dict) -> dict:
+def _creator_emails(doc: dict) -> set:
+    rights = doc.get("rights") or {}
+    return {(p.get("email") or "").strip().lower()
+            for side in RIGHTS_SIDES for p in (rights.get(side) or []) if p.get("email")}
+
+
+def check_samples(doc: dict, use: str = "sync") -> dict:
+    """Agreement 3.6. Original: both uses. Samples of other recordings: never. Loops:
+    sync only, with every loop creator in the splits, a license on file for each loop,
+    and Tyler's approval of the licenses. Creator consent is the cosign check."""
     intake = doc.get("intake") or {}
-    if intake.get("samples") in SAMPLE_DECLARATIONS and intake.get("samples_attested_at"):
+    answer = intake.get("samples")
+    if answer not in SAMPLE_DECLARATIONS or not intake.get("samples_attested_at"):
+        return _fail("samples")
+    if answer == "original":
         return _ok()
-    return _fail("samples")
+    if answer == "cleared_sample":
+        return _fail("samples_not_allowed")
+    # royalty_free_loop
+    if use == "ai":
+        return _fail("samples_loop_ai")
+    loops = intake.get("loops") or []
+    if not loops:
+        return _fail("loops_missing")
+    emails = _creator_emails(doc)
+    if any((lp.get("creator_email") or "").lower() not in emails for lp in loops):
+        return _fail("loop_creator_not_listed")
+    if any(not lp.get("license_key") for lp in loops):
+        return _fail("loop_license_missing")
+    review = (doc.get("loop_licenses_reviewed") or {}).get("result")
+    if review == "approved":
+        return _ok()
+    if review == "rejected":
+        return _fail("loop_license_rejected")
+    return {"result": "pending", "reason": "loop_license_review"}
 
 
 def check_content_id(doc: dict) -> dict:
@@ -132,17 +162,21 @@ def check_metadata(doc: dict) -> dict:
 COMMON_CHECKS = (
     ("splits", check_splits),
     ("fingerprint", check_fingerprint),
-    ("samples", check_samples),
     ("ai_tools", check_ai_tools),
     ("cosign", check_cosign),
     ("metadata", check_metadata),
 )
 SYNC_ONLY_CHECKS = (
+    ("samples", lambda d: check_samples(d, "sync")),
     ("content_id", check_content_id),
     ("pro", check_pro),
 )
+# Samples differ by use (loops are sync-only), so AI training has its own samples check.
+AI_ONLY_CHECKS = (
+    ("samples_ai", lambda d: check_samples(d, "ai")),
+)
 SYNC_CHECK_NAMES = tuple(n for n, _ in COMMON_CHECKS + SYNC_ONLY_CHECKS)
-AI_CHECK_NAMES = tuple(n for n, _ in COMMON_CHECKS)
+AI_CHECK_NAMES = tuple(n for n, _ in COMMON_CHECKS + AI_ONLY_CHECKS)
 
 
 def _status(checks: dict, names) -> str:
@@ -167,6 +201,8 @@ def evaluate(doc: dict) -> Optional[dict]:
     checks = {name: fn(doc) for name, fn in COMMON_CHECKS}
     if sync_on:
         checks.update({name: fn(doc) for name, fn in SYNC_ONLY_CHECKS})
+    if ai_on:
+        checks.update({name: fn(doc) for name, fn in AI_ONLY_CHECKS})
     return {
         "checks": checks,
         "sync_status": _status(checks, SYNC_CHECK_NAMES) if sync_on else None,

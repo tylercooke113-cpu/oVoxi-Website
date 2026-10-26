@@ -48,9 +48,37 @@ def _result(
     }
 
 
-def scan_file(file_path: str) -> dict:
+# Brief 25b: scan the whole song, not only its first 15 seconds, so a sample later in
+# the track is caught. One request per window: about 7 for a 3-minute song at the
+# defaults. Tune with ACR_SCAN_STEP_SECONDS / ACR_SCAN_WINDOW_SECONDS / ACR_SCAN_MAX_WINDOWS.
+_SEVERITY = {"CONFLICT": 3, "NEEDS_DOCS": 2, "SCAN_ERROR": 1, "CLEARED": 0}
+
+
+def scan_offsets(duration_s: Optional[float]) -> list:
+    step = max(5, int(os.environ.get("ACR_SCAN_STEP_SECONDS", "30")))
+    cap = max(1, int(os.environ.get("ACR_SCAN_MAX_WINDOWS", "30")))
+    if not duration_s or duration_s <= 15:
+        return [0]
+    return list(range(0, int(duration_s) - 5, step))[:cap]
+
+
+def scan_file(file_path: str, duration_s: Optional[float] = None) -> dict:
+    """Scan every window across the song and return the most serious result:
+    CONFLICT, then NEEDS_DOCS, then SCAN_ERROR, else CLEARED. A match carries its offset."""
+    worst = None
+    for offset in scan_offsets(duration_s):
+        r = scan_window(file_path, offset)
+        if worst is None or _SEVERITY[r["status"]] > _SEVERITY[worst["status"]]:
+            worst = {**r, "matched_offset_s": offset if r["status"] in ("CONFLICT", "NEEDS_DOCS") else None}
+        if worst["status"] == "CONFLICT":
+            break                                  # nothing is more serious; save requests
+    return worst
+
+
+def scan_window(file_path: str, offset_s: int = 0) -> dict:
+    length = int(os.environ.get("ACR_SCAN_WINDOW_SECONDS", "12"))
     try:
-        raw = _get_recognizer().recognize_by_file(file_path, 0, 15)
+        raw = _get_recognizer().recognize_by_file(file_path, offset_s, length)
         data = json.loads(raw)
     except Exception as exc:
         logger.error("ACRCloud scan failed for %s: %s", file_path, exc)

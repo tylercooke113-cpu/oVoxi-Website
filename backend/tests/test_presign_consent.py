@@ -130,7 +130,7 @@ def test_ai_only(client, fake_db):
         "key": "C major", "key_source": "artist", "key_unsure": False,
     }
     # Brief 25b D1: every upload stores samples and AI tools; no sync fields for AI-only.
-    assert set(doc["intake"]) == {"samples", "samples_attested_at", "ai_tools",
+    assert set(doc["intake"]) == {"samples", "samples_attested_at", "loops", "ai_tools",
                                   "ai_tools_detail", "ai_tools_attested_at"}
 
 
