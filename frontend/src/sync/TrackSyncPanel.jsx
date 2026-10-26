@@ -5,9 +5,13 @@ import { Input } from '../components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import Modal from './Modal';
 import SyncIntakeFields, { EMPTY_INTAKE, buildIntakePayload, isIntakeValid } from './SyncIntakeFields';
+import DeclarationsFields from '../upload/DeclarationsFields';
+import { EMPTY_DECLARATIONS, buildDeclarationsPayload, declarationsMissing, licenseFileProblem } from '../upload/declarations';
 import { api, errorMessage } from './api';
-import { reasonText } from './labels';
-import { BPM_MAX, BPM_MIN, MAJOR_KEYS, MAX_MOODS, MINOR_KEYS, MOODS } from './constants';
+import { PENDING_REASONS, reasonText } from './labels';
+import {
+  BPM_MAX, BPM_MIN, LOOPS_NO_AI_MESSAGE, MAJOR_KEYS, MAX_MOODS, MINOR_KEYS, MOODS, PRO_REQUIRED_MESSAGE,
+} from './constants';
 
 // Per-track "Uses and details" panel in the Vault (PRD-03 4.2, 4.3, 4.4).
 
@@ -15,19 +19,18 @@ const CONFIRM_COPY = {
   'ai_training:grant': ['Use this track for AI training?', 'It will be included in future AI deliveries.'],
   'ai_training:withdraw': ['Stop using this track for AI training?',
     'It will be left out of future AI deliveries. Deliveries already made are not recalled.'],
-  'sync:withdraw': ['Remove from the OVOXI Catalog?',
-    'It will no longer be listed for sale. Licenses already sold stay valid.'],
-  'exclusive_buyout:withdraw': ['Stop allowing exclusive buyouts?',
-    'Buyers will no longer be able to buy exclusive rights to this track. Buyouts already granted are not affected.'],
-  'ai_exclusive:grant': ['Make AI training exclusive to OVOXI?',
-    'You earn 50% instead of 33% on AI training sales of this song, and agree not to license AI training for it anywhere else.'],
+  'sync:withdraw': ['Remove from sync placements?',
+    'It will no longer be listed for sync. Licenses already sold stay valid.'],
+  // Brief 25b C3: one Exclusive switch per song.
+  'exclusive:grant': ['Offer this song as exclusive?',
+    'It will no longer be sold to multiple buyers. Buyers can request to license it outright for sync, AI training or both.'],
+  'exclusive:withdraw': ['Stop offering this song as exclusive?',
+    'It returns to standard licensing for any use not already sold exclusively.'],
 };
 
-// The exclusive wind-down ends 30 days after withdrawal (Agreement 12.4).
-const fmtEndDate = (iso) => {
-  const d = new Date(iso);
-  d.setDate(d.getDate() + 30);
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+const EXCLUSIVE_COPY = {
+  off: 'Non-exclusive. Multiple buyers can license this song.',
+  on: 'Exclusive. Give an option for buyers to purchase this license outright for a higher price.',
 };
 
 const Switch = ({ on, onClick, disabled, label }) => (
@@ -186,25 +189,45 @@ const CosignBlock = ({ track, getToken, onUpdated }) => {
   );
 };
 
-const SyncStatus = ({ track }) => {
+// One catalog line per use (Brief 25b C5): Live, Pending checks, Needs info, Processing.
+const UseStatus = ({ track, use, label }) => {
+  const status = use === 'sync' ? track.sync_status : track.ai_status;
+  const reasons = (use === 'sync' ? track.sync_reasons : track.ai_reasons) || [];
+  const sold = (track.consent.exclusive_sold || {})[use];
+  let line;
+  if (sold) {
+    line = <span className="text-cyan">● Licensed exclusively</span>;
+  } else if (track.status === 'CONFLICT' || status === 'conflict') {
+    line = <span className="text-red-400">● Conflict: this recording appears to match existing copyrighted material</span>;
+  } else if (status === 'cleared' && track.on_sync_profile) {
+    line = <span className="text-green-400">● Live in the OVOXI Catalog</span>;
+  } else if (!status) {
+    line = <span className="text-cyan">● Processing</span>;
+  } else if (reasons.length && reasons.every((r) => PENDING_REASONS.includes(r))) {
+    line = <span className="text-amber-300">● Pending checks</span>;
+  } else {
+    line = <span className="text-amber-400">● Needs info</span>;
+  }
+  return (
+    <div className="py-1" data-testid={`vault-status-${use}-${track.id}`}>
+      <p className="text-sm font-medium"><span className="text-slate-400">{label}: </span>{line}</p>
+      {!sold && status && status !== 'cleared' && reasons.length > 0 && (
+        <ul className="mt-1 list-disc space-y-0.5 pl-4 text-xs text-slate-400">
+          {reasons.map((r) => <li key={r}>{reasonText(r)}</li>)}
+        </ul>
+      )}
+    </div>
+  );
+};
+
+const CatalogStatus = ({ track }) => {
   if (!track.consent.sync && !track.consent.ai_training) {
     return (
       <>
         <p className="text-sm text-slate-500">Not in the OVOXI Catalog</p>
-        <p className="mt-1 text-xs text-slate-500">Turn on AI training or Sync placements to add it.</p>
+        <p className="mt-1 text-xs text-slate-500">Turn on Sync placements or AI training to add it.</p>
       </>
     );
-  }
-  if (!track.consent.sync) {
-    return (
-      <>
-        <p className="text-sm font-medium text-green-400">● In the OVOXI Catalog for AI training</p>
-        <p className="mt-1 text-xs text-slate-500">Turn on Sync placements to also offer it for sync. You'll answer the sync questions first.</p>
-      </>
-    );
-  }
-  if (track.status === 'CONFLICT' || track.sync_status === 'conflict') {
-    return <p className="text-sm font-medium text-red-400">● Conflict: this recording appears to match existing copyrighted material</p>;
   }
   if (track.delisted_by_admin) {
     return (
@@ -214,34 +237,75 @@ const SyncStatus = ({ track }) => {
       </>
     );
   }
-  if (track.sync_status === 'cleared' && track.on_sync_profile) {
-    const url = `${window.location.origin}/catalog/track/${track.id}`;
-    const copy = async () => {
-      try { await navigator.clipboard.writeText(url); toast.success('Share link copied.'); }
-      catch { toast.error('Could not copy. The link is: ' + url); }
-    };
-    return (
-      <>
-        <p className="text-sm font-medium text-green-400">● Live</p>
+  const live = (track.sync_status === 'cleared' || track.ai_status === 'cleared') && track.on_sync_profile;
+  const url = `${window.location.origin}/catalog/track/${track.id}`;
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(url); toast.success('Share link copied.'); }
+    catch { toast.error('Could not copy. The link is: ' + url); }
+  };
+  return (
+    <>
+      {track.consent.sync && <UseStatus track={track} use="sync" label="Sync" />}
+      {track.consent.ai_training && <UseStatus track={track} use="ai" label="AI training" />}
+      {live && (
         <div className="mt-2 flex flex-wrap gap-2">
           <SmallBtn onClick={copy}>Copy share link</SmallBtn>
           <a href={`/catalog/track/${track.id}`} target="_blank" rel="noopener noreferrer"
             className="rounded-md border border-white/10 px-2.5 py-1 text-xs text-slate-300 hover:text-white">View page</a>
         </div>
-      </>
-    );
-  }
-  if (track.sync_status === 'needs_docs' || track.sync_status === 'cleared') {
-    return (
-      <>
-        <p className="text-sm font-medium text-amber-400">● Needs docs</p>
-        <ul className="mt-1 list-disc space-y-0.5 pl-4 text-xs text-slate-400">
-          {(track.sync_reasons || []).map((r) => <li key={r}>{reasonText(r)}</li>)}
-        </ul>
-      </>
-    );
-  }
-  return <p className="text-sm font-medium text-cyan">● Processing</p>;
+      )}
+    </>
+  );
+};
+
+const LOOP_REVIEW_TEXT = {
+  pending: 'OVOXI reviews each loop license before the song is listed.',
+  approved: 'Loop licenses approved.',
+  rejected: 'A loop license was not accepted. Contact us.',
+};
+
+// Agreement 3.6: the song's loops, with a license upload for each.
+const LoopsBlock = ({ track, getToken, onUpdated }) => {
+  const [busy, setBusy] = useState(null);
+  const loops = track.loops || [];
+  if (!loops.length) return null;
+  const upload = async (i, file) => {
+    const problem = licenseFileProblem(file);
+    if (!file) return;
+    if (problem) { toast.error(problem); return; }
+    setBusy(i);
+    try {
+      const updated = await api.uploadLoopLicense(getToken, track.id, i, file);
+      onUpdated({ ...track, ...updated });
+      toast.success('License uploaded.');
+    } catch (err) { toast.error(errorMessage(err)); } finally { setBusy(null); }
+  };
+  return (
+    <div className="md:col-span-3 border-t border-white/10 pt-3" data-testid={`vault-loops-${track.id}`}>
+      <p className="mb-2 text-[11px] uppercase tracking-[0.14em] text-slate-500">Loops (sync only)</p>
+      <ul className="space-y-1.5">
+        {loops.map((lp, i) => (
+          <li key={i} className="flex flex-wrap items-center justify-between gap-2 text-sm text-slate-300">
+            <span><b className="font-medium text-white">{lp.loop_name}</b> by {lp.creator_name} ({lp.source})</span>
+            <span className="flex items-center gap-2">
+              <span className={`text-xs ${lp.has_license ? 'text-green-400' : 'text-amber-400'}`}>
+                {lp.has_license ? 'License on file' : 'License needed'}
+              </span>
+              <label className="cursor-pointer rounded-md border border-white/10 px-2.5 py-1 text-xs text-slate-300 hover:text-white">
+                {busy === i ? 'Uploading…' : lp.has_license ? 'Replace license' : 'Upload license'}
+                <input type="file" className="hidden" disabled={busy !== null}
+                  accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg"
+                  onChange={(e) => { upload(i, e.target.files?.[0]); e.target.value = ''; }} />
+              </label>
+            </span>
+          </li>
+        ))}
+      </ul>
+      {track.loop_license_status && (
+        <p className="mt-2 text-xs text-slate-500">{LOOP_REVIEW_TEXT[track.loop_license_status]}</p>
+      )}
+    </div>
+  );
 };
 
 const TrackSyncPanel = ({ track, getToken, onUpdated, status }) => {
@@ -250,7 +314,11 @@ const TrackSyncPanel = ({ track, getToken, onUpdated, status }) => {
   const [moodDraft, setMoodDraft] = useState([]);
   const [confirm, setConfirm] = useState(null);       // {scope, action}
   const [intake, setIntake] = useState(EMPTY_INTAKE);
+  const [proNotice, setProNotice] = useState(false);
+  const [declaring, setDeclaring] = useState(false);
+  const [decl, setDecl] = useState(EMPTY_DECLARATIONS);
   const meta = track.metadata || {};
+  const loopSong = (track.loops || []).length > 0;
 
   const run = useCallback(async (fn, success) => {
     setBusy(true);
@@ -278,40 +346,53 @@ const TrackSyncPanel = ({ track, getToken, onUpdated, status }) => {
     if (scope === 'sync' && action === 'grant') body.sync_intake = buildIntakePayload(intake);
     const ok = await run(() => api.changeConsent(getToken, track.id, body),
       action === 'grant' ? 'Turned on.' : 'Turned off.');
-    if (ok) { setConfirm(null); setIntake(EMPTY_INTAKE); }
+    if (ok) { setConfirm(null); setIntake(EMPTY_INTAKE); setProNotice(false); }
+  };
+
+  const saveDeclarations = async () => {
+    const ok = await run(() => api.setDeclarations(getToken, track.id, buildDeclarationsPayload(decl)), 'Saved.');
+    if (ok) { setDeclaring(false); setDecl(EMPTY_DECLARATIONS); }
   };
 
   const toggle = (scope) => setConfirm({ scope, action: track.consent[scope] ? 'withdraw' : 'grant' });
   const addingSync = confirm?.scope === 'sync' && confirm?.action === 'grant';
   const copy = confirm && !addingSync ? CONFIRM_COPY[`${confirm.scope}:${confirm.action}`] : null;
-  const isBuyoutGrant = confirm?.scope === 'exclusive_buyout' && confirm?.action === 'grant';
-  const isExclusiveWithdraw = confirm?.scope === 'ai_exclusive' && confirm?.action === 'withdraw';
-  const exclusiveEndMsg = `Exclusive AI training ends on ${fmtEndDate(new Date().toISOString())}. Your share returns to 33% for new AI licenses after that. Licenses already granted stay in place.`;
-  const showBuyout = !!status?.buyouts_supported && !track.legacy;
-  const modalTitle = addingSync ? 'Add to the OVOXI Catalog'
-    : isBuyoutGrant ? 'Allow exclusive buyout?'
-    : isExclusiveWithdraw ? 'Turn off exclusive AI training?' : copy?.[0];
+  const showExclusive = !track.legacy && (!!status?.exclusive_supported || !!track.consent.exclusive);
+  const modalTitle = addingSync ? 'Add sync placements' : copy?.[0];
+  const declMissing = declarationsMissing(decl);
 
   return (
     <div className="mt-4 grid grid-cols-1 gap-5 border-t border-white/10 pt-4 md:grid-cols-3" data-testid={`vault-panel-${track.id}`}>
       <div>
         <p className="mb-2 text-[11px] uppercase tracking-[0.14em] text-slate-500">Uses</p>
-        {[['ai_training', 'AI training'], ['sync', 'Sync placements']].map(([scope, label]) => (
-          <div key={scope} className="flex items-center justify-between py-1 text-sm text-slate-300">
-            {label}
-            <Switch on={!!track.consent[scope]} label={label} disabled={busy} onClick={() => toggle(scope)} />
-          </div>
-        ))}
-        {showBuyout && (
-          <div className="mt-1 border-t border-white/10 pt-2">
+        {[['sync', 'Sync placements'], ['ai_training', 'AI training']].map(([scope, label]) => {
+          const blocked = scope === 'ai_training' && loopSong && !track.consent.ai_training;
+          return (
+            <div key={scope} className="py-1 text-sm text-slate-300">
+              <div className="flex items-center justify-between">
+                {label}
+                <Switch on={!!track.consent[scope]} label={label} disabled={busy || blocked} onClick={() => toggle(scope)} />
+              </div>
+              {blocked && <p className="mt-1 text-xs text-slate-500">{LOOPS_NO_AI_MESSAGE}</p>}
+            </div>
+          );
+        })}
+        {showExclusive && (track.consent.sync || track.consent.ai_training) && (
+          <div className="mt-1 border-t border-white/10 pt-2" data-testid={`vault-exclusive-${track.id}`}>
             <div className="flex items-center justify-between text-sm text-slate-300">
-              <span>Allow exclusive buyout</span>
-              <Switch on={!!track.consent.exclusive_buyout} label="Allow exclusive buyout"
-                disabled={busy || !track.consent.sync} onClick={() => toggle('exclusive_buyout')} />
+              <span>Exclusive</span>
+              <Switch on={!!track.consent.exclusive} label="Exclusive" disabled={busy}
+                onClick={() => toggle('exclusive')} />
             </div>
             <p className="mt-1 text-xs text-slate-500">
-              Buyers can request exclusive sync rights to this track. During an exclusive term the track leaves the library and you can't license it for sync elsewhere. Turn off any time for future deals.
+              {track.consent.exclusive ? EXCLUSIVE_COPY.on : EXCLUSIVE_COPY.off}
             </p>
+          </div>
+        )}
+        {track.needs_declarations && !track.legacy && (
+          <div className="mt-2 rounded-lg border border-amber-400/35 bg-amber-400/[0.06] p-2.5" data-testid={`vault-declare-${track.id}`}>
+            <p className="mb-2 text-xs text-amber-100">Answer two questions about this song: samples and loops, and AI tools.</p>
+            <SmallBtn primary disabled={busy} onClick={() => setDeclaring(true)}>Answer now</SmallBtn>
           </div>
         )}
       </div>
@@ -383,10 +464,26 @@ const TrackSyncPanel = ({ track, getToken, onUpdated, status }) => {
 
       <div>
         <p className="mb-2 text-[11px] uppercase tracking-[0.14em] text-slate-500">OVOXI Catalog</p>
-        <SyncStatus track={track} />
+        <CatalogStatus track={track} />
       </div>
 
+      <LoopsBlock track={track} getToken={getToken} onUpdated={onUpdated} />
       <CosignBlock track={track} getToken={getToken} onUpdated={onUpdated} />
+
+      <Modal open={declaring} onClose={() => !busy && setDeclaring(false)} title="About this song">
+        <DeclarationsFields value={decl} onChange={setDecl} disabled={busy} idPrefix={`vault-decl-${track.id}`} />
+        {decl.samples === 'royalty_free_loop' && (
+          <p className="mt-3 text-xs text-slate-500">After saving, upload each loop license from this song's panel.</p>
+        )}
+        <div className="mt-5 flex gap-2">
+          <button type="button" onClick={saveDeclarations} disabled={busy || declMissing.length > 0}
+            className="rounded-full bg-gradient-brand px-5 py-2 text-sm font-semibold text-white disabled:opacity-50">
+            {busy ? 'Saving…' : 'Save'}
+          </button>
+          <button type="button" onClick={() => setDeclaring(false)} disabled={busy}
+            className="rounded-full border border-white/10 px-5 py-2 text-sm text-slate-300">Cancel</button>
+        </div>
+      </Modal>
 
       <Modal open={!!confirm} onClose={() => !busy && setConfirm(null)} title={modalTitle}>
         {addingSync ? (
@@ -394,23 +491,25 @@ const TrackSyncPanel = ({ track, getToken, onUpdated, status }) => {
             <p className="mb-4 text-sm text-slate-400">
               Answer the sync questions. We check the track and list it automatically when it clears.
             </p>
-            <SyncIntakeFields value={intake} onChange={setIntake} disabled={busy} />
+            {track.needs_declarations ? (
+              <p className="text-sm text-amber-200">Answer the samples and AI tools questions for this song first.</p>
+            ) : proNotice ? (
+              <p className="text-sm text-amber-200" data-testid="vault-pro-notice">{PRO_REQUIRED_MESSAGE}</p>
+            ) : (
+              <SyncIntakeFields value={intake} onChange={setIntake} disabled={busy}
+                onNotAffiliated={() => setProNotice(true)} />
+            )}
           </>
-        ) : isBuyoutGrant ? (
-          <p className="text-sm text-slate-400">
-            Buyers will be able to buy exclusive sync rights to <b className="font-medium text-white">{track.track_name}</b> without asking you first. You'll get a notice within 5 business days. During an exclusive term the track leaves the library, and you can't license it for sync anywhere else (Artist Agreement section 3.4).
-          </p>
-        ) : isExclusiveWithdraw ? (
-          <p className="text-sm text-slate-400">{exclusiveEndMsg}</p>
         ) : (
           <p className="text-sm text-slate-400">{copy?.[1]}</p>
         )}
         <div className="mt-5 flex gap-2">
-          <button type="button" onClick={applyConsent} disabled={busy || (addingSync && !isIntakeValid(intake))}
+          <button type="button" onClick={applyConsent}
+            disabled={busy || (addingSync && (track.needs_declarations || proNotice || !isIntakeValid(intake)))}
             className="rounded-full bg-gradient-brand px-5 py-2 text-sm font-semibold text-white disabled:opacity-50">
-            {busy ? 'Saving…' : isBuyoutGrant ? 'Allow buyouts' : 'Confirm'}
+            {busy ? 'Saving…' : 'Confirm'}
           </button>
-          <button type="button" onClick={() => setConfirm(null)} disabled={busy}
+          <button type="button" onClick={() => { setConfirm(null); setProNotice(false); }} disabled={busy}
             className="rounded-full border border-white/10 px-5 py-2 text-sm text-slate-300">Cancel</button>
         </div>
       </Modal>

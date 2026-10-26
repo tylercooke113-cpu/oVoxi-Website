@@ -406,7 +406,8 @@ export default function AgreementModal({ open, onClose, onSigned, getToken, pref
                 <ul className="list-disc pl-[18px] text-[13.5px] leading-[1.55] text-slate-300">
                   <li>You keep ownership of your music.</li>
                   <li>Each track is only used the ways you choose at upload: AI training, sync, or both.</li>
-                  <li>You get 33% of net revenue from every license, paid monthly.</li>
+                  <li>For the uses you choose, your song is licensed only through OVOXI.</li>
+                  <li>You get a share of the revenue from every license, paid monthly, as set out in the agreement.</li>
                   <li>AI companies may not clone your voice or use your name as a prompt.</li>
                   <li>You can pull a track with 30 days' notice. Licenses already sold stay valid.</li>
                 </ul>

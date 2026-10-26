@@ -24,6 +24,9 @@ LOOP_SOURCES = ("Splice", "Loopmasters / Loopcloud", "Producer directly", "Other
 LOOP_LICENSE_TYPES = {"application/pdf": ".pdf", "image/png": ".png", "image/jpeg": ".jpg"}
 LOOP_LICENSE_MAX_BYTES = 10 * 1024 * 1024
 SAMPLES_NOT_ALLOWED_MESSAGE = "Songs that sample other recordings can't be uploaded."
+PRO_REQUIRED_MESSAGE = ("Sync placements need a performing rights organization (PRO). "
+                        "You can still offer this song for AI training.")
+SYNC_SOLE_MESSAGE = "Confirm this song is not offered for sync anywhere else."
 LOOPS_NO_AI_MESSAGE = ("Songs with loops or samples can't be offered for AI training. Most loop and "
                        "sample licenses, including Splice and Loopmasters, don't allow it.")
 

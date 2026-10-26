@@ -12,6 +12,12 @@ jest.mock('../components/ui/radio-group', () => ({ RadioGroup: 'div', RadioGroup
 import { emptySong, carryOverSong, songMissing } from './SongForm';
 import { emptyRights } from '../sync/RightsSection';
 import { runBatch, TOO_MANY_MESSAGE } from './useBatchUpload';
+import { EMPTY_DECLARATIONS, buildDeclarationsPayload, emptyLoop } from './declarations';
+
+const ORIGINAL = { ...EMPTY_DECLARATIONS, samples: 'original', samples_attested: true,
+  ai_tools: 'none', ai_tools_attested: true };
+const LOOP = { creator_name: 'Jordan Producer', creator_email: 'jordan@example.com',
+  source: 'Splice', loop_name: 'Dusty Keys', file: { name: 'l.pdf', type: 'application/pdf', size: 100 } };
 
 // A song that passes every validation rule (owns everything, AI consent only).
 const completeSong = (over = {}) => emptySong({
@@ -22,9 +28,24 @@ const completeSong = (over = {}) => emptySong({
   bpm: '120',
   musicalKey: 'C major',
   consentAi: true,
+  declarations: ORIGINAL,
   rights: { ...emptyRights(), owns_everything: true, self_legal_name: 'Real Name', attested: true },
   ...over,
 });
+
+// Manual splits with a co-writer who is also the loop creator.
+const loopRights = (writerPro = true) => ({
+  ...emptyRights(), self_legal_name: 'Real Name', attested: true,
+  writers: [
+    { legal_name: 'Real Name', pct: '50', role: 'CA', society: writerPro ? 'BMI' : '', ipi: writerPro ? '123456789' : '',
+      email: '', no_publisher: false,
+      publishers: [{ legal_name: 'Real Name', pct: '100', role: 'E', society: '', ipi: '', email: '' }] },
+    { legal_name: 'Jordan Producer', pct: '50', role: 'C', society: writerPro ? 'ASCAP' : '', ipi: writerPro ? '123456789' : '',
+      email: 'jordan@example.com', no_publisher: true, publishers: [] },
+  ],
+  master_owners: [{ legal_name: 'Real Name', pct: '100', role: null, society: '', ipi: '', email: '' }],
+});
+const SYNC_INTAKE = { distributor: 'DistroKid', content_id: 'no', pro_name: 'BMI', ipi: '123456789', sync_sole_attested: true };
 
 // Collects patchSong calls into a final per-key state, like the real reducer would.
 const makeRecorder = () => {
@@ -70,14 +91,13 @@ describe('carryOverSong', () => {
       form: { artist_name: 'Carry Me', track_name: 'Old Title', genre: 'Trap' },
       consentAi: true,
       consentSync: true,
+      consentExclusive: true,
       intake: {
-        samples: 'none',
-        samples_attested: true,
         distributor: 'DistroKid',
         content_id: 'no',
-        pro_not_affiliated: false,
         pro_name: 'ASCAP',
         ipi: '123456789',
+        sync_sole_attested: true,
       },
       rights: { ...emptyRights(), self_legal_name: 'Legal Name', legal_name_touched: true },
     });
@@ -88,8 +108,8 @@ describe('carryOverSong', () => {
     expect(next.form.artist_name).toBe('Carry Me');
     expect(next.consentAi).toBe(true);
     expect(next.consentSync).toBe(true);
+    expect(next.consentExclusive).toBe(true);
     expect(next.intake.distributor).toBe('DistroKid');
-    expect(next.intake.pro_not_affiliated).toBe(false);
     expect(next.intake.pro_name).toBe('ASCAP');
     expect(next.intake.ipi).toBe('123456789');
     expect(next.rights.self_legal_name).toBe('Legal Name');
@@ -99,8 +119,8 @@ describe('carryOverSong', () => {
     expect(next.form.track_name).toBe('');
     expect(next.form.genre).toBe('');
     expect(next.file).toBeNull();
-    expect(next.intake.samples).toBe('');
-    expect(next.intake.samples_attested).toBe(false);
+    expect(next.declarations).toEqual(EMPTY_DECLARATIONS);       // song-specific answers reset
+    expect(next.intake.sync_sole_attested).toBe(false);
     expect(next.intake.content_id).toBe('');
     expect(next.rights.owns_everything).toBe(false);
     expect(next.status).toBe('draft');
@@ -166,5 +186,70 @@ describe('runBatch', () => {
     expect(states[songs[0].key].error).toBe(TOO_MANY_MESSAGE);
     expect(states[songs[1].key].status).toBe('failed');
     expect(states[songs[1].key].error).toBe(TOO_MANY_MESSAGE);
+  });
+});
+
+
+describe('Brief 25b upload rules', () => {
+  test('every upload answers samples and AI tools', () => {
+    const m = songMissing(completeSong({ declarations: EMPTY_DECLARATIONS }));
+    expect(m).toContain('samples answer');
+    expect(m).toContain('AI tools answer');
+  });
+
+  test('a sample blocks the upload; mostly-AI blocks the upload', () => {
+    expect(songMissing(completeSong({ declarations: { ...ORIGINAL, samples: 'sample' } })))
+      .toContain('a song without samples');
+    expect(songMissing(completeSong({ declarations: { ...ORIGINAL, ai_tools: 'full' } })))
+      .toContain('a song made by people');
+  });
+
+  test('partial AI needs the parts and tool', () => {
+    expect(songMissing(completeSong({ declarations: { ...ORIGINAL, ai_tools: 'partial' } })))
+      .toContain('which parts used AI');
+  });
+
+  test('loop songs: sync only, creator in the splits, a license per loop', () => {
+    const loops = { ...ORIGINAL, samples: 'royalty_free_loop', loops: [LOOP] };
+    const ok = completeSong({ consentAi: false, consentSync: true, intake: SYNC_INTAKE,
+      declarations: loops, rights: loopRights() });
+    expect(songMissing(ok)).toEqual([]);
+    expect(songMissing({ ...ok, consentAi: true })).toContain('AI training off (songs with loops are sync only)');
+    expect(songMissing({ ...ok, rights: completeSong().rights })).toContain('loop 1 creator in the splits');
+    expect(songMissing({ ...ok, declarations: { ...loops, loops: [{ ...LOOP, file: null }] } }))
+      .toContain('loop 1 license');
+    expect(songMissing({ ...ok, declarations: { ...loops, loops: [emptyLoop()] } })).toContain('loop 1 details');
+  });
+
+  test('sync needs every writer\'s PRO and IPI', () => {
+    const s = completeSong({ consentAi: false, consentSync: true, intake: SYNC_INTAKE, rights: loopRights(false) });
+    expect(songMissing(s)).toContain("every writer's PRO and IPI");
+  });
+
+  test('sync needs the not-offered-elsewhere box', () => {
+    const s = completeSong({ consentAi: false, consentSync: true, intake: { ...SYNC_INTAKE, sync_sole_attested: false } });
+    expect(songMissing(s)).toContain('sync details');
+  });
+
+  test('declarations payload: loops only for loop songs, detail only for partial', () => {
+    expect(buildDeclarationsPayload({ ...ORIGINAL, ai_tools_detail: 'x', loops: [LOOP] }))
+      .toEqual({ samples: 'original', samples_attested: true, loops: [], ai_tools: 'none',
+        ai_tools_detail: '', ai_tools_attested: true });
+    const p = buildDeclarationsPayload({ ...ORIGINAL, samples: 'royalty_free_loop',
+      loops: [{ ...LOOP, creator_email: ' Jordan@Example.com ' }] });
+    expect(p.loops).toEqual([{ creator_name: 'Jordan Producer', creator_email: 'jordan@example.com',
+      source: 'Splice', loop_name: 'Dusty Keys' }]);
+  });
+
+  test('runBatch reports failures and carries license warnings', async () => {
+    const { states, patchSong } = makeRecorder();
+    const songs = [completeSong(), completeSong()];
+    const doUpload = jest.fn()
+      .mockResolvedValueOnce({ submissionId: 'a', warning: 'A loop license did not upload. Add it from your Vault.' })
+      .mockRejectedValueOnce(err(500, 'boom'));
+    const res = await runBatch(songs, { getToken: async () => 't', patchSong, doUpload, sleep: async () => {} });
+    expect(res).toEqual({ stopReason: null, failed: 1 });
+    expect(states[songs[0].key].warning).toMatch(/Vault/);
+    expect(states[songs[1].key].status).toBe('failed');
   });
 });

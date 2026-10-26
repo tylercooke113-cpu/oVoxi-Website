@@ -179,7 +179,8 @@ def test_vault_add_sync_keeps_declarations(client, db, monkeypatch):
                                               "ai_tools": "none", "ai_tools_attested_at": "t"}
     r = client.post(f"/api/vault/tracks/{TID}/consent", json={
         "scope": "sync", "action": "grant",
-        "sync_intake": {"distributor": "DistroKid", "content_id": "no", "pro_name": "BMI", "ipi": "00123456789"}})
+        "sync_intake": {"distributor": "DistroKid", "content_id": "no", "pro_name": "BMI", "ipi": "00123456789",
+                        "sync_sole_attested": True}})
     assert r.status_code == 200, r.text
     i = db.track_submissions.docs[0]["intake"]
     assert i["ai_tools"] == "none" and i["samples"] == "original" and i["content_id"] == "no"

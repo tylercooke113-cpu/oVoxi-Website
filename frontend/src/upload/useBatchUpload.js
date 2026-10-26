@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 import { buildRightsPayload } from '../sync/RightsSection';
-import { buildIntakePayload } from './SongForm';
+import { buildIntakePayload } from '../sync/SyncIntakeFields';
+import { buildDeclarationsPayload, usesLoops } from './declarations';
 
 export const API = 'https://ovoxi-website-production.up.railway.app/api';
 
@@ -11,6 +12,7 @@ export const UPLOADS_PAUSED_MESSAGE = 'Uploads are temporarily paused. Please tr
 export const TOO_MANY_MESSAGE =
   'Some songs are still processing. Wait a few minutes, then press Retry.';
 export const AGREEMENT_DETAIL = 'Sign the Artist Agreement before uploading.';
+export const LICENSE_RETRY_MESSAGE = 'A loop license did not upload. Add it from your Vault.';
 
 // FastAPI returns validation errors as an array; pydantic prefixes
 // messages raised in validators with "Value error, ".
@@ -71,8 +73,9 @@ export const uploadOne = async (song, { getToken, api, onProgress }) => {
     filename: song.file.name,
     file_size: song.file.size,
     consent_ai_training: song.consentAi,
-    consent_ai_exclusive: song.consentAi && song.consentAiExclusive,
     consent_sync: song.consentSync,
+    consent_exclusive: !!song.consentExclusive,
+    declarations: buildDeclarationsPayload(song.declarations),
     moods: song.moods,
     vocals: song.vocals,
     ...(song.bpmUnsure ? { bpm_unsure: true } : { bpm: Math.round(bpmNumber * 10) / 10 }),
@@ -92,13 +95,36 @@ export const uploadOne = async (song, { getToken, api, onProgress }) => {
     },
   });
 
+  onProgress(100, 'finishing');   // file sent; waiting for storage and /complete
   const completeToken = await getToken();
   await axios.post(`${api}/upload/complete`, { submission_id }, {
     headers: { Authorization: `Bearer ${completeToken}` },
   });
 
-  return submission_id;
+  // Agreement 3.6(c): one license per loop. The song is already received, so a failed
+  // license upload becomes a warning; the artist can add it from the Vault.
+  let warning = null;
+  if (usesLoops(song.declarations)) {
+    for (let i = 0; i < song.declarations.loops.length; i += 1) {
+      const file = song.declarations.loops[i].file;
+      if (!file) continue;
+      try {
+        const auth = { headers: { Authorization: `Bearer ${await getToken()}` } };
+        const { data } = await axios.post(`${api}/vault/tracks/${submission_id}/loops/${i}/license/presign`,
+          { filename: file.name, content_type: file.type, file_size: file.size }, auth);
+        await axios.put(data.presigned_url, file, { headers: { 'Content-Type': data.content_type } });
+        await axios.post(`${api}/vault/tracks/${submission_id}/loops/${i}/license/complete`, null,
+          { headers: { Authorization: `Bearer ${await getToken()}` } });
+      } catch (err) {
+        warning = LICENSE_RETRY_MESSAGE;
+      }
+    }
+  }
+  return { submissionId: submission_id, warning };
 };
+
+// doUpload may return the submission id (older tests) or { submissionId, warning }.
+const asResult = (r) => (r && typeof r === 'object' ? r : { submissionId: r, warning: null });
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -112,7 +138,7 @@ const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
  * @param deps.patchSong  (key, partial) => void, merges a partial into a song by key
  * @param deps.doUpload   defaults to uploadOne; override in tests
  * @param deps.sleep      defaults to a real 30s wait; override in tests
- * @returns {Promise<{stopReason: null|'agreement'|'approval'|'paused'|'too_many'}>}
+ * @returns {Promise<{stopReason: null|'agreement'|'approval'|'paused'|'too_many', failed: number}>}
  */
 export const runBatch = async (list, {
   getToken,
@@ -121,19 +147,20 @@ export const runBatch = async (list, {
   doUpload = uploadOne,
   sleep = (ms) => wait(ms),
 }) => {
-  const attempt = (song) => doUpload(song, {
+  const attempt = async (song) => asResult(await doUpload(song, {
     getToken,
     api,
-    onProgress: (p) => patchSong(song.key, { progress: p }),
-  });
+    onProgress: (p, phase) => patchSong(song.key, { progress: p, ...(phase ? { phase } : {}) }),
+  }));
 
+  let failed = 0;
   for (let i = 0; i < list.length; i += 1) {
     const song = list[i];
-    patchSong(song.key, { status: 'uploading', progress: 0, error: null });
+    patchSong(song.key, { status: 'uploading', progress: 0, phase: 'uploading', error: null, warning: null });
 
     try {
-      const submissionId = await attempt(song);
-      patchSong(song.key, { status: 'received', submissionId, progress: 100 });
+      const { submissionId, warning } = await attempt(song);
+      patchSong(song.key, { status: 'received', submissionId, progress: 100, warning });
       continue;
     } catch (err) {
       const kind = classifyError(err);
@@ -156,9 +183,10 @@ export const runBatch = async (list, {
       // Any other 429: wait and retry this one song once, then continue either way.
       if (kind === 'retry_429') {
         await sleep(30000);
+        patchSong(song.key, { progress: 0, phase: 'uploading' });
         try {
-          const submissionId = await attempt(song);
-          patchSong(song.key, { status: 'received', submissionId, progress: 100 });
+          const { submissionId, warning } = await attempt(song);
+          patchSong(song.key, { status: 'received', submissionId, progress: 100, warning });
         } catch (err2) {
           const kind2 = classifyError(err2);
           if (kind2 === 'too_many') {
@@ -167,17 +195,19 @@ export const runBatch = async (list, {
             }
             return { stopReason: 'too_many' };
           }
+          failed += 1;
           patchSong(song.key, { status: 'failed', error: uploadErrorMessage(err2), progress: 0 });
         }
         continue;
       }
 
       // Ordinary failure: record it and keep going.
+      failed += 1;
       patchSong(song.key, { status: 'failed', error: uploadErrorMessage(err), progress: 0 });
     }
   }
 
-  return { stopReason: null };
+  return { stopReason: null, failed };
 };
 
 // Thin React wrapper: tracks the running flag and warns on unload during a run.

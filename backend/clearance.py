@@ -92,13 +92,21 @@ def check_content_id(doc: dict) -> dict:
     return _fail("content_id")
 
 
+def writers_missing_pro(rights: dict) -> list:
+    """Names of writers without both a PRO and an IPI (Agreement 3.5: every writer)."""
+    return [p.get("legal_name") or "A writer" for p in ((rights or {}).get("writers") or [])
+            if not (p.get("society") and p.get("ipi_name_number"))]
+
+
 def check_pro(doc: dict) -> dict:
+    """Agreement 3.5: sync needs every writer affiliated with a PRO, with an IPI.
+    "Not affiliated" no longer passes; such a song may be offered for AI training only."""
     intake = doc.get("intake") or {}
-    if intake.get("pro_not_affiliated") is True:
-        return _ok()
-    if intake.get("pro_name") and intake.get("ipi"):
-        return _ok()
-    return _fail("pro")
+    if intake.get("pro_not_affiliated") is True or not (intake.get("pro_name") and intake.get("ipi")):
+        return _fail("pro")
+    if writers_missing_pro(doc.get("rights")):
+        return _fail("pro_writers")
+    return _ok()
 
 
 def check_ai_tools(doc: dict) -> dict:

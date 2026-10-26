@@ -75,7 +75,7 @@ export const HeroSection = () => {
           Discuss Licensing
         </PrimaryCTA>
         <GhostCTA to="/signup" testid="hero-artist-cta">
-          Join as an Artist
+          Artists
         </GhostCTA>
       </motion.div>
     </div>

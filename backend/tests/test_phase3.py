@@ -35,7 +35,8 @@ def cleared_doc(**overrides):
                    "content_id": "no", "pro_not_affiliated": False, "pro_name": "BMI",
                    "ipi": "00123456789", "ai_tools": "none", "ai_tools_attested_at": "t"},
         "rights": {"owns_everything": True, "attested_at": "t",
-                   "writers": [{"share_bp": 10000}], "publishers": [{"share_bp": 10000}],
+                   "writers": [{"share_bp": 10000, "society": "BMI", "ipi_name_number": "00123456789"}],
+                   "publishers": [{"share_bp": 10000}],
                    "master_owners": [{"share_bp": 10000}]},
         "fingerprint_result": "CLEARED",
         "stem_paths": dict(STEMS),
@@ -162,10 +163,19 @@ def test_content_id_yes_or_not_sure_fails(answer):
     assert r["sync_status"] == "needs_docs"
 
 
-def test_pro_not_affiliated_passes():
+def test_pro_not_affiliated_fails_sync():
     doc = cleared_doc()
     doc["intake"].update(pro_not_affiliated=True, pro_name=None, ipi=None)
-    assert evaluate(doc)["checks"]["pro"]["result"] == "pass"
+    assert evaluate(doc)["checks"]["pro"] == {"result": "fail", "reason": "pro"}
+
+
+def test_pro_every_writer_needs_pro_and_ipi():
+    doc = cleared_doc(rights={**cleared_doc()["rights"], "writers": [
+        {"legal_name": "Me", "share_bp": 5000, "society": "BMI", "ipi_name_number": "00123456789"},
+        {"legal_name": "Co Writer", "share_bp": 5000, "society": "ASCAP", "ipi_name_number": None}]})
+    r = evaluate(doc)
+    assert r["checks"]["pro"] == {"result": "fail", "reason": "pro_writers"}
+    assert r["sync_status"] == "needs_docs"
 
 
 def test_pro_missing_ipi_fails():

@@ -17,10 +17,10 @@ ADMIN = {"sub": "user_admin", "metadata": {"role": "admin"}}
 def env(monkeypatch):
     db = MagicMock()
     db.track_submissions = QueryCollection([listed_track(fingerprint_result="CLEARED",
-        rights={"attested_at": "t", "writers": [{"share_bp": 10000}], "publishers": [{"share_bp": 10000}],
+        rights={"attested_at": "t", "writers": [{"share_bp": 10000, "society": "BMI", "ipi_name_number": "00123456789"}], "publishers": [{"share_bp": 10000}],
                 "master_owners": [{"share_bp": 10000}]},
         intake={"samples": "original", "samples_attested_at": "t", "content_id": "no",
-                "pro_not_affiliated": True, "ai_tools": "none", "ai_tools_attested_at": "t"},
+                "pro_name": "BMI", "ipi": "00123456789", "ai_tools": "none", "ai_tools_attested_at": "t"},
         stem_paths={n: "x" for n in ("vocals", "instrumental", "drums", "bass", "other")})])
     db.sync_profiles = QueryCollection([profile()])
     db.admin_actions = QueryCollection()
@@ -53,7 +53,7 @@ def test_delist_survives_clearance_and_artist_consent_changes(env):
     asyncio.run(server._run_clearance(TID))
     assert db.track_submissions.docs[0]["on_sync_profile"] is False
     intake = {"samples": "original", "samples_attested": True, "distributor": "DistroKid",
-              "content_id": "no", "pro_not_affiliated": True}
+              "content_id": "no", "pro_name": "BMI", "ipi": "00123456789", "sync_sole_attested": True}
     client.post(f"/api/vault/tracks/{TID}/consent", json={"scope": "sync", "action": "withdraw"})
     client.post(f"/api/vault/tracks/{TID}/consent", json={"scope": "sync", "action": "grant", "sync_intake": intake})
     d = db.track_submissions.docs[0]

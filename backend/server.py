@@ -37,7 +37,7 @@ from sync_constants import (
     COSIGN_TOKEN_TTL_DAYS, COSIGN_MAX_RESENDS, COSIGN_RESEND_COOLDOWN_MIN,
     AI_TOOLS, AI_TOOLS_DETAIL_MAX, AI_TOOLS_FULL_MESSAGE,
     UPLOAD_SAMPLE_CHOICES, MAX_LOOPS, LOOP_SOURCES, LOOP_LICENSE_TYPES, LOOP_LICENSE_MAX_BYTES,
-    SAMPLES_NOT_ALLOWED_MESSAGE, LOOPS_NO_AI_MESSAGE,
+    SAMPLES_NOT_ALLOWED_MESSAGE, LOOPS_NO_AI_MESSAGE, PRO_REQUIRED_MESSAGE, SYNC_SOLE_MESSAGE,
 )
 from consent_ledger import record_grants, record_withdrawals, GRANT_VERSION
 import artist_agreement
@@ -62,7 +62,7 @@ from sync_vault import (
     slugify_profile, vault_track_view,
 )
 from rights import TrackRightsIn, build_rights, EMAIL_PATTERN as RIGHTS_EMAIL_PATTERN
-from clearance import clearance_fields, _creator_emails as rights_emails
+from clearance import clearance_fields, writers_missing_pro, _creator_emails as rights_emails
 from metadata_reconcile import reconcile as reconcile_metadata
 from starlette.middleware.cors import CORSMiddleware
 from slowapi import Limiter
@@ -744,9 +744,10 @@ class SyncIntake(BaseModel):
     samples_attested: bool = False
     distributor: str
     content_id: str
-    pro_not_affiliated: bool = False
+    pro_not_affiliated: bool = False        # kept for old clients; refused for sync (3.5)
     pro_name: Optional[str] = None
     ipi: Optional[str] = None
+    sync_sole_attested: bool = False        # Agreement 3.1 / 3.3: sync is exclusive to OVOXI
 
     @field_validator("samples")
     @classmethod
@@ -773,13 +774,13 @@ class SyncIntake(BaseModel):
 
     @model_validator(mode="after")
     def _pro_rules(self):
-        if self.pro_not_affiliated:
-            if self.pro_name or self.ipi:
-                raise ValueError("Leave PRO and IPI empty when not affiliated.")
-        else:
-            _one_of(self.pro_name, PRO_ORGS, "PRO")
-            if not self.ipi or not re.fullmatch(IPI_PATTERN, self.ipi):
-                raise ValueError("IPI must be 9 or 11 digits.")
+        if self.pro_not_affiliated or not self.pro_name:
+            raise ValueError(PRO_REQUIRED_MESSAGE)
+        _one_of(self.pro_name, PRO_ORGS, "PRO")
+        if not self.ipi or not re.fullmatch(IPI_PATTERN, self.ipi):
+            raise ValueError("IPI must be 9 or 11 digits.")
+        if not self.sync_sole_attested:
+            raise ValueError(SYNC_SOLE_MESSAGE)
         return self
 
 
@@ -1781,11 +1782,18 @@ async def presign_upload(request: Request, payload: PresignRequest, clerk_payloa
         if not (version and artist_agreement.supports_exclusive(version)):
             raise HTTPException(status_code=409, detail="Exclusive songs are not available yet.")
         scopes.append("exclusive")
+    preview_rights = build_rights(
+        payload.rights, intake=payload.sync_intake, clerk_user_id=clerk_user_id, now_iso=now_iso)
+    if payload.consent_sync:
+        missing_pro = writers_missing_pro(preview_rights)
+        if missing_pro:
+            raise HTTPException(status_code=422, detail=(
+                "Every writer needs a PRO and IPI for sync placements. Missing: "
+                + ", ".join(missing_pro) + "."))
     if payload.declarations.loops:
         # Agreement 3.6(a): every loop creator must be a rights holder in the splits,
         # so the Co-owner Consent goes to them like any co-owner.
-        listed = rights_emails({"rights": build_rights(
-            payload.rights, intake=payload.sync_intake, clerk_user_id=clerk_user_id, now_iso=now_iso)})
+        listed = rights_emails({"rights": preview_rights})
         missing = [lp.creator_name for lp in payload.declarations.loops if lp.creator_email not in listed]
         if missing:
             raise HTTPException(status_code=422, detail=(
@@ -1837,6 +1845,7 @@ async def presign_upload(request: Request, payload: PresignRequest, clerk_payloa
             "pro_not_affiliated": payload.sync_intake.pro_not_affiliated,
             "pro_name": payload.sync_intake.pro_name,
             "ipi": payload.sync_intake.ipi,
+            "sync_sole_attested_at": now_iso,
         })
     doc['rights'] = build_rights(
         payload.rights, intake=payload.sync_intake,
@@ -1864,7 +1873,8 @@ async def presign_upload(request: Request, payload: PresignRequest, clerk_payloa
 
 @api_router.post("/upload/complete")
 @limiter.limit("20/minute")
-async def complete_upload(request: Request, payload: CompleteUploadRequest, clerk_payload: dict = Depends(require_artist)):
+async def complete_upload(request: Request, payload: CompleteUploadRequest, background: BackgroundTasks,
+                          clerk_payload: dict = Depends(require_artist)):
     if os.environ.get("UPLOADS_ENABLED", "true") != "true":
         raise HTTPException(status_code=503, detail="Uploads are temporarily paused")
     sub = await db.track_submissions.find_one({"id": payload.submission_id}, {"_id": 0})
@@ -1900,13 +1910,11 @@ async def complete_upload(request: Request, payload: CompleteUploadRequest, cler
     await _set_status(payload.submission_id, "uploaded")
     logger.info("Queued for processing submission=%s", payload.submission_id)
 
-    # Co-owner Consent requests (Brief 22 C3). Safe to repeat: existing requests are
-    # left alone, and an email failure never fails the upload.
+    # Co-owner Consent requests (Brief 22 C3). Sent after the response (Brief 25b C6):
+    # each email could take up to 10 s, and the upload must not wait for them. Safe to
+    # repeat: existing requests are left alone, and an email failure never fails the upload.
     if sub.get("cosign_required"):
-        try:
-            await _dispatch_cosign_requests(sub)
-        except Exception as exc:
-            logger.error("cosign dispatch failed for %s: %s", payload.submission_id, exc)
+        background.add_task(_dispatch_cosign_quietly, sub)
 
     return {"status": "uploaded", "submission_id": payload.submission_id}
 
@@ -2067,6 +2075,13 @@ async def _send_cosign_request(req: dict, token: str, uploader_name: str,
             {"$set": {"sent_at": now, "last_sent_at": now}, "$inc": {"send_count": 1}})
     else:
         logger.warning("cosign invite not sent req=%s status=%s", req["id"], result.get("status"))
+
+
+async def _dispatch_cosign_quietly(sub: dict) -> None:
+    try:
+        await _dispatch_cosign_requests(sub)
+    except Exception as exc:
+        logger.error("cosign dispatch failed for %s: %s", sub.get("id"), exc)
 
 
 async def _dispatch_cosign_requests(sub: dict) -> None:
@@ -2495,6 +2510,20 @@ async def change_vault_consent(request: Request, track_id: str, payload: Consent
     if (payload.scope == "ai_training" and want
             and (doc.get("intake") or {}).get("samples") in ("royalty_free_loop", "cleared_sample")):
         raise HTTPException(status_code=409, detail=LOOPS_NO_AI_MESSAGE)
+    shortcut_rights = None
+    if payload.scope == "sync" and want:
+        rights = doc.get("rights") or {}
+        if rights.get("owns_everything") and (rights.get("writers") or []):
+            # The 100% shortcut takes the uploader's PRO from the sync answers.
+            rights = {**rights, "writers": [{**w, "society": payload.sync_intake.pro_name,
+                                             "ipi_name_number": payload.sync_intake.ipi}
+                                            if w.get("is_self") else w for w in rights["writers"]]}
+            shortcut_rights = rights
+        missing_pro = writers_missing_pro(rights)
+        if missing_pro:
+            raise HTTPException(status_code=422, detail=(
+                "Every writer needs a PRO and IPI for sync placements. Missing: "
+                + ", ".join(missing_pro) + "."))
     agreement = await _require_signed_agreement(clerk_payload) if want else None
 
     try:
@@ -2517,9 +2546,11 @@ async def change_vault_consent(request: Request, track_id: str, payload: Consent
         i = payload.sync_intake
         fields.update({
             "intake.distributor": i.distributor, "intake.content_id": i.content_id,
-            "intake.pro_not_affiliated": i.pro_not_affiliated, "intake.pro_name": i.pro_name,
-            "intake.ipi": i.ipi,
+            "intake.pro_not_affiliated": False, "intake.pro_name": i.pro_name,
+            "intake.ipi": i.ipi, "intake.sync_sole_attested_at": now_iso,
         })
+        if shortcut_rights is not None:
+            fields["rights"] = shortcut_rights
         if i.samples is not None:
             fields.update({"intake.samples": i.samples, "intake.samples_attested_at": now_iso})
     elif payload.scope == "sync":

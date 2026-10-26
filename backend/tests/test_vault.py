@@ -36,7 +36,8 @@ def track(**overrides):
                      "key": "A minor", "key_source": "detected", "key_detected": "A minor",
                      "key_unsure": True, "key_needs_confirmation": True},
         "intake": {"samples": "original", "ipi": "00123456789", "pro_name": "BMI"},
-        "rights": {"writers": [{"legal_name": "Private Person", "share_bp": 10000}]},
+        "rights": {"writers": [{"legal_name": "Private Person", "share_bp": 10000,
+                                "society": "BMI", "ipi_name_number": "00123456789"}]},
         "fingerprint_result": "CLEARED",
         **MATCH,
     }
@@ -258,7 +259,7 @@ def test_confirmed_value_never_held_by_later_detection():
 # ---------------------------------------------------------------------------
 
 INTAKE = {"samples": "original", "samples_attested": True, "distributor": "DistroKid",
-          "content_id": "no", "pro_not_affiliated": True}
+          "content_id": "no", "pro_name": "BMI", "ipi": "00123456789", "sync_sole_attested": True}
 
 
 def consent(client, **body):
@@ -489,3 +490,54 @@ def test_upload_old_ai_exclusive_field_is_ignored():
     req = server.PresignRequest(**base, consent_ai_training=True, consent_ai_exclusive=True,
                                 declarations={"samples": "original", "samples_attested": True, "ai_tools": "none", "ai_tools_attested": True})
     assert req.consent_exclusive is False
+
+
+# ---------------------------------------------------------------------------
+# Brief 25b C2: every writer needs a PRO and IPI to add sync
+# ---------------------------------------------------------------------------
+
+def test_add_sync_refused_when_a_writer_has_no_pro(client, db):
+    db.track_submissions.docs[0]["rights"] = {"writers": [
+        {"legal_name": "Me", "share_bp": 5000, "society": "BMI", "ipi_name_number": "00123456789"},
+        {"legal_name": "Co Writer", "share_bp": 5000, "society": None, "ipi_name_number": None}]}
+    r = consent(client, scope="sync", action="grant", sync_intake=INTAKE)
+    assert r.status_code == 422 and "Every writer needs a PRO and IPI" in r.text and "Co Writer" in r.text
+    assert db.consent_events.inserted == []
+
+
+def test_add_sync_shortcut_copies_pro_onto_self_writer(client, db, monkeypatch):
+    monkeypatch.setattr(server, "_run_clearance", AsyncMock())
+    db.track_submissions.docs[0]["rights"] = {"owns_everything": True, "writers": [
+        {"legal_name": "Me", "share_bp": 10000, "society": None, "ipi_name_number": None, "is_self": True}]}
+    r = consent(client, scope="sync", action="grant", sync_intake=INTAKE)
+    assert r.status_code == 200, r.text
+    w = db.track_submissions.docs[0]["rights"]["writers"][0]
+    assert w["society"] == "BMI" and w["ipi_name_number"] == "00123456789"
+    assert db.track_submissions.docs[0]["intake"]["sync_sole_attested_at"]
+
+
+def test_add_sync_not_affiliated_refused(client, db):
+    r = consent(client, scope="sync", action="grant",
+                sync_intake={**INTAKE, "pro_not_affiliated": True, "pro_name": None, "ipi": None})
+    assert r.status_code == 422 and "need a performing rights organization (PRO)" in r.text
+
+
+# ---------------------------------------------------------------------------
+# Brief 25b C6: /upload/complete does not wait for co-owner emails
+# ---------------------------------------------------------------------------
+
+def test_complete_sends_cosign_in_background(client, db, monkeypatch):
+    import asyncio as _asyncio
+    order = []
+
+    async def slow_dispatch(sub):
+        order.append("email")
+
+    monkeypatch.setattr(server, "_dispatch_cosign_requests", slow_dispatch)
+    db.track_submissions.docs[0].update(status="pending", original_r2_path="catalog/x/original/t.wav",
+                                        expected_size=10, cosign_required=True)
+    server.r2_client.head_object.return_value = {"ContentLength": 10}
+    monkeypatch.setattr(server, "_set_status", AsyncMock(side_effect=lambda *a, **k: order.append("status")))
+    r = client.post("/api/upload/complete", json={"submission_id": TID})
+    assert r.status_code == 200, r.text
+    assert order == ["status", "email"]          # email ran after the response was built

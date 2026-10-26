@@ -226,6 +226,20 @@ def test_scan_offsets_cover_the_song(monkeypatch):
     assert acrcloud_check.scan_offsets(900) == [0, 30]
 
 
+@pytest.fixture(autouse=True)
+def _no_pause(monkeypatch):
+    monkeypatch.setenv("ACR_SCAN_PAUSE_SECONDS", "0")
+
+
+def test_scan_file_pauses_between_windows(monkeypatch):
+    monkeypatch.setenv("ACR_SCAN_PAUSE_SECONDS", "0.6")
+    sleeps = []
+    monkeypatch.setattr(acrcloud_check.time, "sleep", sleeps.append)
+    monkeypatch.setattr(acrcloud_check, "scan_window", lambda p, o: acrcloud_check._result("CLEARED"))
+    acrcloud_check.scan_file("x.wav", 100)
+    assert sleeps == [0.6, 0.6, 0.6]                 # 4 windows, a pause before each after the first
+
+
 def test_scan_file_returns_most_serious_window(monkeypatch):
     results = {0: "CLEARED", 30: "NEEDS_DOCS", 60: "SCAN_ERROR", 90: "CLEARED"}
     calls = []

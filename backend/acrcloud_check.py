@@ -6,6 +6,7 @@ Synchronous — call via asyncio.to_thread in the pipeline.
 import json
 import logging
 import os
+import time
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -51,6 +52,8 @@ def _result(
 # Brief 25b: scan the whole song, not only its first 15 seconds, so a sample later in
 # the track is caught. One request per window: about 7 for a 3-minute song at the
 # defaults. Tune with ACR_SCAN_STEP_SECONDS / ACR_SCAN_WINDOW_SECONDS / ACR_SCAN_MAX_WINDOWS.
+# ACR_SCAN_PAUSE_SECONDS spaces the requests so one song stays under the plan's
+# requests-per-second limit (2 on the Free plan).
 _SEVERITY = {"CONFLICT": 3, "NEEDS_DOCS": 2, "SCAN_ERROR": 1, "CLEARED": 0}
 
 
@@ -66,7 +69,10 @@ def scan_file(file_path: str, duration_s: Optional[float] = None) -> dict:
     """Scan every window across the song and return the most serious result:
     CONFLICT, then NEEDS_DOCS, then SCAN_ERROR, else CLEARED. A match carries its offset."""
     worst = None
-    for offset in scan_offsets(duration_s):
+    pause = max(0.0, float(os.environ.get("ACR_SCAN_PAUSE_SECONDS", "0.6")))
+    for i, offset in enumerate(scan_offsets(duration_s)):
+        if i and pause:
+            time.sleep(pause)
         r = scan_window(file_path, offset)
         if worst is None or _SEVERITY[r["status"]] > _SEVERITY[worst["status"]]:
             worst = {**r, "matched_offset_s": offset if r["status"] in ("CONFLICT", "NEEDS_DOCS") else None}

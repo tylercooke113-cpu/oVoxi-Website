@@ -37,7 +37,7 @@ export const AudienceSection = () => (
             </h3>
             <div className="mt-8">
               <PrimaryCTA to="/signup" testid="artists-section-cta">
-                Join as an Artist
+                Artists
               </PrimaryCTA>
             </div>
           </div>

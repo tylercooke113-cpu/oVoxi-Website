@@ -11,7 +11,7 @@ const StatusChip = ({ song }) => {
     return (
       <span className="inline-flex items-center gap-1.5 text-xs text-slate-300">
         <Loader2 size={14} className="animate-spin text-electric" />
-        Uploading… {song.progress}%
+        {song.phase === 'finishing' || song.progress >= 100 ? 'Finishing…' : `Uploading… ${song.progress}%`}
       </span>
     );
   }
@@ -21,7 +21,7 @@ const StatusChip = ({ song }) => {
   if (song.status === 'received') {
     return (
       <span className="inline-flex items-center gap-1.5 text-xs text-cyan">
-        <CheckCircle2 size={14} /> Received
+        <CheckCircle2 size={14} /> Received{song.warning ? ` (${song.warning})` : ''}
       </span>
     );
   }

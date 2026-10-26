@@ -101,7 +101,7 @@ const UploadPage = () => {
     setSongs((prev) => prev.map((s) => (keys.has(s.key)
       ? { ...s, status: 'queued', progress: 0, error: null }
       : s)));
-    const { stopReason } = await run(list, patchSong);
+    const { stopReason, failed } = await run(list, patchSong);
     if (stopReason === 'agreement') {
       await refreshAgreement();
       setAgreementOpen(true);
@@ -109,6 +109,14 @@ const UploadPage = () => {
     }
     if (stopReason === 'approval') { toast.error(APPROVAL_PENDING_MESSAGE); return; }
     if (stopReason === 'paused') { toast.error(UPLOADS_PAUSED_MESSAGE); return; }
+    // Brief 25b C6 / decision 9: once every file is received, go to the Vault. Mastering,
+    // stems and checks continue in the background, with status shown there.
+    if (!stopReason && !failed) {
+      toast.success(list.length === 1 ? 'Song received. Processing continues in your Vault.'
+        : `${list.length} songs received. Processing continues in your Vault.`);
+      navigate('/vault');
+      return;
+    }
     setPhase('done');
   };
 

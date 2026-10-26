@@ -17,17 +17,17 @@ import {
   MOODS,
   MAX_MOODS,
   VOCALS_OPTIONS,
-  SAMPLE_OPTIONS,
-  CONTENT_ID_OPTIONS,
-  DISTRIBUTORS,
-  PRO_ORGS,
-  IPI_PATTERN,
   BPM_MIN,
   BPM_MAX,
   MAJOR_KEYS,
   MINOR_KEYS,
+  LOOPS_NO_AI_MESSAGE,
+  PRO_REQUIRED_MESSAGE,
 } from '../sync/constants';
-import RightsSection, { emptyRights, isRightsValid } from '../sync/RightsSection';
+import RightsSection, { emptyRights, isRightsValid, rightsEmails, writersMissingPro } from '../sync/RightsSection';
+import SyncIntakeFields, { EMPTY_INTAKE, isIntakeValid, buildIntakePayload } from '../sync/SyncIntakeFields';
+import DeclarationsFields from './DeclarationsFields';
+import { EMPTY_DECLARATIONS, declarationsMissing, usesLoops } from './declarations';
 
 export const GENRES = [
   'Hip-Hop', 'R&B', 'Afrobeats', 'Trap', 'Soul',
@@ -37,31 +37,8 @@ export const GENRES = [
 export const MAX_BYTES = 150 * 1024 * 1024; // 150 MB, matches MAX_UPLOAD_BYTES on Railway
 export const MAX_SONGS = 15;
 
-export const EMPTY_INTAKE = {
-  samples: '',
-  samples_attested: false,
-  distributor: '',
-  content_id: '',
-  pro_not_affiliated: false,
-  pro_name: '',
-  ipi: '',
-};
-
-export const isIntakeValid = (i) => {
-  if (!i.samples || !i.samples_attested || !i.distributor || !i.content_id) return false;
-  if (i.pro_not_affiliated) return true;
-  return !!i.pro_name && IPI_PATTERN.test(i.ipi);
-};
-
-export const buildIntakePayload = (i) => ({
-  samples: i.samples,
-  samples_attested: i.samples_attested,
-  distributor: i.distributor,
-  content_id: i.content_id,
-  pro_not_affiliated: i.pro_not_affiliated,
-  pro_name: i.pro_not_affiliated ? null : i.pro_name,
-  ipi: i.pro_not_affiliated ? null : i.ipi,
-});
+// One copy of the sync questions and rules (Brief 25b C2), shared with the Vault.
+export { EMPTY_INTAKE, isIntakeValid, buildIntakePayload };
 
 let _songSeq = 0;
 
@@ -77,8 +54,10 @@ export const emptySong = (overrides = {}) => ({
   musicalKey: '',
   keyUnsure: false,
   consentAi: false,
-  consentAiExclusive: false,
   consentSync: false,
+  consentExclusive: false,       // Brief 25b: song-level exclusive choice
+  declarations: EMPTY_DECLARATIONS,
+  proNotice: false,              // "not affiliated" was picked: sync was turned off
   intake: EMPTY_INTAKE,
   rights: emptyRights(),
   status: 'draft', // draft | queued | uploading | received | failed
@@ -93,12 +72,11 @@ export const emptySong = (overrides = {}) => ({
 export const carryOverSong = (prev) => emptySong({
   form: { artist_name: prev.form.artist_name, track_name: '', genre: '' },
   consentAi: prev.consentAi,
-  consentAiExclusive: prev.consentAiExclusive,
   consentSync: prev.consentSync,
+  consentExclusive: prev.consentExclusive,
   intake: {
     ...EMPTY_INTAKE,
     distributor: prev.intake.distributor,
-    pro_not_affiliated: prev.intake.pro_not_affiliated,
     pro_name: prev.intake.pro_name,
     ipi: prev.intake.ipi,
   },
@@ -124,7 +102,7 @@ export const songHasData = (song) => {
 export const songMissing = (song) => {
   const {
     form, moods, vocals, bpm, bpmUnsure, musicalKey, keyUnsure,
-    consentAi, consentSync, intake, rights, file,
+    consentAi, consentSync, intake, rights, file, declarations,
   } = song;
   const missing = [];
   if (!form.artist_name) missing.push('artist name');
@@ -137,7 +115,11 @@ export const songMissing = (song) => {
   if (!bpmUnsure && !bpmValid) missing.push('BPM');
   if (!keyUnsure && !musicalKey) missing.push('key');
   if (!consentAi && !consentSync) missing.push('how it can be used');
-  if (!isRightsValid(rights)) missing.push('splits');
+  if (consentAi && usesLoops(declarations)) missing.push('AI training off (songs with loops are sync only)');
+  missing.push(...declarationsMissing(declarations, { rightsEmails: rightsEmails(rights), requireFiles: true }));
+  if (!isRightsValid(rights, { requirePro: consentSync })) {
+    missing.push(consentSync && writersMissingPro(rights).length ? "every writer's PRO and IPI" : 'splits');
+  }
   if (consentSync && !isIntakeValid(intake)) missing.push('sync details');
   if (!file) missing.push('audio file');
   return missing;
@@ -172,7 +154,6 @@ const SongForm = ({ value, onChange, index, disabled, agreementStatus, getToken 
     patch(next);
   };
 
-  const setIntakeField = (key, v) => patch({ intake: { ...value.intake, [key]: v } });
 
   const toggleMood = (m) => {
     if (value.moods.includes(m)) {
@@ -186,12 +167,18 @@ const SongForm = ({ value, onChange, index, disabled, agreementStatus, getToken 
   };
 
   const toggleSync = (checked) => {
-    patch({ consentSync: checked, intake: checked ? value.intake : EMPTY_INTAKE });
+    patch({ consentSync: checked, proNotice: false, intake: checked ? value.intake : EMPTY_INTAKE });
   };
 
-  const toggleNotAffiliated = (checked) => {
-    patch({ intake: { ...value.intake, pro_not_affiliated: checked, pro_name: '', ipi: '' } });
-  };
+  // Agreement 3.5: "not affiliated with a PRO" means AI training only.
+  const notAffiliated = () => patch({ consentSync: false, intake: EMPTY_INTAKE, proNotice: true });
+
+  // Agreement 3.6: songs with loops are sync only.
+  const setDeclarations = (d) => patch(usesLoops(d)
+    ? { declarations: d, consentAi: false }
+    : { declarations: d });
+  const loopSong = usesLoops(value.declarations);
+  const exclusiveOffered = !!agreementStatus?.exclusive_supported;
 
   const handleFile = (f) => {
     if (!f) return;
@@ -405,18 +392,10 @@ const SongForm = ({ value, onChange, index, disabled, agreementStatus, getToken 
 
       <div className="border-t border-white/10" />
 
-      {/* Consent */}
+      {/* Consent (Brief 25b C1: sync first, then AI training, then the exclusive choice) */}
       <div className="space-y-3">
         <Label className="text-slate-300">How can this upload be used? *</Label>
         {[
-          {
-            id: tid('consent-ai'),
-            testid: tid('upload-consent-ai'),
-            checked: value.consentAi,
-            onChange: (v) => patch({ consentAi: v }),
-            title: 'Use this upload for AI training.',
-            help: 'Licensed to AI companies as training data.',
-          },
           {
             id: tid('consent-sync'),
             testid: tid('upload-consent-sync'),
@@ -425,14 +404,23 @@ const SongForm = ({ value, onChange, index, disabled, agreementStatus, getToken 
             title: 'Use this upload for sync placements.',
             help: 'Listed in the OVOXI Catalog for creators and brands to license.',
           },
+          {
+            id: tid('consent-ai'),
+            testid: tid('upload-consent-ai'),
+            checked: value.consentAi,
+            onChange: (v) => patch({ consentAi: v }),
+            title: 'Use this upload for AI training.',
+            help: loopSong ? LOOPS_NO_AI_MESSAGE : 'Licensed to AI companies as training data.',
+            blocked: loopSong,
+          },
         ].map((c) => (
           <label
             key={c.id}
             htmlFor={c.id}
-            className={`flex cursor-pointer items-start gap-3 rounded-xl border px-4 py-3.5 transition-colors ${
-              c.checked
-                ? 'border-electric/60 bg-electric/[0.06]'
-                : 'border-white/10 hover:border-electric/35'
+            className={`flex items-start gap-3 rounded-xl border px-4 py-3.5 transition-colors ${
+              c.blocked ? 'cursor-not-allowed border-white/10 opacity-60'
+                : c.checked ? 'cursor-pointer border-electric/60 bg-electric/[0.06]'
+                : 'cursor-pointer border-white/10 hover:border-electric/35'
             }`}
           >
             <Checkbox
@@ -440,7 +428,7 @@ const SongForm = ({ value, onChange, index, disabled, agreementStatus, getToken 
               data-testid={c.testid}
               checked={c.checked}
               onCheckedChange={(v) => c.onChange(v === true)}
-              disabled={disabled}
+              disabled={disabled || c.blocked}
               className={CHECKBOX_CLASS}
             />
             <span>
@@ -449,6 +437,31 @@ const SongForm = ({ value, onChange, index, disabled, agreementStatus, getToken 
             </span>
           </label>
         ))}
+        {value.proNotice && !value.consentSync && (
+          <p className="rounded-lg border border-amber-400/35 bg-amber-400/[0.06] p-3 text-xs text-amber-100"
+            data-testid={tid('pro-notice')}>{PRO_REQUIRED_MESSAGE}</p>
+        )}
+        {exclusiveOffered && (value.consentAi || value.consentSync) && (
+          <RadioGroup
+            value={value.consentExclusive ? 'exclusive' : 'non_exclusive'}
+            onValueChange={(v) => patch({ consentExclusive: v === 'exclusive' })}
+            disabled={disabled}
+            className="ml-8 gap-2"
+            data-testid={tid('exclusive-choice')}
+          >
+            {[
+              ['non_exclusive', 'Non-exclusive. Multiple buyers can license this song.'],
+              ['exclusive', 'Exclusive. Give an option for buyers to purchase this license outright for a higher price.'],
+            ].map(([v, label]) => (
+              <label key={v} className={`flex cursor-pointer items-start gap-2.5 rounded-lg border px-3 py-2.5 text-sm ${
+                (value.consentExclusive ? 'exclusive' : 'non_exclusive') === v
+                  ? 'border-electric/60 bg-electric/[0.06] text-white' : 'border-white/10 text-slate-300'}`}>
+                <RadioGroupItem value={v} className={RADIO_CLASS} />
+                <span>{label}</span>
+              </label>
+            ))}
+          </RadioGroup>
+        )}
         {!value.consentAi && !value.consentSync && (
           <p className="text-xs text-red-400">Choose at least one.</p>
         )}
@@ -463,8 +476,16 @@ const SongForm = ({ value, onChange, index, disabled, agreementStatus, getToken 
         )}
       </div>
 
-      {/* Splits (every upload) */}
-      <RightsSection value={value.rights} onChange={(r) => patch({ rights: r })} disabled={disabled} />
+      {/* Samples, loops and AI tools (every upload; Brief 25b D1, F) */}
+      <div className="space-y-3 rounded-2xl border border-white/10 bg-white/[0.01] p-5 sm:p-6">
+        <h3 className="font-heading text-base font-semibold text-white">About this song</h3>
+        <DeclarationsFields value={value.declarations} onChange={setDeclarations} disabled={disabled}
+          idPrefix={tid('upload-decl')} withFiles />
+      </div>
+
+      {/* Splits (every upload). With sync on, every writer needs a PRO and IPI. */}
+      <RightsSection value={value.rights} onChange={(r) => patch({ rights: r })} disabled={disabled}
+        requirePro={value.consentSync} />
 
       {/* Sync details */}
       {value.consentSync && (
@@ -478,129 +499,8 @@ const SongForm = ({ value, onChange, index, disabled, agreementStatus, getToken 
               Buyers need these answers before your track can be licensed.
             </p>
           </div>
-
-          {/* Samples */}
-          <div className="space-y-2">
-            <Label className="text-slate-300">Samples *</Label>
-            <RadioGroup
-              value={value.intake.samples}
-              onValueChange={(v) => setIntakeField('samples', v)}
-              disabled={disabled}
-              className="gap-2.5"
-            >
-              {SAMPLE_OPTIONS.map((o) => (
-                <label key={o.value} className="flex cursor-pointer items-start gap-3 text-sm text-slate-300">
-                  <RadioGroupItem value={o.value} className={RADIO_CLASS} />
-                  {o.label}
-                </label>
-              ))}
-            </RadioGroup>
-            <label className="flex cursor-pointer items-start gap-3 pt-2 text-sm text-slate-300">
-              <Checkbox
-                checked={value.intake.samples_attested}
-                onCheckedChange={(v) => setIntakeField('samples_attested', v === true)}
-                disabled={disabled}
-                className={CHECKBOX_CLASS}
-              />
-              I confirm this is accurate and I have the rights described.
-            </label>
-          </div>
-
-          {/* Distributor */}
-          <div className="space-y-2">
-            <Label className="text-slate-300">Distributor *</Label>
-            <Select
-              value={value.intake.distributor}
-              onValueChange={(v) => setIntakeField('distributor', v)}
-              disabled={disabled}
-            >
-              <SelectTrigger className="border-white/10 bg-ink text-white focus:ring-electric">
-                <SelectValue placeholder="Select distributor" />
-              </SelectTrigger>
-              <SelectContent className="border-white/10 bg-ink-2 text-white">
-                {DISTRIBUTORS.map((d) => (
-                  <SelectItem key={d} value={d}>{d}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Content ID */}
-          <div className="space-y-2">
-            <Label className="text-slate-300">
-              Is this song registered in YouTube Content ID? *
-            </Label>
-            <RadioGroup
-              value={value.intake.content_id}
-              onValueChange={(v) => setIntakeField('content_id', v)}
-              disabled={disabled}
-              className="flex flex-wrap gap-5"
-            >
-              {CONTENT_ID_OPTIONS.map((o) => (
-                <label key={o.value} className="flex cursor-pointer items-start gap-2.5 text-sm text-slate-300">
-                  <RadioGroupItem value={o.value} className={RADIO_CLASS} />
-                  {o.label}
-                </label>
-              ))}
-            </RadioGroup>
-            <p className="text-xs leading-relaxed text-slate-500">
-              Songs in Content ID are not listed in the OVOXI Catalog, because buyers' videos would be claimed.
-            </p>
-          </div>
-
-          {/* PRO */}
-          <div className="space-y-3">
-            <Label className="text-slate-300">Performing rights (PRO)</Label>
-            <label className="flex cursor-pointer items-start gap-3 text-sm text-slate-300">
-              <Checkbox
-                checked={value.intake.pro_not_affiliated}
-                onCheckedChange={(v) => toggleNotAffiliated(v === true)}
-                disabled={disabled}
-                className={CHECKBOX_CLASS}
-              />
-              I'm not affiliated with a PRO.
-            </label>
-            {!value.intake.pro_not_affiliated && (
-              <>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label className="text-slate-300">PRO *</Label>
-                    <Select
-                      value={value.intake.pro_name}
-                      onValueChange={(v) => setIntakeField('pro_name', v)}
-                      disabled={disabled}
-                    >
-                      <SelectTrigger className="border-white/10 bg-ink text-white focus:ring-electric">
-                        <SelectValue placeholder="Select PRO" />
-                      </SelectTrigger>
-                      <SelectContent className="border-white/10 bg-ink-2 text-white">
-                        {PRO_ORGS.map((p) => (
-                          <SelectItem key={p} value={p}>{p}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor={tid('upload-ipi')} className="text-slate-300">IPI number *</Label>
-                    <Input
-                      id={tid('upload-ipi')}
-                      inputMode="numeric"
-                      maxLength={11}
-                      value={value.intake.ipi}
-                      onChange={(e) => setIntakeField('ipi', e.target.value.replace(/\D/g, ''))}
-                      placeholder="9 or 11 digits"
-                      disabled={disabled}
-                      className="border-white/10 bg-ink text-white placeholder:text-slate-600 focus-visible:ring-electric"
-                    />
-                    {value.intake.ipi && !IPI_PATTERN.test(value.intake.ipi) && (
-                      <p className="text-xs text-red-400">IPI must be 9 or 11 digits.</p>
-                    )}
-                  </div>
-                </div>
-                <p className="text-xs text-slate-500">Your IPI number is in your PRO account.</p>
-              </>
-            )}
-          </div>
+          <SyncIntakeFields value={value.intake} onChange={(i) => patch({ intake: i })}
+            disabled={disabled} onNotAffiliated={notAffiliated} />
         </div>
       )}
 

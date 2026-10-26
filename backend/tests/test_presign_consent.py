@@ -81,6 +81,7 @@ def intake(**overrides):
         "pro_not_affiliated": False,
         "pro_name": "BMI",
         "ipi": "00123456789",
+        "sync_sole_attested": True,
     }
     body.update(overrides)
     return body
@@ -217,9 +218,23 @@ def test_not_affiliated_with_pro_name_rejected(client, fake_db):
     assert_rejected(post(client, sync_body(pro_not_affiliated=True, ipi=None)), fake_db)
 
 
-def test_not_affiliated_clean_accepted(client, fake_db):
+def test_not_affiliated_refused_for_sync(client, fake_db):
+    # Brief 25b C2 (Agreement 3.5): "not affiliated" means AI training only.
     resp = post(client, sync_body(pro_not_affiliated=True, pro_name=None, ipi=None))
+    assert resp.status_code == 422 and "need a performing rights organization (PRO)" in resp.text
+    assert_rejected(resp, fake_db)
+
+
+def test_sync_needs_sole_attestation(client, fake_db):
+    resp = post(client, sync_body(sync_sole_attested=False))
+    assert resp.status_code == 422 and "not offered for sync anywhere else" in resp.text
+    assert_rejected(resp, fake_db)
+
+
+def test_sync_stores_sole_attestation(client, fake_db):
+    resp = post(client, sync_body())
     assert resp.status_code == 200, resp.text
+    assert inserted_doc(fake_db)["intake"]["sync_sole_attested_at"]
 
 
 @pytest.mark.parametrize("ipi", [None, "12345678", "1234567890", "12345abc901"])

@@ -74,10 +74,25 @@ const partyProblem = (parties, selfCf, { email = true } = {}) => {
   return sumBp(parties) !== TOTAL_BP;
 };
 
-export const isRightsValid = (r) => {
+// Brief 25b C2 (Agreement 3.5): with sync on, every writer needs a PRO and an IPI.
+export const writersMissingPro = (r) => (r.owns_everything ? []
+  : r.writers.filter((w) => !w.society || !IPI_PATTERN.test(w.ipi || '')));
+
+// Lower-cased signing emails of everyone in the splits who is not the uploader. Loop
+// creators must appear here with the same email (Agreement 3.6(a)).
+export const rightsEmails = (r) => {
+  if (r.owns_everything) return [];
+  const selfCf = r.self_legal_name.trim().toLowerCase();
+  return [...r.writers, ...flatPublishers(r), ...r.master_owners]
+    .filter((p) => !isSelf(p, selfCf) && p.email.trim())
+    .map((p) => p.email.trim().toLowerCase());
+};
+
+export const isRightsValid = (r, { requirePro = false } = {}) => {
   if (!r.self_legal_name.trim() || !r.attested) return false;
   if (r.owns_everything) return true;
   const selfCf = r.self_legal_name.trim().toLowerCase();
+  if (requirePro && writersMissingPro(r).length) return false;
   if (partyProblem(r.writers, selfCf)) return false;
   if (partyProblem(flatPublishers(r), selfCf)) return false;
   if (partyProblem(r.master_owners, selfCf)) return false;
@@ -170,7 +185,7 @@ const TotalLine = ({ label, parties }) => {
   );
 };
 
-const RightsSection = ({ value, onChange, disabled }) => {
+const RightsSection = ({ value, onChange, disabled, requirePro = false }) => {
   const r = value;
   const set = (patch) => onChange({ ...r, ...patch });
   const selfCf = r.self_legal_name.trim().toLowerCase();
@@ -324,17 +339,17 @@ const RightsSection = ({ value, onChange, disabled }) => {
                   )}
                   <div className="grid grid-cols-2 gap-2">
                     <div className="space-y-1">
-                      <span className="text-[11px] text-slate-500">PRO (optional)</span>
+                      <span className="text-[11px] text-slate-500">{requirePro ? 'PRO *' : 'PRO (optional)'}</span>
                       <Select
-                        value={w.society || NO_PRO}
+                        value={w.society || (requirePro ? undefined : NO_PRO)}
                         onValueChange={(v) => setWriter(i, { society: v === NO_PRO ? '' : v })}
                         disabled={disabled}
                       >
                         <SelectTrigger className="border-white/10 bg-ink text-white focus:ring-electric">
-                          <SelectValue />
+                          <SelectValue placeholder="Select PRO" />
                         </SelectTrigger>
                         <SelectContent className="border-white/10 bg-ink-2 text-white">
-                          <SelectItem value={NO_PRO}>None</SelectItem>
+                          {!requirePro && <SelectItem value={NO_PRO}>None</SelectItem>}
                           {PRO_ORGS.map((o) => (
                             <SelectItem key={o} value={o}>{o}</SelectItem>
                           ))}
@@ -342,7 +357,7 @@ const RightsSection = ({ value, onChange, disabled }) => {
                       </Select>
                     </div>
                     <div className="space-y-1">
-                      <span className="text-[11px] text-slate-500">IPI (optional)</span>
+                      <span className="text-[11px] text-slate-500">{requirePro ? 'IPI *' : 'IPI (optional)'}</span>
                       <Input
                         aria-label={`Writer ${i + 1} IPI`}
                         inputMode="numeric"
@@ -357,6 +372,9 @@ const RightsSection = ({ value, onChange, disabled }) => {
                   </div>
                   {w.ipi && !IPI_PATTERN.test(w.ipi) && (
                     <p className="text-xs text-red-400">IPI must be 9 or 11 digits.</p>
+                  )}
+                  {requirePro && (!w.society || !w.ipi) && (
+                    <p className="text-xs text-amber-300">Sync placements need this writer's PRO and IPI.</p>
                   )}
                 </div>
 

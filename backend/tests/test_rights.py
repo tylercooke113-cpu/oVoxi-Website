@@ -22,13 +22,16 @@ def party(name, bp, **kw):
     return {"legal_name": name, "share_bp": bp, **kw}
 
 
+PRO = {"society": "BMI", "ipi_name_number": "00123456789"}   # sync needs every writer's PRO
+
+
 def manual(**overrides):
     body = {
         "owns_everything": False,
         "self_legal_name": "Tyler Example",
-        "writers": [party("Tyler Example", 3334, role="CA"),
-                    party("Jordan Producer", 3333, email="jordan@example.com"),
-                    party("Sam Writer", 3333, email="sam@example.com")],
+        "writers": [party("Tyler Example", 3334, role="CA", **PRO),
+                    party("Jordan Producer", 3333, email="jordan@example.com", **PRO),
+                    party("Sam Writer", 3333, email="sam@example.com", **PRO)],
         "publishers": [party("Tyler Example", 5000),
                        party("Beat Co Publishing LLC", 5000, email="beatco@example.com")],
         "master_owners": [party("Tyler Example", 10000)],

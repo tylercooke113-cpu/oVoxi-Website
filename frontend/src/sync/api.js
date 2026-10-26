@@ -44,6 +44,16 @@ export const api = {
     (await axios.patch(`${API}/vault/tracks/${id}/metadata`, body, await authed(getToken))).data,
   changeConsent: async (getToken, id, body) =>
     (await axios.post(`${API}/vault/tracks/${id}/consent`, body, await authed(getToken))).data,
+  setDeclarations: async (getToken, id, body) =>
+    (await axios.post(`${API}/vault/tracks/${id}/declarations`, body, await authed(getToken))).data,
+  // Agreement 3.6(c): presign, PUT the file straight to storage, then complete.
+  uploadLoopLicense: async (getToken, trackId, index, file) => {
+    const { data } = await axios.post(`${API}/vault/tracks/${trackId}/loops/${index}/license/presign`,
+      { filename: file.name, content_type: file.type, file_size: file.size }, await authed(getToken));
+    await axios.put(data.presigned_url, file, { headers: { 'Content-Type': data.content_type } });
+    return (await axios.post(`${API}/vault/tracks/${trackId}/loops/${index}/license/complete`, null,
+      await authed(getToken))).data;
+  },
   cosignResend: async (getToken, trackId, requestId) =>
     (await axios.post(`${API}/vault/tracks/${trackId}/cosign/${requestId}/resend`, null, await authed(getToken))).data,
   cosignEditEmail: async (getToken, trackId, requestId, email) =>
