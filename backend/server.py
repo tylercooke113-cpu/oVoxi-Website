@@ -40,6 +40,7 @@ from sync_constants import (
     SAMPLES_NOT_ALLOWED_MESSAGE, LOOPS_NO_AI_MESSAGE, PRO_REQUIRED_MESSAGE, SYNC_SOLE_MESSAGE,
 )
 from consent_ledger import record_grants, record_withdrawals, GRANT_VERSION
+import privacy
 import artist_agreement
 import cosign
 from profile_photo import (
@@ -4445,6 +4446,47 @@ async def account_licenses(request: Request, clerk_payload: dict = Depends(verif
     return {"licenses": out, "linking": linking}
 
 
+# ---------------------------------------------------------------------------
+# Privacy choices (Brief 26). Signed out: one row per decision, keyed by the visitor id.
+# Signed in: the row carries the account, and a copy goes to Clerk public_metadata.privacy.
+# ---------------------------------------------------------------------------
+
+@api_router.post("/privacy/choices")
+@limiter.limit("30/minute")
+async def post_privacy_choice(request: Request, payload: privacy.PrivacyChoiceIn,
+                              viewer: Optional[dict] = Depends(optional_clerk)):
+    user_id = viewer["sub"] if viewer else None
+    if user_id and payload.source == "signup":
+        # Decision 2: an account that already has choices keeps them; the visit's choice
+        # is only the starting point for a new account.
+        existing = await privacy.latest_choice(db, user_id)
+        if existing:
+            return {"saved": False, "choice": privacy.public_choice(existing)}
+    row = privacy.choice_row(payload, user_id=user_id, ip=get_real_client_ip(request),
+                             user_agent=request.headers.get("user-agent", ""))
+    try:
+        await privacy.record_choice(db, row)
+    except Exception as exc:
+        logger.error("Privacy choice write failed: %s", type(exc).__name__)
+        raise HTTPException(status_code=503, detail="Could not save your choice. Please try again.")
+    clerk_synced = None
+    if user_id:
+        # The database row is the record. The Clerk copy is a convenience, so a Clerk
+        # failure is logged and reported, never a failed save.
+        try:
+            await set_clerk_public_metadata(user_id, {"privacy": privacy.clerk_privacy(row)})
+            clerk_synced = True
+        except HTTPException:
+            clerk_synced = False
+    return {"saved": True, "choice": privacy.public_choice(row), "clerk_synced": clerk_synced}
+
+
+@api_router.get("/privacy/me")
+@limiter.limit("30/minute")
+async def get_my_privacy_choice(request: Request, clerk_payload: dict = Depends(verify_clerk_token)):
+    return {"choice": privacy.public_choice(await privacy.latest_choice(db, clerk_payload["sub"]))}
+
+
 @api_router.post("/account/buyer-access")
 @limiter.limit("5/minute")
 async def account_buyer_access(request: Request, clerk_payload: dict = Depends(verify_clerk_token)):
@@ -4640,6 +4682,7 @@ async def create_indexes():
         await db.track_submissions.create_index([("id", 1)])
         await db.appeals.create_index([("id", 1)])
         await db.consent_events.create_index([("track_id", 1)])
+        await db.privacy_choices.create_index([("user_id", 1), ("created_at", -1)])
         await db.consent_events.create_index([("user_id", 1), ("created_at", 1)])
         await db.sync_profiles.create_index([("user_id", 1)], unique=True)
         await db.sync_profiles.create_index([("slug", 1)], unique=True)
