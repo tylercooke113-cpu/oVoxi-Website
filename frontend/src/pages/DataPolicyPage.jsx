@@ -67,8 +67,7 @@ const SECTIONS = [
       <>
         <p>Until you create an account, we show this prompt at the start of every visit:</p>
         <blockquote className="space-y-2 rounded-xl border border-white/10 bg-white/[0.03] p-4">
-          <p><strong className="text-white">Your data, your choice</strong></p>
-          <p>OVOXI uses essential technologies to run the site. With your permission, we also use analytics and session replay to improve it, and we sell or share some data with music, technology and marketing partners. See our Data Collection Policy and <Link to="/privacy" className="text-cyan hover:underline">Privacy Policy</Link>.</p>
+          <p>OVOXI uses essential technologies to run the site. With your permission, we also use analytics and session replay to improve it. See our Data Collection Policy and <Link to="/privacy" className="text-cyan hover:underline">Privacy Policy</Link>.</p>
           <p>[Accept all] [Reject] [Customize]</p>
         </blockquote>
         <p><strong className="text-white">Customize</strong> lets you turn each category on or off:</p>

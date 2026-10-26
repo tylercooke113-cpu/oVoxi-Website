@@ -62,8 +62,11 @@ test('signed out with no choice: the prompt shows with the policy copy', async (
   const { container } = await render(app());
   const card = q(container, 'consent-prompt');
   expect(card).not.toBeNull();
-  expect(card.textContent).toContain('Your data, your choice');
-  expect(card.textContent).toContain('we sell or share some data with music, technology and marketing partners');
+  expect(card.textContent).toBe(
+    'OVOXI uses essential technologies to run the site. With your permission, we also use analytics '
+    + 'and session replay to improve it. See our Data Collection Policy and Privacy Policy.'
+    + 'Accept allRejectCustomize');
+  expect(card.textContent).not.toContain('Your data, your choice');
   expect(card.querySelector('a[href="/data-policy"]')).not.toBeNull();
   expect(card.querySelector('a[href="/privacy"]')).not.toBeNull();
   expect(document.activeElement).toBe(card);

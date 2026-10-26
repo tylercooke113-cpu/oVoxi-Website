@@ -52,15 +52,13 @@ export default function ConsentPrompt() {
   };
 
   return (
-    <div role="dialog" aria-modal="false" aria-labelledby="consent-title" tabIndex={-1} ref={cardRef}
+    <div role="dialog" aria-modal="false" aria-label="Privacy choices" tabIndex={-1} ref={cardRef}
       data-testid="consent-prompt"
       className="fixed inset-x-0 bottom-0 z-50 p-3 sm:bottom-4 sm:left-4 sm:right-auto sm:max-w-md sm:p-0 focus:outline-none">
       <div className="rounded-2xl border border-white/10 bg-black/95 p-5 shadow-2xl backdrop-blur">
-        <h2 id="consent-title" className="font-heading text-base font-semibold text-white">Your data, your choice</h2>
-        <p className="mt-2 text-sm leading-relaxed text-slate-300">
+        <p className="text-sm leading-relaxed text-slate-300">
           OVOXI uses essential technologies to run the site. With your permission, we also use analytics
-          and session replay to improve it, and we sell or share some data with music, technology and
-          marketing partners. See our{' '}
+          and session replay to improve it. See our{' '}
           <Link to="/data-policy" className="text-cyan hover:underline">Data Collection Policy</Link> and{' '}
           <Link to="/privacy" className="text-cyan hover:underline">Privacy Policy</Link>.
         </p>
