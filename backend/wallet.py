@@ -99,12 +99,14 @@ def split_share(share_cents: int, *, rights: dict, licensor_user_id: str,
             if p.get("is_self") or not email or email not in registered:
                 add(licensor, amount, role="licensor", user_id=licensor_user_id)
             else:
-                add(payee_key(email=email), amount, role=role, email=email, weight=int(p.get("share_bp") or 0))
+                # share_bp on a line = the payee's fraction of the whole Revenue Share.
+                add(payee_key(email=email), amount, role=role, email=email, weight=weight // 4)
             allocated += amount
     # Unassigned shares and rounding remainder: to the Licensor.
     remainder = share_cents - allocated
     if remainder or licensor not in lines:
         add(licensor, remainder, role="licensor", user_id=licensor_user_id)
+    lines[licensor]["share_bp"] = TOTAL_BP - sum(l["share_bp"] for k, l in lines.items() if k != licensor)
     return [l for l in lines.values() if l["amount_cents"] or l["payee_key"] == licensor]
 
 
@@ -187,7 +189,8 @@ async def credit_sale(db, *, track: dict, source_type: str, source_id: str, fiel
                         registered_emails=await registered_emails(db, track["id"]))
     return await write_lines(db, lines, source_type=source_type, source_id=source_id, track_id=track["id"],
                              field=field, period=period_of(paid_at), net_cents=net, rate_bp=rate_bp,
-                             test_mode=test_mode, now=now, extra={"fee_cents": int(fee_cents or 0),
+                             test_mode=test_mode, now=now, extra={"occurred_at": paid_at,
+                                                                  "fee_cents": int(fee_cents or 0),
                                                                   "tax_cents": int(tax_cents or 0),
                                                                   "gross_cents": int(amount_cents or 0),
                                                                   **(extra or {})})
@@ -298,9 +301,14 @@ ENTRY_LABELS = {"order": "Sync license", "sub_pool": "Subscription pool", "exclu
 
 
 def entry_view(e: dict, titles: dict) -> dict:
-    return {"id": e["id"], "date": e["created_at"], "track_id": e["track_id"],
+    share_bp = e.get("share_bp")
+    if not share_bp and e.get("net_cents") and e.get("rate_bp"):
+        # Lines written before share_bp meant "fraction of the Revenue Share" (Oct 27).
+        whole = revenue_share(e["net_cents"], e["rate_bp"])
+        share_bp = round(TOTAL_BP * e["amount_cents"] / whole) if whole else None
+    return {"id": e["id"], "date": e.get("occurred_at") or e["created_at"], "track_id": e["track_id"],
             "track_title": titles.get(e["track_id"]) or "", "kind": ENTRY_LABELS.get(e["source_type"], e["source_type"]),
-            "field": e.get("field"), "share_bp": e.get("share_bp"), "roles": e.get("roles") or [],
+            "field": e.get("field"), "share_bp": share_bp, "roles": e.get("roles") or [],
             "amount_cents": e["amount_cents"], "status": e["status"], "period": e.get("period"),
             "test_mode": bool(e.get("test_mode"))}
 

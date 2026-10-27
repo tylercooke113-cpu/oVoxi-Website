@@ -56,6 +56,8 @@ def test_three_side_split_with_registered_co_owners():
     # Composition 50%: writers 25% (me 12.5, Jordan 12.5), publishers 25% (me). Master 50%: me 30, Sam 20.
     assert got == {ME: 6750, "email:jordan@example.com": 1250, "email:sam@example.com": 2000}
     assert sum(got.values()) == 10000
+    shares = {l["payee_key"]: l["share_bp"] for l in lines}
+    assert shares == {ME: 6750, "email:jordan@example.com": 1250, "email:sam@example.com": 2000}
 
 
 def test_unregistered_party_is_paid_through_the_licensor():
@@ -260,3 +262,19 @@ def test_an_order_refunded_before_any_credit_stays_at_zero(db, monkeypatch):
     monkeypatch.setattr(server, "_order_fee_cents", fee)
     run(server._wallet_catch_up("2026-11", min_age_min=0))
     assert entries(db) == []
+
+
+def test_entry_view_date_and_share_for_older_lines():
+    old = {"id": "x", "created_at": "2026-10-26T00:00:00+00:00", "track_id": "t1", "source_type": "order",
+           "field": "sync", "share_bp": 0, "net_cents": 10000, "rate_bp": 3300, "amount_cents": 2475,
+           "status": "accrued", "period": "2026-10"}
+    v = wallet.entry_view(old, {"t1": "Song"})
+    assert v["share_bp"] == 7500 and v["date"] == "2026-10-26T00:00:00+00:00"
+    new = {**old, "share_bp": 6750, "occurred_at": "2026-10-03T00:00:00+00:00"}
+    v = wallet.entry_view(new, {})
+    assert v["share_bp"] == 6750 and v["date"] == "2026-10-03T00:00:00+00:00"
+
+
+def test_new_credit_records_the_sale_date(db):
+    run(wallet.credit_order(db, order(), track(), fee_cents=345, now=NOW))
+    assert entries(db)[0]["occurred_at"] == "2026-11-02T10:00:00+00:00"
