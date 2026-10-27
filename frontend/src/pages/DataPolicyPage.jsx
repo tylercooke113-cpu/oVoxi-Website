@@ -4,6 +4,7 @@ import { PageHero } from '../components/PageHero';
 import { Reveal } from '../components/Reveal';
 import { BRAND } from '../content';
 import { POLICY_DATE_LABEL } from '../lib/consent';
+import PrivacyChoicesIcon from '../privacy/PrivacyChoicesIcon';
 
 // Text copied word for word from `Claude outputs/data_collection_policy.md` (approved by Tyler; Brief 26).
 // Regenerate from that file rather than editing here.
@@ -147,6 +148,14 @@ const DataPolicyPage = () => (
               </div>
             </Reveal>
           ))}
+          <Reveal>
+            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5" data-testid="data-policy-choices">
+              <p className="text-base text-slate-300">Change what we collect, or opt out of selling and sharing:</p>
+              <Link to="/privacy-choices" className="mt-2 inline-flex items-center gap-2 text-cyan hover:underline">
+                Your Privacy Choices <PrivacyChoicesIcon />
+              </Link>
+            </div>
+          </Reveal>
         </div>
       </div>
     </section>

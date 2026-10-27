@@ -8,7 +8,7 @@ import { gpcOn } from '../lib/consent';
 // every footer. Works signed out (this visit) and signed in (the account).
 const PrivacyChoicesPage = () => (
   <div data-testid="privacy-choices-page">
-    <PageHero testid="privacy-choices-hero" label="Privacy" title="Do Not Sell or Share My Personal Information" />
+    <PageHero testid="privacy-choices-hero" label="Your Privacy Choices" title="Do Not Sell or Share My Personal Information" />
     <section className="bg-ink py-16 lg:py-20">
       <div className="mx-auto max-w-2xl space-y-6 px-6 text-base leading-relaxed text-slate-400 lg:px-8">
         <p>

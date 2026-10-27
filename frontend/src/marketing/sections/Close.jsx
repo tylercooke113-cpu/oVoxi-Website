@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { LEGAL_LINKS } from '../../components/Footer';
+import { LEGAL_LINKS, LegalLinkLabel } from '../../components/Footer';
 import { useMarketingPath } from '../MarketingPathContext';
 import { Reveal } from '../components/Reveal';
 
@@ -49,7 +49,7 @@ export default function Close() {
             </a>
             {LEGAL_LINKS.map((l) => (
               <Link key={l.to} to={l.to} className="font-body text-sm text-ovx-faint hover:text-white transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-ovx-cyan focus-visible:ring-offset-2 focus-visible:ring-offset-black">
-                {l.label}
+                <LegalLinkLabel link={l} />
               </Link>
             ))}
           </div>

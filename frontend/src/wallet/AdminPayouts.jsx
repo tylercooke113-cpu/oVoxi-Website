@@ -94,6 +94,11 @@ export default function AdminPayouts({ getToken }) {
 
       <section className="space-y-4">
         <h3 className="font-heading text-lg font-semibold text-white">2. Approve and pay</h3>
+        {!data.closed && (
+          <p className="text-sm text-slate-400">
+            Earnings show here once the month is closed. Until then they are Pending in each Wallet.
+          </p>
+        )}
         <div className="grid gap-4 md:grid-cols-2">
           <Group title="Will be paid" rows={p.pay} />
           <Group title="Below $25 (rolls over)" rows={p.below_minimum} />

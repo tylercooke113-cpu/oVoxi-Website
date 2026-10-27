@@ -2,14 +2,24 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { Mail } from 'lucide-react';
 import { BRAND } from '../content';
+import PrivacyChoicesIcon from '../privacy/PrivacyChoicesIcon';
 
 // Brief 26: these four links appear on every page (Privacy Policy section 6).
+// "Your Privacy Choices" with the opt-out icon is California's alternative opt-out link
+// (11 CCR 7015); it opens the Do Not Sell or Share page.
 export const LEGAL_LINKS = [
   { label: 'Privacy Policy', to: '/privacy', testid: 'footer-link-privacy' },
   { label: 'Data Collection Policy', to: '/data-policy', testid: 'footer-link-data-policy' },
-  { label: 'Do Not Sell or Share My Personal Information', to: '/privacy-choices', testid: 'footer-link-privacy-choices' },
+  { label: 'Your Privacy Choices', to: '/privacy-choices', testid: 'footer-link-privacy-choices', icon: true },
   { label: 'Terms of Service', to: '/terms', testid: 'footer-link-terms' },
 ];
+
+export const LegalLinkLabel = ({ link }) => (
+  <span className="inline-flex items-center gap-1.5">
+    {link.label}
+    {link.icon && <PrivacyChoicesIcon />}
+  </span>
+);
 
 const COLUMNS = [
   {
@@ -70,7 +80,7 @@ export const Footer = () => (
         <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs text-slate-500">
           {LEGAL_LINKS.map((l) => (
             <Link key={l.to} to={l.to} data-testid={l.testid} className="hover:text-slate-300 transition-colors">
-              {l.label}
+              <LegalLinkLabel link={l} />
             </Link>
           ))}
         </div>
