@@ -166,31 +166,26 @@ def render_statement_pdf(st: dict, *, payee_name: str) -> bytes:
     story = [Paragraph(f"OVOXI Wallet statement: {period_label(st['period'])}", h),
              Paragraph(f"{payee_name}<br/>OVOXI, Inc., 2389 Main St. Ste 100, Glastonbury, CT, 06033, United States", small),
              Spacer(1, 10)]
-    # Tyler (Oct 27): no Received or Rate column, and "Revenue" for the payee's amount. Net
-    # Revenue and the deductions (fees, tax) stay: Artist Agreement 8.2 requires them. Every
-    # figure, including the removed ones, stays in MongoDB (wallet_entries, statements).
-    head = ["Song", "Type", "Use", "Fees", "Tax", "Net Revenue", "Your split", "Revenue"]
+    # Tyler (Oct 27): payees see their Earnings, not Net Revenue or deductions. Artist
+    # Agreement v5 8.2 (amended Oct 27) gives those on written request instead. Every figure
+    # stays in MongoDB (wallet_entries, statements) for requests and audits (8.3).
+    head = ["Song", "Type", "Use", "Your split", "Earnings"]
     data = [head]
     for r in st["rows"]:
         pool = f" ({r['registered_projects']} of {r['pool_projects']} projects)" if r.get("pool_projects") else ""
         split = f"{(r['share_bp'] or 0) / 100:g}%" if r.get("share_bp") else ""
         data.append([Paragraph(r["track_title"] + (" (test)" if r["test_mode"] else ""), cell),
                      Paragraph(r["kind"] + pool + (" (held)" if r["status"] == "held" else ""), cell),
-                     r["field"] or "",
-                     fmt_money(r["fee_cents"]) if r.get("fee_cents") is not None else "",
-                     fmt_money(r["tax_cents"]) if r.get("tax_cents") is not None else "",
-                     fmt_money(r["net_cents"] or 0), split,
-                     fmt_money(r["amount_cents"])])
+                     r["field"] or "", split, fmt_money(r["amount_cents"])])
     if len(data) == 1:
-        data.append(["No activity this month", "", "", "", "", "", "", ""])
-    t = Table(data, repeatRows=1, colWidths=[1.6 * inch, 1.35 * inch, 0.5 * inch, 0.65 * inch, 0.6 * inch,
-                                             0.85 * inch, 0.65 * inch, 0.8 * inch])
+        data.append(["No activity this month", "", "", "", ""])
+    t = Table(data, repeatRows=1, colWidths=[2.4 * inch, 2.1 * inch, 0.7 * inch, 0.9 * inch, 0.9 * inch])
     t.setStyle(TableStyle([("FONT", (0, 0), (-1, 0), "Helvetica-Bold", 8), ("FONT", (0, 1), (-1, -1), "Helvetica", 8),
                            ("GRID", (0, 0), (-1, -1), 0.3, colors.HexColor("#BBBBBB")),
                            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#F0F0F0")), ("VALIGN", (0, 0), (-1, -1), "TOP")]))
     story += [t, Spacer(1, 12)]
     summary = [
-        ("Revenue for the month", fmt_money(st["revenue_share_cents"])),
+        ("Earnings for the month", fmt_money(st["revenue_share_cents"])),
         ("Held for a claim (Section 8.5)", fmt_money(st["held_cents"])),
         ("Registered Projects counted in the Artist Pool", str(st["registered_projects"])),
         ("Exclusive Licenses", str(st["exclusive_licenses"])),
@@ -200,8 +195,9 @@ def render_statement_pdf(st: dict, *, payee_name: str) -> bytes:
     for k, v in summary:
         story.append(Paragraph(f"<b>{k}:</b> {v}", body))
     story += [Spacer(1, 8), Paragraph(
-        "Net Revenue is the amount received less payment processing fees and taxes (Artist Agreement 7.2). "
-        "Balances under $25 roll over to the next month. Payments go to the bank account connected in your "
+        "Your earnings are your share of the Revenue Share under your agreement with OVOXI. "
+        "You can ask for the Net Revenue and deductions behind this statement by emailing tyler@ovoxi.net "
+        "(Artist Agreement 8.2). Balances under $25 roll over to the next month. Payments go to the bank account connected in your "
         "OVOXI Wallet.", small)]
     buf = io.BytesIO()
     SimpleDocTemplate(buf, pagesize=letter, leftMargin=0.6 * inch, rightMargin=0.6 * inch,
@@ -213,7 +209,7 @@ def statement_email(st: dict, *, site: str) -> tuple:
     label = period_label(st["period"])
     subject = f"Your OVOXI statement for {label}"
     text = (f"Your OVOXI Wallet statement for {label} is attached.\n\n"
-            f"Revenue Share for the month: {fmt_money(st['revenue_share_cents'])}\n"
+            f"Earnings for the month: {fmt_money(st['revenue_share_cents'])}\n"
             f"Balance available for payment: {fmt_money(st['available_cents'])}\n\n"
             "We keep an OVOXI Wallet for your share. Create an account with this email to see it and get paid: "
             f"{site}/signup\n\nBalances under $25 roll over to the next month.\n")

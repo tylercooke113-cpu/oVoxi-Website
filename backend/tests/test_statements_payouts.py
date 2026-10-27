@@ -140,12 +140,13 @@ def test_close_makes_balances_available_and_writes_statements(db):
     assert sent[0]["attachments"][0][0] == "OVOXI statement 2026-11.pdf"
     assert "Create an account with this email" in sent[0]["text"]
     # 8.2 items on the PDF.
-    pdf = text_of(put[st["pdf_key"]])
-    for item in ("Night Drive", "Sync license", "Net Revenue", "Fees", "Tax", "Revenue for the month",
-                 "Registered Projects", "Exclusive Licenses", "Held for a claim", "Payment due by"):
+    pdf = " ".join(text_of(put[st["pdf_key"]]).split())      # ignore line wrapping
+    for item in ("Night Drive", "Sync license", "Your split", "Earnings for the month",
+                 "Registered Projects", "Exclusive Licenses", "Held for a claim", "Payment due by",
+                 "Net Revenue and deductions behind this statement"):
         assert item in pdf, item
-    for gone in ("Received", "Rate", "Your share"):          # removed columns (Tyler, Oct 27)
-        assert gone not in pdf.replace("Revenue Share", ""), gone
+    for gone in ("Received", "Rate", "Fees", "Tax", "Your share", "$96.80"):   # columns removed (Oct 27, 8.2)
+        assert gone not in pdf, gone
     # Closing again changes nothing and the email key stops a second email.
     close(db, sent, put)
     assert run(db.wallet_entries.count_documents({})) == 2
