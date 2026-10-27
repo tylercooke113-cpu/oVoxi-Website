@@ -10,8 +10,8 @@ import axios from 'axios';
 import { API, maybeAuthed } from '../sync/api';
 
 // The policies' "Last updated" date. Change all three together on a policy update.
-export const POLICY_DATE = '2026-10-27';
-export const POLICY_DATE_LABEL = 'October 27, 2026';
+export const POLICY_DATE = '2026-10-26';
+export const POLICY_DATE_LABEL = 'October 26, 2026';
 
 const VISIT_KEY = 'ovx_consent';
 const VISITOR_KEY = 'ovx_visitor';
