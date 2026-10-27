@@ -72,7 +72,6 @@ export const Header = () => {
   const browseSignedOut = catalogVisible && !isSignedIn;
 
   const linkCls = 'text-sm font-medium text-slate-300 hover-text-gradient transition-colors';
-  const gradientCls = 'rounded-full bg-gradient-brand px-5 py-2 text-sm font-semibold text-white transition-all hover:shadow-[0_0_24px_rgba(180,79,212,0.6)]';
 
   // One render of the nav items, reused for desktop (row) and mobile (column).
   const items = (mobile) => {
@@ -84,8 +83,13 @@ export const Header = () => {
           <Link to="/vault" onClick={click} data-testid="nav-vault" className={cls}>My Vault</Link>
         )}
         {browseSignedOut && (
-          <Link to="/catalog" onClick={click} data-testid="nav-browse"
-            className={mobile ? `${gradientCls} text-center` : gradientCls}>Browse OVOXI Catalog</Link>
+          <Link to="/catalog" onClick={click} data-testid="nav-browse" className={cls}>Catalog</Link>
+        )}
+        {!isSignedIn && (
+          <>
+            <Link to="/artists" onClick={click} data-testid="header-artist-cta" className={cls}>For artists</Link>
+            <Link to="/contact?interest=ai_company" onClick={click} data-testid="header-partnership-cta" className={cls}>For AI teams</Link>
+          </>
         )}
         {browsePrompt && (
           <button type="button" onClick={openPrompt} data-testid="nav-browse" className={`${cls} text-left`}>
@@ -101,14 +105,12 @@ export const Header = () => {
         {showAccount && (
           <Link to="/account" onClick={click} data-testid="nav-account" className={cls}>My account</Link>
         )}
-        <Link to="/contact" onClick={click} data-testid="nav-contact" className={cls}>Contact</Link>
+        {isSignedIn && (
+          <Link to="/contact" onClick={click} data-testid="nav-contact" className={cls}>Contact</Link>
+        )}
         {!isSignedIn && (
-          <>
-            <Link to="/signup" onClick={click} data-testid="header-artist-cta" className={cls}>Artists</Link>
-            <Link to={catalogVisible ? '/catalog' : '/contact?interest=ai_company'} onClick={click}
-              data-testid="header-partnership-cta"
-              className={mobile ? `${gradientCls} text-center` : gradientCls}>Discuss Licensing</Link>
-          </>
+          <Link to="/login" onClick={click} data-testid="nav-signin"
+            className={`rounded-full border border-[#3F3F46] px-[18px] py-2.5 text-sm font-medium text-white transition-colors hover:bg-white/10 ${mobile ? 'text-center' : ''}`}>Sign in</Link>
         )}
       </>
     );

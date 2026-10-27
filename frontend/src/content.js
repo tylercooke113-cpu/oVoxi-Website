@@ -39,6 +39,7 @@ export const ARTIST_BENEFITS = [
 
 export const INTEREST_OPTIONS = [
   { value: "ai_company", label: "AI Music Company" },
+  { value: "buyer", label: "Licensing music for a project" },
   { value: "enterprise", label: "Enterprise / Licensing Buyer" },
   { value: "artist", label: "Artist" },
   { value: "other", label: "Other" },

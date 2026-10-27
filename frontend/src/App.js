@@ -27,6 +27,7 @@ import VerifyPage from './verify/VerifyPage';
 import LicenseTermsPage from './pages/LicenseTermsPage';
 import PrivacyChoicesPage from './pages/PrivacyChoicesPage';
 import DataPolicyPage from './pages/DataPolicyPage';
+import ArtistsPage from './pages/ArtistsPage';
 import ConsentManager from './privacy/ConsentManager';
 import ConsentPrompt from './privacy/ConsentPrompt';
 import AnalyticsBridge from './privacy/AnalyticsBridge';
@@ -74,6 +75,7 @@ function AppContent() {
               : <HomePage />}
           />
           <Route path='/contact' element={<ContactPage />} />
+          <Route path='/artists' element={<ArtistsPage />} />
           <Route path='/artist-upload' element={<Navigate to='/signup' replace />} />
           <Route path='/upload' element={<UploadPage />} />
           <Route path='/apply' element={<ApplyPage />} />

@@ -46,12 +46,19 @@ beforeEach(() => {
   mockPricing = jest.fn().mockResolvedValue({ visible: true, library_visible: true });
 });
 
-test('signed out: Browse, Pricing, Contact, Join, Request Partnership; no vault/account', async () => {
-  const got = ids(await renderHeader());
+test('signed out (Oct 27 landing): Catalog, For artists, For AI teams, Pricing, Sign in', async () => {
+  const c = await renderHeader();
+  const got = ids(c);
   expect(got).toEqual(expect.arrayContaining(
-    ['nav-browse', 'nav-pricing', 'nav-contact', 'header-artist-cta', 'header-partnership-cta']));
+    ['nav-browse', 'nav-pricing', 'header-artist-cta', 'header-partnership-cta', 'nav-signin']));
+  expect(got).not.toContain('nav-contact');
   expect(got).not.toContain('nav-vault');
   expect(got).not.toContain('nav-account');
+  const href = (id) => c.querySelector(`[data-testid="${id}"]`).getAttribute('href');
+  expect(href('header-artist-cta')).toBe('/artists');
+  expect(href('header-partnership-cta')).toBe('/contact?interest=ai_company');
+  expect(href('nav-signin')).toBe('/login');
+  expect(href('nav-browse')).toBe('/catalog');
 });
 
 test('catalog hidden: signed-out sees no Browse button', async () => {
