@@ -53,27 +53,55 @@ def stripe_livemode() -> bool:
     return is_live_key(os.environ.get("STRIPE_SECRET_KEY", ""))
 
 
+# Accounts v2 (Stripe requires it for new Connect platforms; v1 account creation is refused).
+INCLUDE = ["configuration.recipient", "requirements"]
+
+
 def account_params(*, user_id: str, email: str, country: str) -> dict:
-    """An Express account that can only receive transfers (no card payments)."""
-    return {
-        "type": "express",
-        "country": country,
-        "email": email or None,
-        "capabilities": {"transfers": {"requested": True}},
-        "business_type": "individual",
-        "business_profile": {"product_description": "Royalties for music licensed through OVOXI"},
+    """A v2 Account with an Express dashboard and only the recipient configuration: it can
+    receive transfers from OVOXI and pay them out to a bank, and cannot take card payments.
+    Stripe requires OVOXI to collect fees and own losses for an Express dashboard."""
+    params = {
+        "dashboard": "express",
+        "identity": {"country": country.lower(), "entity_type": "individual"},
+        "configuration": {"recipient": {"capabilities": {"stripe_balance": {"stripe_transfers": {"requested": True}}}}},
+        "defaults": {"responsibilities": {"fees_collector": "application", "losses_collector": "application"}},
         "metadata": {"ovoxi_user_id": user_id},
+        "include": INCLUDE,
     }
+    if email:
+        params["contact_email"] = email
+    return params
+
+
+def _get(d, *path):
+    for k in path:
+        d = d.get(k) if isinstance(d, dict) else None
+    return d
 
 
 def status_of(account: dict) -> dict:
-    req = account.get("requirements") or {}
+    """Payout readiness from a v2 Account (configuration.recipient and requirements included)."""
+    balance = _get(account, "configuration", "recipient", "capabilities", "stripe_balance") or {}
+    transfers = balance.get("stripe_transfers") or {}
+    payouts_cap = balance.get("payouts") or {}
+    due = []
+    for e in _get(account, "requirements", "entries") or []:
+        if e.get("awaiting_action_from") == "user" and _get(e, "minimum_deadline", "status") in ("currently_due", "past_due"):
+            due.append(e.get("description") or "More information")
+    reason = None
+    for cap in (transfers, payouts_cap):
+        details = cap.get("status_details") or []
+        if cap.get("status") == "restricted" and details:
+            reason = details[0].get("code")
+            break
     return {
-        "details_submitted": bool(account.get("details_submitted")),
-        "payouts_enabled": bool(account.get("payouts_enabled")),
-        "transfers_active": ((account.get("capabilities") or {}).get("transfers") == "active"),
-        "currently_due": list(req.get("currently_due") or []),
-        "disabled_reason": req.get("disabled_reason"),
+        # "Submitted" once Stripe is not waiting on the payee for anything now.
+        "details_submitted": bool(transfers.get("status")) and not due,
+        "payouts_enabled": payouts_cap.get("status") == "active",
+        "transfers_active": transfers.get("status") == "active",
+        "currently_due": due,
+        "disabled_reason": reason,
     }
 
 
@@ -105,7 +133,7 @@ async def create_or_get(db, client, *, user_id: str, email: str, country: str, n
     existing = await get_account(db, user_id)
     if existing and existing.get("stripe_account_id"):
         return existing
-    acct = _d(await asyncio.to_thread(client.v1.accounts.create,
+    acct = _d(await asyncio.to_thread(client.v2.core.accounts.create,
                                       account_params(user_id=user_id, email=email, country=country)))
     doc = {"user_id": user_id, "livemode": stripe_livemode(), "stripe_account_id": acct["id"],
            "country": country, "created_at": now.isoformat(), "updated_at": now.isoformat(),
@@ -116,21 +144,29 @@ async def create_or_get(db, client, *, user_id: str, email: str, country: str, n
 
 
 async def onboarding_link(client, stripe_account_id: str, *, site: str) -> str:
-    link = _d(await asyncio.to_thread(client.v1.account_links.create, {
-        "account": stripe_account_id, "type": "account_onboarding",
-        "refresh_url": f"{site}/vault?tab=wallet&connect=refresh",
-        "return_url": f"{site}/vault?tab=wallet&connect=done",
+    link = _d(await asyncio.to_thread(client.v2.core.account_links.create, {
+        "account": stripe_account_id,
+        "use_case": {"type": "account_onboarding", "account_onboarding": {
+            "configurations": ["recipient"],
+            "refresh_url": f"{site}/vault?tab=wallet&connect=refresh",
+            "return_url": f"{site}/vault?tab=wallet&connect=done",
+        }},
     }))
     return link["url"]
 
 
+async def fetch_account(client, stripe_account_id: str) -> dict:
+    return _d(await asyncio.to_thread(client.v2.core.accounts.retrieve, stripe_account_id, {"include": INCLUDE}))
+
+
 async def refresh_status(db, client, acct: dict, now: datetime) -> dict:
-    account = _d(await asyncio.to_thread(client.v1.accounts.retrieve, acct["stripe_account_id"]))
+    account = await fetch_account(client, acct["stripe_account_id"])
     await save_status(db, acct["stripe_account_id"], account, now)
     return {**acct, **status_of(account)}
 
 
 async def dashboard_link(client, stripe_account_id: str) -> str:
+    # v1 endpoints accept v2 Account ids (Stripe: "Connect and the Accounts v2 API").
     link = _d(await asyncio.to_thread(client.v1.accounts.login_links.create, stripe_account_id))
     return link["url"]
 

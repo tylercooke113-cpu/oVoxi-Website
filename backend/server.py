@@ -4845,18 +4845,29 @@ async def wallet_dashboard_link(request: Request, clerk_payload: dict = Depends(
 
 @api_router.post("/stripe/connect-webhook")
 async def stripe_connect_webhook(request: Request):
-    """Connect events (connected accounts), with their own signing secret."""
+    """Payee account updates, with their own signing secret. Accounts v2 sends thin event
+    notifications (scope "Your account"): verify, then fetch the account and save its
+    payout status. Any v2.core.account event is treated as "something changed"."""
     import stripe
     secret = os.environ.get("STRIPE_CONNECT_WEBHOOK_SECRET", "").strip()
     if not secret:
         raise HTTPException(status_code=503, detail="Not configured")
     try:
-        event = stripe.Webhook.construct_event(await request.body(), request.headers.get("stripe-signature"), secret)
-    except (ValueError, stripe.SignatureVerificationError):
+        client = sync_orders.stripe_client()
+    except sync_orders.ConfigError:
+        raise HTTPException(status_code=503, detail="Not configured")
+    raw = await request.body()
+    try:
+        note = client.parse_event_notification(raw, request.headers.get("stripe-signature"), secret)
+    except (ValueError, KeyError, stripe.SignatureVerificationError):
         raise HTTPException(status_code=400, detail="Invalid signature")
-    if event.type == "account.updated":
-        obj = event.data.object.to_dict()
-        await payouts.save_status(db, obj["id"], obj, datetime.now(timezone.utc))
+    etype = getattr(note, "type", "") or ""
+    related = getattr(note, "related_object", None)
+    account_id = getattr(related, "id", None)
+    if etype.startswith("v2.core.account") and account_id and account_id.startswith("acct_"):
+        if await db.wallet_accounts.find_one({"stripe_account_id": account_id}, {"_id": 1}):
+            account = await payouts.fetch_account(client, account_id)   # errors: 500, Stripe retries
+            await payouts.save_status(db, account_id, account, datetime.now(timezone.utc))
     return {"ok": True}
 
 
