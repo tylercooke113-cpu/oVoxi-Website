@@ -6,6 +6,7 @@ import { Loader2, Music2, ExternalLink, RefreshCw, CheckCircle2, XCircle } from 
 import { Link } from 'react-router-dom';
 import TrackSyncPanel from '../sync/TrackSyncPanel';
 import SyncProfileTab from '../sync/SyncProfileTab';
+import WalletTab from '../wallet/WalletTab';
 import { accountFlags } from '../lib/account';
 import { useAgreementStatus } from '../agreement/useAgreementStatus';
 import { openAgreementPdf, formatSignedDate } from '../agreement/agreementApi';
@@ -80,7 +81,7 @@ const VaultPage = () => {
   const [loading, setLoading] = useState(true);
   const [tracksLoaded, setTracksLoaded] = useState(false);   // latches true after the first fetch
   const [searchParams] = useSearchParams();
-  const [tab, setTab] = useState(searchParams.get('tab') === 'profile' ? 'profile' : 'tracks');
+  const [tab, setTab] = useState({ profile: 'profile', wallet: 'wallet' }[searchParams.get('tab')] || 'tracks');
   const updateTrack = useCallback((t) => setTracks((all) => all.map((x) => (x.id === t.id ? t : x))), []);
   const navigate = useNavigate();
   const { status, refresh: refreshAgreement, needsSignature } =
@@ -169,7 +170,7 @@ const VaultPage = () => {
         )}
 
         <div className="mb-6 flex gap-1 border-b border-white/10" role="tablist">
-          {[['tracks', 'My Tracks'], ['profile', 'Sync Profile']].map(([key, label]) => (
+          {[['tracks', 'My Tracks'], ['profile', 'Sync Profile'], ['wallet', 'Wallet']].map(([key, label]) => (
             <button key={key} type="button" role="tab" aria-selected={tab === key} onClick={() => setTab(key)}
               className={`-mb-px border-b-2 px-4 py-2.5 text-sm transition-colors ${
                 tab === key ? 'border-electric text-white' : 'border-transparent text-slate-400 hover:text-white'}`}>
@@ -178,7 +179,9 @@ const VaultPage = () => {
           ))}
         </div>
 
-        {tab === 'profile' ? (
+        {tab === 'wallet' ? (
+          <WalletTab getToken={getToken} />
+        ) : tab === 'profile' ? (
           <SyncProfileTab getToken={getToken} tracks={tracks}
             role={user?.publicMetadata?.role} tracksLoaded={tracksLoaded} />
         ) : loading ? (

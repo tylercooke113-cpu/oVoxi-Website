@@ -185,7 +185,8 @@ const CosignPage = () => {
 
   if (result === 'signed') {
     return <Centered icon={CheckCircle2} color="text-cyan" title="Signed">
-      A copy is on its way to your email.</Centered>;
+      A copy is on its way to your email. We'll keep an OVOXI Wallet for your share. Create an account with this
+      email to see it and get paid.</Centered>;
   }
   if (result === 'declined') {
     return <Centered icon={AlertCircle} color="text-amber-400" title="Response recorded">

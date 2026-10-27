@@ -10,6 +10,8 @@ const VIEW = {
   expired: { icon: '✕', cls: 'text-red-400 bg-red-400/12', title: 'License expired', body: (l) => `The term of this license ended on ${fmt(l.term_end)}.` },
   refunded: { icon: '✕', cls: 'text-red-400 bg-red-400/12', title: 'No longer valid', body: (l) => `This license was refunded on ${fmt(l.refunded_at)} and does not cover any use.` },
   test: { icon: '✕', cls: 'text-slate-400 bg-slate-400/12', title: 'Test license', body: () => 'This is a test license and does not cover any use.' },
+  void: { icon: '✕', cls: 'text-red-400 bg-red-400/12', title: 'No longer valid', body: () => 'This license has ended and does not cover any use.' },
+  suspended: { icon: '!', cls: 'text-amber-300 bg-amber-400/12', title: 'License suspended', body: () => 'A payment dispute is open on this license.' },
 };
 
 export default function VerifyPage() {

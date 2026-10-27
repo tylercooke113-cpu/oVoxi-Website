@@ -15,8 +15,9 @@ const CHIP = {
   test: 'text-amber-300 border-amber-400/25 bg-amber-400/[0.08]',
   refunded: 'text-red-300 border-red-400/25 bg-red-400/[0.08]',
   void: 'text-red-300 border-red-400/25 bg-red-400/[0.08]',
+  suspended: 'text-amber-300 border-amber-400/25 bg-amber-400/[0.08]',
 };
-const CHIP_LABEL = { active: 'Active', expired: 'Expired', test: 'Test', refunded: 'Refunded', void: 'Void' };
+const CHIP_LABEL = { active: 'Active', expired: 'Expired', test: 'Test', refunded: 'Refunded', void: 'Void', suspended: 'Suspended' };
 const fmtDate = (iso) => (iso ? new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '');
 
 const LicenseCard = ({ lic, getToken }) => {
