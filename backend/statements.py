@@ -166,7 +166,10 @@ def render_statement_pdf(st: dict, *, payee_name: str) -> bytes:
     story = [Paragraph(f"OVOXI Wallet statement: {period_label(st['period'])}", h),
              Paragraph(f"{payee_name}<br/>OVOXI, Inc., 2389 Main St. Ste 100, Glastonbury, CT, 06033, United States", small),
              Spacer(1, 10)]
-    head = ["Song", "Type", "Use", "Received", "Fees", "Tax", "Net Revenue", "Rate", "Your split", "Your share"]
+    # Tyler (Oct 27): no Received or Rate column, and "Revenue" for the payee's amount. Net
+    # Revenue and the deductions (fees, tax) stay: Artist Agreement 8.2 requires them. Every
+    # figure, including the removed ones, stays in MongoDB (wallet_entries, statements).
+    head = ["Song", "Type", "Use", "Fees", "Tax", "Net Revenue", "Your split", "Revenue"]
     data = [head]
     for r in st["rows"]:
         pool = f" ({r['registered_projects']} of {r['pool_projects']} projects)" if r.get("pool_projects") else ""
@@ -174,26 +177,25 @@ def render_statement_pdf(st: dict, *, payee_name: str) -> bytes:
         data.append([Paragraph(r["track_title"] + (" (test)" if r["test_mode"] else ""), cell),
                      Paragraph(r["kind"] + pool + (" (held)" if r["status"] == "held" else ""), cell),
                      r["field"] or "",
-                     fmt_money(r["gross_cents"]) if r.get("gross_cents") is not None else "",
                      fmt_money(r["fee_cents"]) if r.get("fee_cents") is not None else "",
                      fmt_money(r["tax_cents"]) if r.get("tax_cents") is not None else "",
-                     fmt_money(r["net_cents"] or 0), f"{(r['rate_bp'] or 0) / 100:g}%", split,
+                     fmt_money(r["net_cents"] or 0), split,
                      fmt_money(r["amount_cents"])])
     if len(data) == 1:
-        data.append(["No activity this month", "", "", "", "", "", "", "", "", ""])
-    t = Table(data, repeatRows=1, colWidths=[1.25 * inch, 1.15 * inch, 0.45 * inch, 0.65 * inch, 0.5 * inch,
-                                             0.5 * inch, 0.7 * inch, 0.4 * inch, 0.5 * inch, 0.65 * inch])
+        data.append(["No activity this month", "", "", "", "", "", "", ""])
+    t = Table(data, repeatRows=1, colWidths=[1.6 * inch, 1.35 * inch, 0.5 * inch, 0.65 * inch, 0.6 * inch,
+                                             0.85 * inch, 0.65 * inch, 0.8 * inch])
     t.setStyle(TableStyle([("FONT", (0, 0), (-1, 0), "Helvetica-Bold", 8), ("FONT", (0, 1), (-1, -1), "Helvetica", 8),
                            ("GRID", (0, 0), (-1, -1), 0.3, colors.HexColor("#BBBBBB")),
                            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#F0F0F0")), ("VALIGN", (0, 0), (-1, -1), "TOP")]))
     story += [t, Spacer(1, 12)]
     summary = [
-        ("Revenue Share for the month", fmt_money(st["revenue_share_cents"])),
+        ("Revenue for the month", fmt_money(st["revenue_share_cents"])),
         ("Held for a claim (Section 8.5)", fmt_money(st["held_cents"])),
         ("Registered Projects counted in the Artist Pool", str(st["registered_projects"])),
         ("Exclusive Licenses", str(st["exclusive_licenses"])),
         ("Balance available for payment", fmt_money(st["available_cents"])),
-        ("Payment due by", st["payment_due"]),
+        ("Payment due by", datetime.fromisoformat(st["payment_due"]).strftime("%B %-d, %Y")),
     ]
     for k, v in summary:
         story.append(Paragraph(f"<b>{k}:</b> {v}", body))
