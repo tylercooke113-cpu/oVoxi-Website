@@ -436,6 +436,41 @@ async def apply_refund(db, charge: dict, *, now: datetime) -> str | None:
     return order["order_id"]
 
 
+async def apply_dispute(db, dispute: dict, *, closed: bool, now: datetime) -> dict | None:
+    """License Terms A13 for single-track orders. Opened: the license is suspended and its
+    downloads stop. Closed and lost: the license ends (the Wallet reversal is the caller's).
+    Closed and won (or a closed inquiry): everything is restored. Returns the order, or None
+    when the charge is not a single-track order."""
+    pi = dispute.get("payment_intent")
+    order = await db.orders.find_one({"stripe_payment_intent": pi}) if pi else None
+    if not order:
+        return None
+    oid = order["order_id"]
+    if not closed:
+        if order.get("status") in ("paid", "fulfilled"):
+            await db.orders.update_one({"order_id": oid, "status": order["status"]},
+                {"$set": {"status": "disputed", "status_before_dispute": order["status"],
+                          "dispute_id": dispute.get("id"), "disputed_at": now.isoformat()}})
+            await db.licenses.update_one({"order_id": oid, "status": {"$nin": ["refunded", "void"]}},
+                                         {"$set": {"status": "suspended", "suspended_at": now.isoformat()}})
+        return {**order, "dispute_outcome": "open"}
+    if dispute.get("status") == "lost":
+        await db.orders.update_one({"order_id": oid, "status": {"$ne": "refunded"}},
+            {"$set": {"status": "refunded", "refunded_at": now.isoformat(), "dispute_lost": True}})
+        await db.licenses.update_one({"order_id": oid},
+                                     {"$set": {"status": "void", "voided_at": now.isoformat(), "void_reason": "dispute_lost"}})
+        if order.get("status") in ("fulfilled", "disputed") and not order.get("test_mode") and \
+                (order.get("status_before_dispute") or order.get("status")) == "fulfilled":
+            await db.sync_profiles.update_one({"user_id": order["artist_user_id"], "sales_count": {"$gt": 0}},
+                                              {"$inc": {"sales_count": -1}})
+        return {**order, "dispute_outcome": "lost"}
+    if order.get("status") == "disputed":
+        await db.orders.update_one({"order_id": oid, "status": "disputed"},
+            {"$set": {"status": order.get("status_before_dispute") or "fulfilled", "dispute_closed_at": now.isoformat()}})
+        await db.licenses.update_one({"order_id": oid, "status": "suspended"}, {"$set": {"status": "active"}})
+    return {**order, "dispute_outcome": "won"}
+
+
 async def fulfil_order(db, order_id: str, *, render_pdf, put_object, now: datetime,
                        send_license=None, build_license=None) -> str:
     """paid -> fulfilled: license PDF to R2, download token, popularity count, license email.
@@ -617,7 +652,7 @@ def checkout_config(*, is_admin: bool, terms_text: dict) -> dict:
 # ---------------------------------------------------------------------------
 # Admin orders: list, CSV for manual payouts (PRD-03 8.4, 9)
 # ---------------------------------------------------------------------------
-ADMIN_STATUSES = ("pending", "paid", "fulfilled", "failed", "refunded")
+ADMIN_STATUSES = ("pending", "paid", "fulfilled", "disputed", "failed", "refunded")
 ADMIN_LIST_MAX = 500
 CSV_MAX_ROWS = 10000
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")

@@ -170,7 +170,7 @@ def build_license_from_order(order: dict, track: dict, now: datetime) -> dict:
 
 def display_status(lic: dict, now: datetime) -> str:
     """Computed, never stored. Expiry derives from scope.term_end."""
-    if lic.get("status") in ("refunded", "void"):
+    if lic.get("status") in ("refunded", "void", "suspended"):
         return lic["status"]
     if lic.get("test_mode"):
         return "test"

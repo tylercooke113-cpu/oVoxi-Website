@@ -41,6 +41,9 @@ from sync_constants import (
 )
 from consent_ledger import record_grants, record_withdrawals, GRANT_VERSION
 import privacy
+import wallet
+import payouts
+import statements
 import artist_agreement
 import cosign
 from profile_photo import (
@@ -3189,6 +3192,49 @@ async def admin_record_exclusive_license(request: Request, track_id: str, payloa
     return {k: v for k, v in lic.items() if k != "_id"}
 
 
+class ExclusivePaymentIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    amount_cents: int = Field(..., gt=0, le=100_000_000)
+    fee_cents: int = Field(0, ge=0)
+    tax_cents: int = Field(0, ge=0)
+    received_at: str = Field(..., pattern=r"^\d{4}-\d{2}-\d{2}$")
+    reference: str = Field(..., min_length=1, max_length=120)   # invoice or wire reference
+
+    @model_validator(mode="after")
+    def _net(self):
+        if self.fee_cents + self.tax_cents >= self.amount_cents:
+            raise ValueError("Fees and tax must be less than the amount received.")
+        return self
+
+
+@api_router.post("/admin/sync/exclusive-licenses/{license_id}/payments")
+@limiter.limit("20/minute")
+async def admin_record_exclusive_payment(request: Request, license_id: str, payload: ExclusivePaymentIn,
+                                         clerk_payload: dict = Depends(require_admin)):
+    """Brief 27: money received for an Exclusive License (paid outside checkout) credits
+    the Wallets at 40% of Net Revenue. The reference makes a repeat entry harmless."""
+    lic = await db.exclusive_licenses.find_one({"id": license_id}, {"_id": 0})
+    if not lic:
+        raise HTTPException(status_code=404, detail="Exclusive license not found.")
+    track = await db.track_submissions.find_one({"id": lic["track_id"]}, {"_id": 0})
+    if not track:
+        raise HTTPException(status_code=404, detail="Track not found.")
+    now = datetime.now(timezone.utc)
+    pid = f"{license_id}:{payload.reference.strip()}"
+    n = await wallet.credit_exclusive_payment(
+        db, lic, track, payment_id=pid, amount_cents=payload.amount_cents, fee_cents=payload.fee_cents,
+        tax_cents=payload.tax_cents, received_at=f"{payload.received_at}T00:00:00+00:00",
+        test_mode=_wallet_test_mode(), now=now)
+    await db.admin_actions.insert_one({"action": "exclusive_payment_recorded", "admin": clerk_payload["sub"],
+                                       "license_id": license_id, "payment_id": pid, "amount_cents": payload.amount_cents,
+                                       "fee_cents": payload.fee_cents, "tax_cents": payload.tax_cents,
+                                       "lines": n, "at": now.isoformat()})
+    return {"recorded": n > 0, "duplicate": n == 0,
+            "revenue_share_cents": wallet.revenue_share(
+                wallet.net_revenue(payload.amount_cents, fee_cents=payload.fee_cents, tax_cents=payload.tax_cents),
+                wallet.RATE_EXCLUSIVE_BP)}
+
+
 @api_router.get("/admin/sync/exclusive-licenses")
 @limiter.limit("60/minute")
 async def admin_list_exclusive_licenses(request: Request, admin: dict = Depends(require_admin)):
@@ -3875,6 +3921,35 @@ async def _fulfil_order(order_id: str) -> None:
         logger.error("fulfil failed order=%s error=%s", order_id, exc)
 
 
+async def _order_fee_cents(order: dict) -> int:
+    """Stripe's processing fee for a single-track order, from its charge's balance
+    transaction (the same read as subscriptions). Raises when Stripe has not posted it yet."""
+    client = sync_orders.stripe_client()
+    pi = await asyncio.to_thread(client.v1.payment_intents.retrieve, order["stripe_payment_intent"])
+    pi = pi.to_dict() if hasattr(pi, "to_dict") else dict(pi)
+    charge = pi.get("latest_charge")
+    charge_id = charge.get("id") if isinstance(charge, dict) else charge
+    return await subscriptions._charge_fee(client, charge_id)
+
+
+async def _credit_order(order_id: str) -> None:
+    """Brief 27: credit the OVOXI Wallets for a paid single-track order. Best effort here;
+    Close month credits any paid order this missed (for example, a fee not posted yet)."""
+    try:
+        order = await db.orders.find_one({"order_id": order_id}, {"_id": 0})
+        if not order or order.get("status") not in ("paid", "fulfilled") or not order.get("stripe_payment_intent"):
+            return
+        track = await db.track_submissions.find_one({"id": order["track_id"]}, {"_id": 0})
+        if not track:
+            logger.error("wallet credit: order %s has no track %s", order_id, order.get("track_id"))
+            return
+        fee = await _order_fee_cents(order)
+        n = await wallet.credit_order(db, order, track, fee_cents=fee)
+        logger.info("wallet credit order=%s lines=%s", order_id, n)
+    except Exception as exc:
+        logger.warning("wallet credit deferred order=%s error=%s", order_id, type(exc).__name__)
+
+
 async def _reconcile_fulfilment(now: datetime) -> None:
     """One pass: re-run idempotent fulfilment for paid-but-unfulfilled orders. Delivery and
     the buyer email only ever happen through fulfil_order's normal path."""
@@ -3905,6 +3980,50 @@ async def _reconcile_fulfilment(now: datetime) -> None:
                 logger.warning("reconcile fulfil failed order=%s attempt=%d error=%s", oid, attempts, err)
 
 
+async def _wallet_catch_up(period: Optional[str] = None, *, min_age_min: int = 10, limit: int = 200) -> int:
+    """Credit paid single-track orders the webhook missed, and apply any refund the
+    ledger has not reversed yet. Safe to run any time: every ledger write is idempotent."""
+    now = datetime.now(timezone.utc)
+    q = {"status": {"$in": ["paid", "fulfilled", "refunded"]}, "stripe_payment_intent": {"$ne": None},
+         "paid_at": {"$lt": (now - timedelta(minutes=min_age_min)).isoformat()}}
+    if period:
+        start, end = statements.month_bounds(period)
+        q["paid_at"] = {"$gte": start.isoformat(), "$lt": end.isoformat()}
+    done = 0
+    for o in await db.orders.find(q, {"_id": 0}).sort("paid_at", 1).to_list(limit):
+        if not await db.wallet_entries.find_one({"source_type": "order", "source_id": o["order_id"]}, {"_id": 1}):
+            await _credit_order(o["order_id"])
+            done += 1
+        refunded = max([int(r.get("amount_refunded_cents") or 0) for r in (o.get("refunds") or [])] or [0])
+        if refunded:
+            done += await wallet.reverse_order(db, o, kind="refund", refunded_cents=refunded, now=now) > 0
+        if o.get("dispute_lost"):
+            done += await wallet.reverse_order(db, o, kind="dispute", refunded_cents=0, now=now) > 0
+    return done
+
+
+def _wallet_test_mode() -> bool:
+    return not payouts.stripe_livemode()
+
+
+async def _close_month(period: str, admin: str) -> dict:
+    return await statements.close_month(
+        db, period, test_mode=_wallet_test_mode(), now=datetime.now(timezone.utc), admin=admin,
+        put_object=_r2_put, send_email=send_email, site=sync_orders.site_url(),
+        catch_up=lambda p: _wallet_catch_up(p, min_age_min=0, limit=100000))
+
+
+async def _wallet_sweep(now: datetime) -> None:
+    """Every reconcile tick: catch up missed credits. On the 1st from 06:00 UTC, prepare
+    the month that just ended (Close month). It never pays: payouts wait for Tyler."""
+    await _wallet_catch_up()
+    if now.day == 1 and now.hour >= 6:
+        period = statements.previous_period(now)
+        if not await db.wallet_closes.find_one({"period": period, "test_mode": _wallet_test_mode()}, {"_id": 1}):
+            summary = await _close_month(period, admin="sweeper")
+            logger.info("wallet close period=%s summary=%s", period, summary)
+
+
 async def _run_fulfilment_reconciler() -> None:
     logger.info("Fulfilment reconciler started instance=%s", INSTANCE_ID)
     while True:
@@ -3913,6 +4032,10 @@ async def _run_fulfilment_reconciler() -> None:
             await _reconcile_fulfilment(datetime.now(timezone.utc))
         except Exception as exc:
             logger.error("fulfilment reconciler error: %s", exc)
+        try:
+            await _wallet_sweep(datetime.now(timezone.utc))
+        except Exception as exc:
+            logger.error("wallet sweep error: %s", exc)
 
 
 STRIPE_HANDLED_EVENTS = {"checkout.session.completed", "checkout.session.async_payment_succeeded",
@@ -3958,11 +4081,18 @@ async def stripe_webhook(request: Request, background: BackgroundTasks):
             order_id = await sync_orders.apply_session_paid(db, obj, now=now)
             if order_id:
                 background.add_task(_fulfil_order, order_id)
+                background.add_task(_credit_order, order_id)
     elif event.type == "checkout.session.expired":
         await sync_orders.apply_session_expired(db, obj, now=now)
     elif event.type == "charge.refunded":
         order_id = await sync_orders.apply_refund(db, obj, now=now)          # single-track first
         if order_id:
+            try:   # Wallet reversal; Close month re-checks refunded orders if this fails.
+                order = await db.orders.find_one({"order_id": order_id}, {"_id": 0})
+                await wallet.reverse_order(db, order, kind="refund",
+                                           refunded_cents=int(obj.get("amount_refunded") or 0), now=now)
+            except Exception as exc:
+                logger.error("wallet refund reversal deferred order=%s error=%s", order_id, type(exc).__name__)
             logger.info("charge.refunded %s is single-track order %s; no subscription action",
                         obj.get("id"), order_id)
         elif client:
@@ -3987,22 +4117,26 @@ async def stripe_webhook(request: Request, background: BackgroundTasks):
     elif event.type == "invoice.payment_failed":
         await subscriptions.on_invoice_payment_failed(db, obj, now)
     elif event.type in ("charge.dispute.created", "charge.dispute.closed"):
-        if client:
-            pi = obj.get("payment_intent")
-            order = await db.orders.find_one({"stripe_payment_intent": pi}) if pi else None
-            if order:
-                # Single-track dispute. Brief 17/18 define no dispute handling, so nothing changes
-                # here; the point is that the subscription void path never runs on a single-track charge.
-                logger.info("charge.dispute %s is single-track order %s; no subscription action",
-                            obj.get("id"), order.get("order_id"))
-            else:
-                sub_invoice = await subscriptions.on_dispute(db, client, obj, now,
-                                                             closed=event.type.endswith("closed"))
-                if not sub_invoice:
-                    logger.error("charge.dispute %s matched neither a single-track order nor an invoice",
-                                 obj.get("id"))
+        closed = event.type.endswith("closed")
+        order = await sync_orders.apply_dispute(db, obj, closed=closed, now=now)   # single-track first
+        if order:
+            # License Terms A13. The subscription void path never runs on a single-track charge.
+            logger.info("charge.dispute %s single-track order %s outcome=%s",
+                        obj.get("id"), order.get("order_id"), order["dispute_outcome"])
+            if order["dispute_outcome"] == "lost":
+                try:
+                    await wallet.reverse_order(db, order, kind="dispute", refunded_cents=0, now=now)
+                except Exception as exc:
+                    logger.error("wallet dispute reversal failed order=%s error=%s",
+                                 order.get("order_id"), type(exc).__name__)
+        elif client:
+            sub_invoice = await subscriptions.on_dispute(db, client, obj, now, closed=closed)
+            if not sub_invoice:
+                logger.error("charge.dispute %s matched neither a single-track order nor an invoice",
+                             obj.get("id"))
         else:
-            logger.error("dispute event %s arrived but no Stripe API key is configured", event.type)
+            logger.error("dispute event %s matched no single-track order and no Stripe API key is configured",
+                         event.type)
 
     await sync_orders.record_event(db, event.id, event.type, now=now)   # only after handlers succeed
     return {"ok": True}
@@ -4337,7 +4471,7 @@ async def _order_for_token(token: str) -> dict:
     lic = await db.licenses.find_one({"download_token_hash": sync_orders.hash_token(token),
                                       "source": "subscription"})
     if lic:
-        if lic.get("status") in ("refunded", "void"):
+        if lic.get("status") in ("refunded", "void", "suspended"):
             raise HTTPException(status_code=404, detail="This download link is invalid or has expired.")
         access = await subscriptions.plan_access(db, lic["owner_user_id"])
         if access["state"] not in subscriptions.ACTIVE_STATES:
@@ -4487,6 +4621,245 @@ async def get_my_privacy_choice(request: Request, clerk_payload: dict = Depends(
     return {"choice": privacy.public_choice(await privacy.latest_choice(db, clerk_payload["sub"]))}
 
 
+# ---------------------------------------------------------------------------
+# OVOXI Wallet: admin close, payouts and holds (Brief 27 Part C)
+# ---------------------------------------------------------------------------
+
+class PeriodIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    period: str = Field(..., pattern=r"^\d{4}-(0[1-9]|1[0-2])$")
+
+
+class HoldIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    track_id: str = Field(..., min_length=1, max_length=64)
+    reason: str = Field(..., min_length=3, max_length=300)
+
+
+@api_router.get("/admin/wallet/overview")
+@limiter.limit("30/minute")
+async def admin_wallet_overview(request: Request, period: Optional[str] = None,
+                                clerk_payload: dict = Depends(require_admin)):
+    now = datetime.now(timezone.utc)
+    period = period or statements.previous_period(now)
+    if not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", period):
+        raise HTTPException(status_code=422, detail="Invalid period.")
+    livemode = payouts.stripe_livemode()
+    close = await db.wallet_closes.find_one({"period": period, "test_mode": not livemode}, {"_id": 0})
+    plan = await payouts.preview(db, period, livemode=livemode)
+    runs = await db.payouts.find({"period": period, "livemode": livemode}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    holds = await db.wallet_holds.find({"released_at": None}, {"_id": 0}).to_list(500)
+    return {"period": period, "period_label": statements.period_label(period), "livemode": livemode,
+            "payment_due": statements.payment_due(period), "december": payouts.is_december(period),
+            "closed": close, "preview": plan, "payouts": runs, "holds": holds,
+            "minimum_cents": payouts.PAYOUT_MIN_CENTS}
+
+
+@api_router.post("/admin/wallet/close")
+@limiter.limit("5/minute")
+async def admin_wallet_close(request: Request, payload: PeriodIn, clerk_payload: dict = Depends(require_admin)):
+    """Close month: subscription pool, balances made available, statements. Pays nothing."""
+    try:
+        summary = await _close_month(payload.period, admin=clerk_payload["sub"])
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    await db.admin_actions.insert_one({"action": "wallet_close", "admin": clerk_payload["sub"],
+                                       "period": payload.period, "summary": summary,
+                                       "at": datetime.now(timezone.utc).isoformat()})
+    return summary
+
+
+@api_router.post("/admin/wallet/payouts")
+@limiter.limit("3/minute")
+async def admin_wallet_pay(request: Request, payload: PeriodIn, clerk_payload: dict = Depends(require_admin)):
+    """Approve and pay: one Stripe Transfer per eligible payee (8.1). Needs the month closed."""
+    livemode = payouts.stripe_livemode()
+    if not await db.wallet_closes.find_one({"period": payload.period, "test_mode": not livemode}, {"_id": 1}):
+        raise HTTPException(status_code=409, detail="Close the month first.")
+    try:
+        client = sync_orders.stripe_client()
+    except sync_orders.ConfigError:
+        raise HTTPException(status_code=503, detail="Stripe is not configured.")
+    now = datetime.now(timezone.utc)
+    result = await payouts.run(db, client, payload.period, livemode=livemode, admin=clerk_payload["sub"], now=now)
+    await db.admin_actions.insert_one({"action": "wallet_payout_run", "admin": clerk_payload["sub"],
+                                       "period": payload.period, "livemode": livemode,
+                                       "paid": len(result["paid"]), "failed": len(result["failed"]),
+                                       "paid_total_cents": result["paid_total_cents"], "at": now.isoformat()})
+    return result
+
+
+@api_router.post("/admin/wallet/holds")
+@limiter.limit("20/minute")
+async def admin_wallet_hold(request: Request, payload: HoldIn, clerk_payload: dict = Depends(require_admin)):
+    """8.5: hold a track's Revenue Share while a claim is open."""
+    if not await db.track_submissions.find_one({"id": payload.track_id}, {"_id": 1}):
+        raise HTTPException(status_code=404, detail="Track not found.")
+    now = datetime.now(timezone.utc)
+    await wallet.hold_track(db, payload.track_id, reason=payload.reason, admin=clerk_payload["sub"], now=now)
+    await db.admin_actions.insert_one({"action": "wallet_hold", "admin": clerk_payload["sub"],
+                                       "track_id": payload.track_id, "reason": payload.reason, "at": now.isoformat()})
+    return {"held": True}
+
+
+@api_router.delete("/admin/wallet/holds/{track_id}")
+@limiter.limit("20/minute")
+async def admin_wallet_release(request: Request, track_id: str, clerk_payload: dict = Depends(require_admin)):
+    now = datetime.now(timezone.utc)
+    await wallet.release_track(db, track_id, admin=clerk_payload["sub"], now=now)
+    await db.admin_actions.insert_one({"action": "wallet_release", "admin": clerk_payload["sub"],
+                                       "track_id": track_id, "at": now.isoformat()})
+    return {"held": False}
+
+
+# ---------------------------------------------------------------------------
+# OVOXI Wallet: Stripe Connect Express onboarding (Brief 27 Part B)
+# ---------------------------------------------------------------------------
+
+class ConnectRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    country: str = Field(..., min_length=2, max_length=2)
+
+
+async def _suggested_country(uid: str) -> Optional[str]:
+    agreement = await _current_agreement(uid)
+    return payouts.guess_country(((agreement or {}).get("fields") or {}).get("country"))
+
+
+def _connect_view(acct: Optional[dict]) -> dict:
+    if not acct:
+        return {"connected": False}
+    if acct.get("unsupported_country"):
+        return {"connected": False, "country": acct.get("country"), "unsupported": True,
+                "message": payouts.UNSUPPORTED_MESSAGE}
+    return {"connected": bool(acct.get("stripe_account_id")), "country": acct.get("country"),
+            "details_submitted": bool(acct.get("details_submitted")),
+            "payouts_enabled": payouts.payout_ready(acct),
+            "currently_due": acct.get("currently_due") or [],
+            "disabled_reason": acct.get("disabled_reason")}
+
+
+@api_router.get("/wallet/me")
+@limiter.limit("30/minute")
+async def wallet_me(request: Request, clerk_payload: dict = Depends(verify_clerk_token)):
+    """The signed-in payee's OVOXI Wallet: totals, lines, statements and payout setup."""
+    uid = clerk_payload["sub"]
+    try:
+        user = await fetch_clerk_user(uid)
+        if user.get("email_verified") and user.get("email"):
+            moved = await wallet.claim_email_entries(db, user_id=uid, email=user["email"])
+            if moved:
+                logger.info("wallet claimed %s co-owner lines for user=%s", moved, uid)
+    except HTTPException:
+        pass   # Clerk unreachable: show what is already under the account
+    test_mode = _wallet_test_mode()
+    rows = await db.wallet_entries.find({"payee_key": uid, "test_mode": test_mode},
+                                        {"_id": 0}).sort("created_at", -1).to_list(2000)
+    titles = {t["id"]: t.get("track_name") or "" for t in await db.track_submissions.find(
+        {"id": {"$in": list({r["track_id"] for r in rows})}}, {"_id": 0, "id": 1, "track_name": 1}).to_list(5000)}
+    sts = await db.statements.find({"payee_key": uid, "test_mode": test_mode},
+                                   {"_id": 0, "period": 1, "revenue_share_cents": 1, "payment_due": 1}).sort("period", -1).to_list(240)
+    acct = await payouts.get_account(db, uid)
+    now = datetime.now(timezone.utc)
+    return {"summary": wallet.summarize(rows, this_period=now.strftime("%Y-%m")),
+            "entries": [wallet.entry_view(r, titles) for r in rows[:500]],
+            "statements": [{**s, "period_label": statements.period_label(s["period"])} for s in sts],
+            "connect": _connect_view(acct), "test_mode": test_mode,
+            "minimum_cents": payouts.PAYOUT_MIN_CENTS}
+
+
+@api_router.get("/wallet/statements/{period}")
+@limiter.limit("30/minute")
+async def wallet_statement_pdf(request: Request, period: str, clerk_payload: dict = Depends(verify_clerk_token)):
+    if not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", period):
+        raise HTTPException(status_code=404, detail="Statement not found.")
+    st = await db.statements.find_one({"payee_key": clerk_payload["sub"], "period": period,
+                                       "test_mode": _wallet_test_mode()}, {"_id": 0, "pdf_key": 1})
+    if not st or not st.get("pdf_key"):
+        raise HTTPException(status_code=404, detail="Statement not found.")
+    url = r2_client.generate_presigned_url("get_object", Params={"Bucket": R2_BUCKET, "Key": st["pdf_key"]},
+                                           ExpiresIn=300)
+    return {"url": url}
+
+
+@api_router.get("/wallet/connect/status")
+@limiter.limit("30/minute")
+async def wallet_connect_status(request: Request, clerk_payload: dict = Depends(verify_clerk_token)):
+    uid = clerk_payload["sub"]
+    acct = await payouts.get_account(db, uid)
+    if acct and acct.get("stripe_account_id"):
+        try:
+            acct = await payouts.refresh_status(db, sync_orders.stripe_client(), acct, datetime.now(timezone.utc))
+        except Exception as exc:   # show the last saved status
+            logger.warning("connect status refresh failed user=%s error=%s", uid, type(exc).__name__)
+    return {**_connect_view(acct), "suggested_country": await _suggested_country(uid),
+            "countries": [{"code": c, "name": n} for c, n in sorted(payouts.CONNECT_COUNTRIES.items(), key=lambda x: x[1])]}
+
+
+@api_router.post("/wallet/connect")
+@limiter.limit("5/minute")
+async def wallet_connect(request: Request, payload: ConnectRequest, clerk_payload: dict = Depends(verify_clerk_token)):
+    """Start (or resume) Stripe Express onboarding. Returns the Stripe link to open."""
+    uid = clerk_payload["sub"]
+    country = payload.country.upper()
+    now = datetime.now(timezone.utc)
+    if country not in payouts.CONNECT_COUNTRIES:
+        await db.wallet_accounts.update_one(
+            {"user_id": uid, "livemode": payouts.stripe_livemode()},
+            {"$set": {"country": country, "unsupported_country": True, "updated_at": now.isoformat()},
+             "$setOnInsert": {"created_at": now.isoformat(), "stripe_account_id": None}}, upsert=True)
+        return {"url": None, "unsupported": True, "message": payouts.UNSUPPORTED_MESSAGE}
+    try:
+        client = sync_orders.stripe_client()
+    except sync_orders.ConfigError:
+        raise HTTPException(status_code=503, detail="Payouts are not set up yet.")
+    existing = await payouts.get_account(db, uid)
+    if existing and existing.get("stripe_account_id") and existing.get("country") != country:
+        raise HTTPException(status_code=409, detail="Your payout country is already set. Email tyler@ovoxi.net to change it.")
+    user = await fetch_clerk_user(uid)
+    try:
+        acct = await payouts.create_or_get(db, client, user_id=uid, email=user.get("email"),
+                                           country=country, now=now)
+        url = await payouts.onboarding_link(client, acct["stripe_account_id"], site=sync_orders.site_url())
+    except Exception as exc:
+        logger.error("connect onboarding failed user=%s error=%s", uid, exc)
+        raise HTTPException(status_code=502, detail="Could not reach our payment provider. Please try again.")
+    await db.admin_actions.insert_one({"action": "wallet_connect_started", "user_id": uid,
+                                       "stripe_account_id": acct["stripe_account_id"], "at": now.isoformat()})
+    return {"url": url}
+
+
+@api_router.post("/wallet/dashboard-link")
+@limiter.limit("10/minute")
+async def wallet_dashboard_link(request: Request, clerk_payload: dict = Depends(verify_clerk_token)):
+    """A one-time link to the payee's Stripe Express dashboard (payouts and tax forms)."""
+    acct = await payouts.get_account(db, clerk_payload["sub"])
+    if not acct or not acct.get("stripe_account_id") or not acct.get("details_submitted"):
+        raise HTTPException(status_code=409, detail="Connect your bank account first.")
+    try:
+        return {"url": await payouts.dashboard_link(sync_orders.stripe_client(), acct["stripe_account_id"])}
+    except Exception as exc:
+        logger.error("connect dashboard link failed error=%s", exc)
+        raise HTTPException(status_code=502, detail="Could not reach our payment provider. Please try again.")
+
+
+@api_router.post("/stripe/connect-webhook")
+async def stripe_connect_webhook(request: Request):
+    """Connect events (connected accounts), with their own signing secret."""
+    import stripe
+    secret = os.environ.get("STRIPE_CONNECT_WEBHOOK_SECRET", "").strip()
+    if not secret:
+        raise HTTPException(status_code=503, detail="Not configured")
+    try:
+        event = stripe.Webhook.construct_event(await request.body(), request.headers.get("stripe-signature"), secret)
+    except (ValueError, stripe.SignatureVerificationError):
+        raise HTTPException(status_code=400, detail="Invalid signature")
+    if event.type == "account.updated":
+        obj = event.data.object.to_dict()
+        await payouts.save_status(db, obj["id"], obj, datetime.now(timezone.utc))
+    return {"ok": True}
+
+
 @api_router.post("/account/buyer-access")
 @limiter.limit("5/minute")
 async def account_buyer_access(request: Request, clerk_payload: dict = Depends(verify_clerk_token)):
@@ -4520,6 +4893,8 @@ async def account_license_file(request: Request, license_id: str, file_name: str
         raise _not_found()
     if lic.get("status") in ("refunded", "void"):
         raise HTTPException(status_code=409, detail="This license is no longer valid.")
+    if lic.get("status") == "suspended":
+        raise HTTPException(status_code=409, detail="Downloads are paused while a payment dispute is open.")
     if lic.get("source") == "subscription":
         # Re-downloading an already-registered project is free: gate on plan state only, and never
         # claim_download or touch sub_usage. Mirrors the token path (_order_for_token).
@@ -4698,6 +5073,8 @@ async def create_indexes():
         await sync_orders.ensure_indexes(db)
         await licenses.ensure_indexes(db)
         await subscriptions.ensure_indexes(db)
+        await wallet.ensure_indexes(db)
+        await payouts.ensure_indexes(db)
         await db.buyer_profiles.create_index([("user_id", 1)], unique=True)
         await db.buyer_profiles.create_index([("stripe_customer_id", 1)])
     except Exception as exc:

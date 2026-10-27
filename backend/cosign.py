@@ -180,11 +180,15 @@ def request_email(*, uploader_name: str, work_title: str, interests: list, uses:
     return subject, html, text
 
 
+# Brief 27 Part D: shown on the signing confirmation email and the cosign success page.
+WALLET_NOTE = "We'll keep an OVOXI Wallet for your share. Create an account with this email to see it and get paid."
+
+
 def signed_copy_email(*, work_title: str) -> tuple:
     subject = f'Your signed OVOXI Co-owner Consent for "{work_title}"'
     text = (f'Thanks for signing the OVOXI Co-owner Consent for "{work_title}". '
-            "Your signed copy is attached.\n\nQuestions? Reply to this email.\n\nOVOXI")
+            "Your signed copy is attached.\n\n" + WALLET_NOTE + "\n\nQuestions? Reply to this email.\n\nOVOXI")
     from xml.sax.saxutils import escape
     html = (f'<p>Thanks for signing the OVOXI Co-owner Consent for &quot;{escape(work_title)}&quot;. '
-            "Your signed copy is attached.</p><p>Questions? Reply to this email.</p><p>OVOXI</p>")
+            "Your signed copy is attached.</p><p>" + WALLET_NOTE + "</p><p>Questions? Reply to this email.</p><p>OVOXI</p>")
     return subject, html, text
