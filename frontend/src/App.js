@@ -31,6 +31,7 @@ import ArtistsPage from './pages/ArtistsPage';
 import ConsentManager from './privacy/ConsentManager';
 import ConsentPrompt from './privacy/ConsentPrompt';
 import AnalyticsBridge from './privacy/AnalyticsBridge';
+import { Analytics } from '@vercel/analytics/react';
 
 const NEW_MARKETING = process.env.REACT_APP_NEW_MARKETING === 'true';
 const MarketingPage = lazy(() => import('./marketing/MarketingPage'));
@@ -112,6 +113,7 @@ function AppContent() {
       {!isMarketingHome && <Footer />}
       <ConsentManager />
       <AnalyticsBridge />
+      <Analytics />
       <ConsentPrompt />
       <Toaster theme='dark' position='bottom-right' richColors />
     </>
