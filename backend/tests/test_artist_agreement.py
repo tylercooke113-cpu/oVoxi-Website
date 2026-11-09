@@ -496,7 +496,7 @@ def test_presign_not_enforced_unsigned_ok(client, fake_db, monkeypatch):
 
 def test_vault_grant_enforced_unsigned_403(client, fake_db, monkeypatch):
     monkeypatch.setenv("ARTIST_AGREEMENT_ENFORCED", "true")
-    monkeypatch.setattr(server, "_owned_track",
+    monkeypatch.setattr(server, "_owned_track_for",
                         AsyncMock(return_value={"consent": {"ai_training": False, "sync": False}}))
     resp = client.post("/api/vault/tracks/t1/consent",
                        json={"scope": "ai_training", "action": "grant"})
@@ -506,7 +506,7 @@ def test_vault_grant_enforced_unsigned_403(client, fake_db, monkeypatch):
 
 def test_vault_withdraw_enforced_unsigned_passes(client, fake_db, monkeypatch):
     monkeypatch.setenv("ARTIST_AGREEMENT_ENFORCED", "true")
-    monkeypatch.setattr(server, "_owned_track",
+    monkeypatch.setattr(server, "_owned_track_for",
                         AsyncMock(return_value={"consent": {"ai_training": True, "sync": False}}))
     monkeypatch.setattr(server, "vault_track_view", lambda doc: {})
     resp = client.post("/api/vault/tracks/t1/consent",

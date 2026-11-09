@@ -53,22 +53,36 @@ def format_interests(interests: list) -> str:
     return "\n".join(lines)
 
 
+def on_behalf_clause(authorized_uploader_name: str = "") -> str:
+    """Background A clause (cosign_v4). Empty when the artist uploaded the work directly;
+    otherwise names the Authorized Uploader who uploaded it on the artist's behalf. Only
+    cosign_v4.txt contains the {{on_behalf_clause}} placeholder, so the value is harmless
+    for earlier versions."""
+    name = (authorized_uploader_name or "").strip()
+    if not name:
+        return ""
+    return f", through {name}, acting as the Uploader's Authorized Uploader under the Artist Agreement,"
+
+
 def build_values(*, now: datetime, entity_type: str, legal_name: str, coowner_email: str,
                  uploader_name: str, artist_agreement_version: str = "",
                  work_title: str, work_artist: str, work_id: str, interests: list,
-                 signer_name: str = "", signer_title: str = "") -> dict:
+                 signer_name: str = "", signer_title: str = "",
+                 authorized_uploader_name: str = "") -> dict:
     """All placeholder values for the cosign template. artist_agreement_version is used
     only by cosign_v1.txt; cosign_v2.txt dropped that placeholder, so the value is
-    harmless there and may be omitted. The renderer substitutes only the placeholders a
-    template actually contains and ignores any extra value. The co-owner's typed legal
-    name goes into coowner_party, so the hash changes when the name or entity fields
-    change: the page must re-fetch the rendered text (preview) before signing."""
+    harmless there and may be omitted. authorized_uploader_name drives on_behalf_clause,
+    used only by cosign_v4.txt. The renderer substitutes only the placeholders a template
+    actually contains and ignores any extra value. The co-owner's typed legal name goes
+    into coowner_party, so the hash changes when the name or entity fields change: the
+    page must re-fetch the rendered text (preview) before signing."""
     return {
         "consent_date": aa.agreement_date(now),
         "coowner_party": coowner_party(entity_type, legal_name, signer_name, signer_title),
         "coowner_email": coowner_email,
         "uploader_name": uploader_name,
         "artist_agreement_version": artist_agreement_version,
+        "on_behalf_clause": on_behalf_clause(authorized_uploader_name),
         "work_title": work_title,
         "work_artist": work_artist,
         "work_id": work_id,

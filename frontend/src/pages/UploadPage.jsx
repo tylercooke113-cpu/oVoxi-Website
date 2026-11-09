@@ -3,7 +3,9 @@ import { toast } from 'sonner';
 import { Loader2, Upload, CheckCircle2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
-import { useAuth } from '@clerk/clerk-react';
+import { useAuth, useUser } from '@clerk/clerk-react';
+import { accountFlags } from '../lib/account';
+import { uploaderApi } from '../uploaders/api';
 import { useAgreementStatus } from '../agreement/useAgreementStatus';
 import AgreementModal from '../agreement/AgreementModal';
 import { PageHero } from '../components/PageHero';
@@ -20,6 +22,9 @@ import {
   useBatchUpload,
   APPROVAL_PENDING_MESSAGE,
   UPLOADS_PAUSED_MESSAGE,
+  ARTIST_AGREEMENT_MESSAGE,
+  ACTING_DENIED_MESSAGE,
+  DAILY_LIMIT_MESSAGE,
 } from '../upload/useBatchUpload';
 
 // Kept verbatim for the three-file status contract in CLAUDE.md. These are the backend
@@ -35,18 +40,46 @@ const STATUS_LABELS = {
 
 const UploadPage = () => {
   const { getToken, isSignedIn, isLoaded } = useAuth();
+  const { user } = useUser();
   const navigate = useNavigate();
+  // Brief 28 D3: an uploader-only login never uploads for itself and never signs the Artist
+  // Agreement; it only uploads for the artists who authorized it.
+  const uploaderOnly = accountFlags(user, isSignedIn).isUploaderOnly;
   const { status, refresh: refreshAgreement, needsSignature } =
-    useAgreementStatus(getToken, isLoaded && isSignedIn);
+    useAgreementStatus(getToken, isLoaded && isSignedIn && !uploaderOnly);
   const [agreementOpen, setAgreementOpen] = useState(false);
   const signedRef = useRef(false);
-  useEffect(() => { if (needsSignature) setAgreementOpen(true); }, [needsSignature]);
+
+  // "Uploading for": '' is the signed-in artist; otherwise an artist user id (X-Acting-For).
+  const [artists, setArtists] = useState(null);   // null while loading
+  // Brief 28 D4: the Vault's "Upload for {artist}" opens this page with ?for=<artist id>.
+  const [actingId, setActingId] = useState(
+    () => new URLSearchParams(window.location.search).get('for') || '');
+  useEffect(() => {
+    if (!isLoaded || !isSignedIn) return undefined;
+    let live = true;
+    uploaderApi.artists(getToken)
+      .then((list) => { if (live) setArtists(list); })
+      .catch(() => { if (live) setArtists([]); });
+    return () => { live = false; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoaded, isSignedIn]);
+  useEffect(() => {
+    // A ?for= that is not one of this user's artists falls back (never uploads for an unknown id).
+    if (actingId && artists && !artists.some((a) => a.artist_user_id === actingId)) { setActingId(''); return; }
+    if (uploaderOnly && !actingId && artists?.length) setActingId(artists[0].artist_user_id);
+  }, [uploaderOnly, actingId, artists]);
+  const acting = (artists || []).find((a) => a.artist_user_id === actingId) || null;
+
+  useEffect(() => {
+    if (needsSignature && !actingId && !uploaderOnly) setAgreementOpen(true);
+  }, [needsSignature, actingId, uploaderOnly]);
 
   const [songs, setSongs] = useState(() => [emptySong()]);
   const [activeKey, setActiveKey] = useState(() => songs[0].key);
   const [phase, setPhase] = useState('edit'); // edit | done
 
-  const { running, run } = useBatchUpload({ getToken });
+  const { running, run } = useBatchUpload({ getToken, actingFor: acting ? acting.artist_user_id : null });
 
   // Scroll a freshly added song into view once it becomes active.
   const activeRef = useRef(null);
@@ -63,6 +96,67 @@ const UploadPage = () => {
   }, []);
 
   if (isLoaded && !isSignedIn) return <Navigate to='/login' replace />;
+
+  // An uploader-only login with no active authorization has nothing to upload to.
+  if (uploaderOnly && artists !== null && artists.length === 0) {
+    return (
+      <div data-testid="upload-page">
+        <PageHero testid="upload-hero" label="Authorized Uploader" title="No artists yet"
+          subtitle="You can upload once an artist adds you as an Authorized Uploader." />
+        <section className="bg-ink py-20">
+          <div className="mx-auto max-w-xl px-6 text-center text-sm text-slate-400" data-testid="upload-no-artists">
+            When an artist adds you and you sign the invitation they send, they show up here.
+            If you already signed one, the artist may have revoked it.
+          </div>
+        </section>
+      </div>
+    );
+  }
+  if (uploaderOnly && !acting) {
+    return <div className="flex min-h-screen items-center justify-center bg-ink"><Loader2 size={28} className="animate-spin text-electric" /></div>;
+  }
+
+  const showPicker = !!artists?.length;
+  const switchTarget = (id) => {
+    if (id === actingId || running) return;
+    if (songs.some(songHasData)
+        && !window.confirm("Switch who you're uploading for? The songs in this batch will be cleared.")) return;
+    const fresh = emptySong();
+    setSongs([fresh]);
+    setActiveKey(fresh.key);
+    setActingId(id);
+  };
+  const picker = showPicker && (
+    <div className="mb-6 rounded-2xl border border-white/10 bg-white/[0.02] p-5" data-testid="upload-acting-picker">
+      <div className="mb-2 text-sm font-medium text-slate-300">Uploading for</div>
+      <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Uploading for">
+        {[...(uploaderOnly ? [] : [{ artist_user_id: '', artist_name: 'Me' }]), ...artists].map((a) => {
+          const on = a.artist_user_id === actingId;
+          return (
+            <button key={a.artist_user_id || 'me'} type="button" role="radio" aria-checked={on}
+              disabled={running} onClick={() => switchTarget(a.artist_user_id)}
+              data-testid={`upload-for-${a.artist_user_id || 'me'}`}
+              className={`rounded-full border px-4 py-1.5 text-sm transition-colors disabled:opacity-50 ${
+                on ? 'border-electric bg-electric/15 text-white' : 'border-white/10 text-slate-300 hover:border-electric/40'}`}>
+              {a.artist_name}{a.is_ovoxi ? ' (as OVOXI)' : ''}
+            </button>
+          );
+        })}
+      </div>
+      <p className="mt-2 text-xs text-slate-500">
+        {acting
+          ? `Songs go to ${acting.artist_name}'s catalog. You can set only the uses they authorized. Uploaders can add up to 250 songs a day to their catalog, shared by all of their uploaders.`
+          : 'Songs go to your own catalog.'}
+      </p>
+    </div>
+  );
+  const banner = acting && (
+    <div className="sticky top-16 z-30 border-b border-electric/40 bg-gradient-to-r from-[#B44FD4]/25 to-[#6B7FD4]/25 px-4 py-2.5 text-center text-sm text-white"
+      data-testid="upload-acting-banner">
+      Acting for <b className="font-semibold">{acting.artist_name}</b>
+      {acting.is_ovoxi ? ' as OVOXI' : ' as Authorized Uploader'}. Songs go to their catalog under their Artist Agreement.
+    </div>
+  );
 
   const activeSong = songs.find((s) => s.key === activeKey);
   const activeMissing = activeSong ? songMissing(activeSong) : [];
@@ -103,14 +197,24 @@ const UploadPage = () => {
       : s)));
     const { stopReason, failed } = await run(list, patchSong);
     if (stopReason === 'agreement') {
+      if (acting || uploaderOnly) { toast.error(ARTIST_AGREEMENT_MESSAGE); return; }
       await refreshAgreement();
       setAgreementOpen(true);
       return;
     }
+    if (stopReason === 'artist_agreement') { toast.error(ARTIST_AGREEMENT_MESSAGE); return; }
+    if (stopReason === 'acting_denied') { toast.error(ACTING_DENIED_MESSAGE); return; }
+    if (stopReason === 'daily_limit') { toast.error(DAILY_LIMIT_MESSAGE); return; }
     if (stopReason === 'approval') { toast.error(APPROVAL_PENDING_MESSAGE); return; }
     if (stopReason === 'paused') { toast.error(UPLOADS_PAUSED_MESSAGE); return; }
     // Brief 25b C6 / decision 9: once every file is received, go to the Vault. Mastering,
     // stems and checks continue in the background, with status shown there.
+    // Acting: stay here (the artist's Vault view is Part D4); the done screen lists the batch.
+    if (!stopReason && !failed && acting) {
+      toast.success(`${list.length === 1 ? 'Song' : `${list.length} songs`} received for ${acting.artist_name}.`);
+      setPhase('done');
+      return;
+    }
     if (!stopReason && !failed) {
       toast.success(list.length === 1 ? 'Song received. Processing continues in your Vault.'
         : `${list.length} songs received. Processing continues in your Vault.`);
@@ -150,9 +254,10 @@ const UploadPage = () => {
   if (phase === 'done') {
     return (
       <div data-testid="upload-page">
+        {banner}
         <PageHero
           testid="upload-hero"
-          label="Artist Upload"
+          label={acting ? `Uploading for ${acting.artist_name}` : 'Artist Upload'}
           title="Upload complete"
           subtitle="Here's how your batch did."
         />
@@ -195,12 +300,22 @@ const UploadPage = () => {
                     Retry failed songs
                   </button>
                 )}
-                <Link
-                  to="/vault"
-                  className="inline-flex items-center justify-center gap-2 rounded-full border border-white/10 px-6 py-2.5 text-sm text-slate-200 transition-colors hover:border-electric/40 hover:text-white"
-                >
-                  Go to My Vault →
-                </Link>
+                {acting && (
+                  <Link
+                    to={`/vault?for=${encodeURIComponent(acting.artist_user_id)}`}
+                    className="inline-flex items-center justify-center gap-2 rounded-full border border-white/10 px-6 py-2.5 text-sm text-slate-200 transition-colors hover:border-electric/40 hover:text-white"
+                  >
+                    Go to {acting.artist_name}'s Vault
+                  </Link>
+                )}
+                {!acting && (
+                  <Link
+                    to="/vault"
+                    className="inline-flex items-center justify-center gap-2 rounded-full border border-white/10 px-6 py-2.5 text-sm text-slate-200 transition-colors hover:border-electric/40 hover:text-white"
+                  >
+                    Go to My Vault →
+                  </Link>
+                )}
                 <button
                   type="button"
                   onClick={handleUploadMore}
@@ -228,15 +343,17 @@ const UploadPage = () => {
   // ---- Edit / running screen ----------------------------------------------
   return (
     <div data-testid="upload-page">
+      {banner}
       <PageHero
         testid="upload-hero"
-        label="Artist Upload"
+        label={acting ? `Uploading for ${acting.artist_name}` : 'Artist Upload'}
         title="Submit Your Tracks"
         subtitle="Upload up to 15 tracks in one batch. We'll handle stem separation automatically."
       />
 
       <section className="bg-ink py-20 lg:py-28">
         <div className="mx-auto max-w-2xl px-6 lg:px-8">
+          {picker}
           <Reveal>
             <form data-testid="upload-form" onSubmit={handleSubmit} className="space-y-5">
               {songs.map((song, i) => {
@@ -250,6 +367,7 @@ const UploadPage = () => {
                         disabled={running}
                         agreementStatus={status}
                         getToken={getToken}
+                        acting={acting}
                       />
 
                       {/* + Add another song sits under the open song */}

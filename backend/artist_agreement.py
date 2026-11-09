@@ -51,6 +51,13 @@ def supports_exclusive(version: str) -> bool:
     return "3.4 Exclusive Election" in load_template(version)
 
 
+def supports_authorized_uploaders(version: str) -> bool:
+    """True when the agreement text contains the Authorized Uploaders clause (v6 and later).
+    Same pattern as supports_exclusive: a delegated upload or an Upload Authorization is
+    allowed only against an agreement whose version carries Section 2.3."""
+    return "2.3 Authorized Uploaders" in load_template(version)
+
+
 def _ordinal(n: int) -> str:
     suffix = "th" if 10 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
     return f"{n}{suffix}"

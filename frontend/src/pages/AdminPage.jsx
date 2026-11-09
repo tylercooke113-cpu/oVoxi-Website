@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { useAuth } from '@clerk/clerk-react';
 import AdminSyncSection from '../sync/AdminSyncSection';
 import AdminPayouts from '../wallet/AdminPayouts';
+import AdminUploadersSection from '../uploaders/AdminUploadersSection';
 import { Navigate, Link } from 'react-router-dom';
 import { Loader2, ExternalLink, RefreshCw, CheckCircle2, Clock, AlertCircle, Zap } from 'lucide-react';
 import { motion } from 'framer-motion';
@@ -166,6 +167,7 @@ const AdminPage = () => {
                 { key: 'appeals', label: `Appeals (${appeals?.length ?? 0})` },
                 { key: 'sync', label: 'Sync' },
                 { key: 'payouts', label: 'Payouts' },
+                { key: 'uploaders', label: 'Uploaders' },
               ].map(({ key, label }) => (
                 <button
                   key={key}
@@ -182,6 +184,7 @@ const AdminPage = () => {
             </div>
 
             {tab === 'payouts' && <AdminPayouts getToken={getToken} />}
+            {tab === 'uploaders' && <AdminUploadersSection getToken={getToken} />}
 
             {tab === 'sync' && (
               <AdminSyncSection getToken={getToken} submissions={submissions} onChanged={fetchAll} />

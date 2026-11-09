@@ -14,6 +14,23 @@ export const TOO_MANY_MESSAGE =
 export const AGREEMENT_DETAIL = 'Sign the Artist Agreement before uploading.';
 export const LICENSE_RETRY_MESSAGE = 'A loop license did not upload. Add it from your Vault.';
 
+// Brief 28 D3: refusals that only happen when uploading for an artist (X-Acting-For).
+export const ARTIST_AGREEMENT_DETAIL = 'This artist has not signed the current Artist Agreement.';
+export const ACTING_DENIED_DETAIL = 'You are not authorized to act for this artist.';
+export const ARTIST_AGREEMENT_MESSAGE =
+  "This artist needs to sign the current Artist Agreement before you can upload for them. Ask them to sign in to OVOXI.";
+export const ACTING_DENIED_MESSAGE =
+  'You are no longer authorized to upload for this artist. Ask them to add you again.';
+export const DAILY_LIMIT_MESSAGE =
+  "This artist's uploaders have reached today's limit of 250 songs. Try again tomorrow.";
+const PER_SONG_ACTING_403 = /^(This uploader is not authorized|Only the artist can)/;
+
+// Every request in an acting batch names the artist; the backend checks the authorization.
+export const authHeaders = (token, actingFor) => ({
+  Authorization: `Bearer ${token}`,
+  ...(actingFor ? { 'X-Acting-For': actingFor } : {}),
+});
+
 // FastAPI returns validation errors as an array; pydantic prefixes
 // messages raised in validators with "Value error, ".
 export const validationMessage = (detail) => {
@@ -54,16 +71,21 @@ export const classifyError = (err) => {
   const status = err.response?.status;
   const detail = err.response?.data?.detail;
   if (status === 403 && detail === AGREEMENT_DETAIL) return 'agreement';
+  if (status === 403 && detail === ARTIST_AGREEMENT_DETAIL) return 'artist_agreement';
+  if (status === 403 && detail === ACTING_DENIED_DETAIL) return 'acting_denied';
+  if (status === 403 && typeof detail === 'string' && PER_SONG_ACTING_403.test(detail)) return 'fail';
   if (status === 403) return 'approval';
   if (status === 503) return 'paused';
   if (status === 429 && typeof detail === 'string'
       && /too many uploads in progress/i.test(detail)) return 'too_many';
+  if (status === 429 && typeof detail === 'string'
+      && /daily uploader limit/i.test(detail)) return 'daily_limit';
   if (status === 429) return 'retry_429';
   return 'fail';
 };
 
 // The existing three-step upload for one song. Body unchanged from the single-song page.
-export const uploadOne = async (song, { getToken, api, onProgress }) => {
+export const uploadOne = async (song, { getToken, api, onProgress, actingFor = null }) => {
   const token = await getToken();
   const bpmNumber = parseFloat(song.bpm);
   const { data: presignData } = await axios.post(`${api}/upload/presign`, {
@@ -84,7 +106,7 @@ export const uploadOne = async (song, { getToken, api, onProgress }) => {
     rights: buildRightsPayload(song.rights),
     ...(song.consentSync ? { sync_intake: buildIntakePayload(song.intake) } : {}),
   }, {
-    headers: { Authorization: `Bearer ${token}` },
+    headers: authHeaders(token, actingFor),
   });
 
   const { presigned_url, submission_id, content_type } = presignData;
@@ -99,7 +121,7 @@ export const uploadOne = async (song, { getToken, api, onProgress }) => {
   onProgress(100, 'finishing');   // file sent; waiting for storage and /complete
   const completeToken = await getToken();
   await axios.post(`${api}/upload/complete`, { submission_id }, {
-    headers: { Authorization: `Bearer ${completeToken}` },
+    headers: authHeaders(completeToken, actingFor),
   });
 
   // Agreement 3.6(c): one license per loop. The song is already received, so a failed
@@ -110,12 +132,12 @@ export const uploadOne = async (song, { getToken, api, onProgress }) => {
       const file = song.declarations.loops[i].file;
       if (!file) continue;
       try {
-        const auth = { headers: { Authorization: `Bearer ${await getToken()}` } };
+        const auth = { headers: authHeaders(await getToken(), actingFor) };
         const { data } = await axios.post(`${api}/vault/tracks/${submission_id}/loops/${i}/license/presign`,
           { filename: file.name, content_type: file.type, file_size: file.size }, auth);
         await axios.put(data.presigned_url, file, { headers: { 'Content-Type': data.content_type } });
         await axios.post(`${api}/vault/tracks/${submission_id}/loops/${i}/license/complete`, null,
-          { headers: { Authorization: `Bearer ${await getToken()}` } });
+          { headers: authHeaders(await getToken(), actingFor) });
       } catch (err) {
         warning = LICENSE_RETRY_MESSAGE;
       }
@@ -139,18 +161,23 @@ const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
  * @param deps.patchSong  (key, partial) => void, merges a partial into a song by key
  * @param deps.doUpload   defaults to uploadOne; override in tests
  * @param deps.sleep      defaults to a real 30s wait; override in tests
- * @returns {Promise<{stopReason: null|'agreement'|'approval'|'paused'|'too_many', failed: number}>}
+ * @param deps.actingFor  artist user id when uploading for an artist (X-Acting-For), else null
+ * @returns {Promise<{stopReason: null|'agreement'|'approval'|'paused'|'too_many'|'artist_agreement'|'acting_denied'|'daily_limit', failed: number}>}
  */
+const STOP_KINDS = ['agreement', 'approval', 'paused', 'artist_agreement', 'acting_denied', 'daily_limit'];
+
 export const runBatch = async (list, {
   getToken,
   api = API,
   patchSong,
+  actingFor = null,
   doUpload = uploadOne,
   sleep = (ms) => wait(ms),
 }) => {
   const attempt = async (song) => asResult(await doUpload(song, {
     getToken,
     api,
+    actingFor,
     onProgress: (p, phase) => patchSong(song.key, { progress: p, ...(phase ? { phase } : {}) }),
   }));
 
@@ -167,7 +194,7 @@ export const runBatch = async (list, {
       const kind = classifyError(err);
 
       // Stop the whole batch. Songs not yet sent stay queued; nothing received is touched.
-      if (kind === 'agreement' || kind === 'approval' || kind === 'paused') {
+      if (STOP_KINDS.includes(kind)) {
         patchSong(song.key, { status: 'queued', progress: 0 });
         return { stopReason: kind };
       }
@@ -212,7 +239,7 @@ export const runBatch = async (list, {
 };
 
 // Thin React wrapper: tracks the running flag and warns on unload during a run.
-export const useBatchUpload = ({ getToken, api = API }) => {
+export const useBatchUpload = ({ getToken, api = API, actingFor = null }) => {
   const [running, setRunning] = useState(false);
   const runningRef = useRef(false);
 
@@ -231,12 +258,12 @@ export const useBatchUpload = ({ getToken, api = API }) => {
     setRunning(true);
     runningRef.current = true;
     try {
-      return await runBatch(list, { getToken, api, patchSong });
+      return await runBatch(list, { getToken, api, patchSong, actingFor });
     } finally {
       runningRef.current = false;
       setRunning(false);
     }
-  }, [getToken, api]);
+  }, [getToken, api, actingFor]);
 
   return { running, run };
 };

@@ -4,14 +4,18 @@
 export const accountFlags = (user, isSignedIn) => {
   const role = user?.publicMetadata?.role;
   const accountTypeBuyer = user?.unsafeMetadata?.account_type === 'buyer';
+  // Brief 28 D3: an Authorized Uploader's own login. Never an artist account (Tyler, Oct 29).
+  const accountTypeUploader = user?.unsafeMetadata?.account_type === 'uploader';
   const buyerFlag = user?.publicMetadata?.buyer === true;
   const isAdmin = role === 'admin';
-  const isArtist = role === 'artist' || (!!isSignedIn && !accountTypeBuyer);
+  const isArtist = role === 'artist' || (!!isSignedIn && !accountTypeBuyer && !accountTypeUploader);
+  const isUploaderOnly = accountTypeUploader && role !== 'artist' && !isAdmin;
   const isBuyerOnly = accountTypeBuyer && role !== 'artist' && !isAdmin;
   const hasBuyerAccess = buyerFlag || accountTypeBuyer;
   const showVault = isAdmin || isArtist;
   const showAccount = isAdmin || hasBuyerAccess;
-  return { role, accountTypeBuyer, buyerFlag, isAdmin, isArtist, isBuyerOnly, hasBuyerAccess, showVault, showAccount };
+  return { role, accountTypeBuyer, accountTypeUploader, buyerFlag, isAdmin, isArtist, isBuyerOnly, isUploaderOnly,
+    hasBuyerAccess, showVault, showAccount };
 };
 
 export default accountFlags;

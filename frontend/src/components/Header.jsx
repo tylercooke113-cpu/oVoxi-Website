@@ -82,6 +82,12 @@ export const Header = () => {
         {showVault && (
           <Link to="/vault" onClick={click} data-testid="nav-vault" className={cls}>My Vault</Link>
         )}
+        {f.isUploaderOnly && (
+          <>
+            <Link to="/vault" onClick={click} data-testid="nav-artist-vault" className={cls}>Artist Vault</Link>
+            <Link to="/upload" onClick={click} data-testid="nav-upload-for" className={cls}>Upload for artists</Link>
+          </>
+        )}
         {browseSignedOut && (
           <Link to="/catalog" onClick={click} data-testid="nav-browse" className={cls}>Catalog</Link>
         )}

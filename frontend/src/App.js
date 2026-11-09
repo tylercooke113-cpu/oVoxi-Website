@@ -16,6 +16,7 @@ import AppealPage from './pages/AppealPage';
 import PrivacyPage from './pages/PrivacyPage';
 import TermsPage from './pages/TermsPage';
 import CosignPage from './pages/CosignPage';
+import AuthorizePage from './pages/AuthorizePage';
 import ArtistPage from './sync/ArtistPage';
 import TrackSharePage from './sync/TrackSharePage';
 import LibraryPage from './sync/LibraryPage';
@@ -95,6 +96,7 @@ function AppContent() {
           <Route path='/data-policy' element={<DataPolicyPage />} />
           <Route path='/terms' element={<TermsPage />} />
           <Route path='/cosign/:token' element={<CosignPage />} />
+          <Route path='/authorize/:token' element={<AuthorizePage />} />
           {/* PRD-03 phase 5: the library is gated server-side by SYNC_LIBRARY_ENABLED (admins always). */}
           {/* OVOXI Catalog at /catalog; gated server-side by SYNC_LIBRARY_ENABLED (admins always). */}
           <Route path='/catalog' element={<LibraryPage />} />

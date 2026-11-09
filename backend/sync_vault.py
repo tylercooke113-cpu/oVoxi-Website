@@ -6,10 +6,31 @@ artist (no intake answers, no splits, no ACRCloud match detail).
 """
 import re
 import unicodedata
+from datetime import datetime, timedelta
 from typing import Optional
 
 from clearance import AI_CHECK_NAMES, SYNC_CHECK_NAMES
 from exclusive import is_exclusive, sold_uses
+
+# Agreement 12.4 last sentence (Brief 28 C5): the artist may remove an uploader-added song
+# as not intended within this many days of its upload. server.py uses the same constant.
+NOT_INTENDED_DAYS = 30
+
+
+def _not_intended_until(doc: dict) -> Optional[str]:
+    """Last moment the artist can remove an uploader-added song as not intended, or None."""
+    if not doc.get("authorization_id") or doc.get("not_intended_at"):
+        return None
+    up = doc.get("upload_date")
+    if isinstance(up, str):
+        try:
+            up = datetime.fromisoformat(up)
+        except ValueError:
+            return None
+    if not isinstance(up, datetime):
+        return None
+    return (up + timedelta(days=NOT_INTENDED_DAYS)).isoformat()
+
 
 VAULT_METADATA_FIELDS = (
     "moods", "vocals", "duration_s",
@@ -67,6 +88,11 @@ def vault_track_view(doc: dict) -> dict:
         "delisted_by_admin": doc.get("sync_delisted_by_admin") is True,
         "cosign_required": doc.get("cosign_required") is True,
         "cosign_status": doc.get("cosign_status"),
+        # Brief 28 D5: who uploaded it (delegated songs only) and the not-intended removal.
+        "uploaded_by": ({"name": doc.get("uploaded_by_name") or "an Authorized Uploader"}
+                        if doc.get("authorization_id") else None),
+        "not_intended_at": doc.get("not_intended_at"),
+        "not_intended_until": _not_intended_until(doc),
     }
 
 

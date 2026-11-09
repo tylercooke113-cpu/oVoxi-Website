@@ -8,8 +8,11 @@ const SignUpPage = () => {
   const next = params.get('next');
   const redirect = safeNext(next);
   const isBuyer = params.get('as') === 'buyer';
+  // Brief 28 D3: invited Authorized Uploaders get a login only, never an artist account.
+  const isUploader = !isBuyer && params.get('as') === 'uploader';
   const carry = new URLSearchParams();
   if (isBuyer) carry.set('as', 'buyer');
+  if (isUploader) carry.set('as', 'uploader');
   if (next) carry.set('next', next);
   const signInUrl = `/login${carry.toString() ? `?${carry.toString()}` : ''}`;
   return (
@@ -22,6 +25,11 @@ const SignUpPage = () => {
             <h1 className="font-heading text-2xl font-semibold text-white">Create your buyer account</h1>
             <p className="mt-2 text-slate-400 text-sm">License tracks for your projects and manage your plan, certificates and downloads in one place.</p>
           </>
+        ) : isUploader ? (
+          <>
+            <h1 className="font-heading text-2xl font-semibold text-white">Create your uploader account</h1>
+            <p className="mt-2 text-slate-400 text-sm">Use the email your invitation was sent to. This account lets you upload songs for the artists who invite you.</p>
+          </>
         ) : (
           <p className="text-slate-400 text-sm">Join the founding catalog. Get paid when your music licenses.</p>
         )}
@@ -32,6 +40,7 @@ const SignUpPage = () => {
         forceRedirectUrl={redirect}
         signInUrl={signInUrl}
         {...(isBuyer ? { unsafeMetadata: { account_type: 'buyer' } } : {})}
+        {...(isUploader ? { unsafeMetadata: { account_type: 'uploader' } } : {})}
         appearance={{
           variables: {
             colorPrimary: '#9B59D4',

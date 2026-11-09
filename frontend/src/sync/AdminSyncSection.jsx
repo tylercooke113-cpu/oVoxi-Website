@@ -3,6 +3,7 @@ import { toast } from 'sonner';
 import { api, errorMessage } from './api';
 import AdminOrdersSection from './AdminOrdersSection';
 import Modal from './Modal';
+import TakedownDialog from './TakedownDialog';
 
 // Admin: hide profiles, delist tracks (PRD-03 9), record exclusive licenses (Brief 25b D5),
 // review AI-generated parts (D1) and loop licenses (F). Every action is logged server-side.
@@ -19,7 +20,7 @@ const statusForUse = (s, use) => {
   const sold = (s.exclusive_sold || []).includes(use);
   if (sold) return 'Sold exclusively';
   const status = use === 'sync' ? s.sync_status : s.ai_status;
-  if (s.sync_delisted_by_admin) return 'Delisted by admin';
+  if (s.sync_delisted_by_admin) return 'On hold (admin)';
   if (status === 'cleared' && s.on_sync_profile) return 'Live';
   return status || 'Processing';
 };
@@ -186,13 +187,16 @@ const AdminSyncSection = ({ getToken, submissions, onChanged }) => {
     } catch (err) { toast.error(errorMessage(err)); } finally { setBusy(null); }
   };
 
+  // Brief 28 C1/D6: "Hold" is the old delist, kept as a temporary admin pause only. It writes no
+  // ledger entry, is not a takedown, and cannot bring back a use that was taken down.
   const delist = async (s) => {
     const next = !s.sync_delisted_by_admin;
-    if (next && !window.confirm(`Delist "${s.track_name}"? It comes off all public pages now.`)) return;
+    if (next && !window.confirm(`Put "${s.track_name}" on hold? It comes off all public pages now. This is a temporary pause, not a takedown: nothing is recorded and the artist's choices stay as they are.`)) return;
     setBusy(s.id);
-    try { await api.adminDelist(getToken, s.id, next); toast.success(next ? 'Delisted.' : 'Relisted if it still clears.'); onChanged(); }
+    try { await api.adminDelist(getToken, s.id, next); toast.success(next ? 'On hold.' : 'Hold released. It relists if it still clears.'); onChanged(); }
     catch (err) { toast.error(errorMessage(err)); } finally { setBusy(null); }
   };
+  const [takingDown, setTakingDown] = useState(null);
 
   const hide = async (p) => {
     setBusy(p.slug);
@@ -202,6 +206,8 @@ const AdminSyncSection = ({ getToken, submissions, onChanged }) => {
 
   return (
     <div className="flex flex-col gap-8" data-testid="admin-sync">
+      <TakedownDialog track={takingDown} getToken={getToken} onClose={() => setTakingDown(null)}
+        onDone={() => { setTakingDown(null); onChanged(); }} />
       <AdminOrdersSection getToken={getToken} />
       <section data-testid="admin-waiting-approval">
         <h3 className="mb-3 font-heading text-lg font-semibold text-white">Artists waiting for approval</h3>
@@ -274,7 +280,11 @@ const AdminSyncSection = ({ getToken, submissions, onChanged }) => {
                             <Toggle on={false} busy={false} onClick={() => setSelling(s)} label="Record exclusive license" />
                           )}
                           <Toggle on={!!s.sync_delisted_by_admin} busy={busy === s.id} onClick={() => delist(s)}
-                            label={s.sync_delisted_by_admin ? 'Relist' : 'Delist'} />
+                            label={s.sync_delisted_by_admin ? 'Release hold' : 'Hold'} />
+                          <button type="button" onClick={() => setTakingDown(s)} data-testid={`admin-takedown-${s.id}`}
+                            className="rounded-full border border-red-400/40 px-3 py-1 text-xs text-red-300 hover:bg-red-400/10">
+                            Takedown
+                          </button>
                         </td>
                       </tr>
                       <tr><td colSpan={5}><Reviews s={s} getToken={getToken} onChanged={onChanged} /></td></tr>

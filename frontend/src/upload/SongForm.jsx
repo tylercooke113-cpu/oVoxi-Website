@@ -133,7 +133,9 @@ const CHECKBOX_CLASS =
 
 // Controlled single-song form. `value` is a song object; `onChange` merges a partial
 // into it. `index` keeps data-testids and ids unique across the batch.
-const SongForm = ({ value, onChange, index, disabled, agreementStatus, getToken }) => {
+// acting: { artist_name, licensor_name, uses } when an Authorized Uploader uploads for an artist
+// (Brief 28 D3): the legal name is the artist's and locked, and only their authorized uses apply.
+const SongForm = ({ value, onChange, index, disabled, agreementStatus, getToken, acting = null }) => {
   const fileRef = useRef(null);
   const [moodLimitHit, setMoodLimitHit] = useState(false);
 
@@ -162,17 +164,35 @@ const SongForm = ({ value, onChange, index, disabled, agreementStatus, getToken 
 
   // Oct 26: prefill the legal name from the signed Artist Agreement (not the artist name),
   // and keep the account name on the splits so a different name is flagged.
-  const accountName = agreementStatus?.legal_name || '';
+  const accountName = (acting ? acting.licensor_name : agreementStatus?.legal_name) || '';
   useEffect(() => {
-    if (!accountName || value.rights.account_legal_name === accountName) return;
+    if (!accountName) return;
+    if (value.rights.account_legal_name === accountName
+        && (!acting || value.rights.self_legal_name === accountName)) return;
     patch({ rights: {
       ...value.rights,
       account_legal_name: accountName,
-      self_legal_name: value.rights.legal_name_touched && value.rights.self_legal_name
+      // Acting: always the artist's licensor name (locked). Own upload: keep an edited name.
+      self_legal_name: !acting && value.rights.legal_name_touched && value.rights.self_legal_name
         ? value.rights.self_legal_name : accountName,
+      ...(acting ? { legal_name_touched: false } : {}),
     } });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [accountName, value.rights.account_legal_name]);
+  }, [accountName, value.rights.account_legal_name, acting]);
+
+  // Acting: only the uses the artist authorized. Clear any other use already ticked.
+  const allowed = (u) => !acting || (acting.uses || []).includes(u);
+  useEffect(() => {
+    if (!acting) return;
+    const p = {};
+    if (value.consentAi && !allowed('ai_training')) p.consentAi = false;
+    if ((value.consentSync || value.proNotice) && !allowed('sync')) {
+      Object.assign(p, { consentSync: false, intake: EMPTY_INTAKE, proNotice: false });
+    }
+    if (Object.keys(p).length) patch(p);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [acting, value.consentAi, value.consentSync, value.proNotice]);
+  const notAllowedHelp = (label) => `${acting?.artist_name || 'This artist'} hasn't authorized you to set ${label}.`;
 
   const toggleSync = (checked) => {
     patch({ consentSync: checked, proNotice: false, intake: checked ? value.intake : EMPTY_INTAKE });
@@ -182,7 +202,7 @@ const SongForm = ({ value, onChange, index, disabled, agreementStatus, getToken 
   // sync but keeps the PRO box open with the reason; unticking turns sync back on.
   const notAffiliated = (checked) => (checked
     ? patch({ consentSync: false, intake: EMPTY_INTAKE, proNotice: true })
-    : patch({ consentSync: true, proNotice: false }));
+    : patch(allowed('sync') ? { consentSync: true, proNotice: false } : { proNotice: false }));
 
   // Agreement 3.6: songs with loops are sync only.
   const setDeclarations = (d) => patch(usesLoops(d)
@@ -424,7 +444,9 @@ const SongForm = ({ value, onChange, index, disabled, agreementStatus, getToken 
             checked: value.consentSync,
             onChange: toggleSync,
             title: 'Use this upload for sync placements.',
-            help: 'Listed in the OVOXI Catalog for creators and brands to license.',
+            help: allowed('sync') ? 'Listed in the OVOXI Catalog for creators and brands to license.'
+              : notAllowedHelp('sync placements'),
+            blocked: !allowed('sync'),
           },
           {
             id: tid('consent-ai'),
@@ -432,8 +454,9 @@ const SongForm = ({ value, onChange, index, disabled, agreementStatus, getToken 
             checked: value.consentAi,
             onChange: (v) => patch({ consentAi: v }),
             title: 'Use this upload for AI training.',
-            help: loopSong ? LOOPS_NO_AI_MESSAGE : 'Licensed to AI companies as training data.',
-            blocked: loopSong,
+            help: !allowed('ai_training') ? notAllowedHelp('AI training')
+              : loopSong ? LOOPS_NO_AI_MESSAGE : 'Licensed to AI companies as training data.',
+            blocked: loopSong || !allowed('ai_training'),
           },
         ].map((c) => (
           <label
@@ -462,7 +485,11 @@ const SongForm = ({ value, onChange, index, disabled, agreementStatus, getToken 
         {!value.consentAi && !value.consentSync && (
           <p className="text-xs text-red-400">Choose at least one.</p>
         )}
-        {agreementStatus?.signed && agreementStatus.agreement && (
+        {acting ? (
+          <div className="mt-2.5 border-t border-white/10 pt-2.5 text-xs text-slate-500" data-testid={tid('upload-acting-uses-note')}>
+            These uses are licensed under {acting.artist_name}'s Artist Agreement.
+          </div>
+        ) : agreementStatus?.signed && agreementStatus.agreement && (
           <div className="mt-2.5 border-t border-white/10 pt-2.5 text-xs text-slate-500">
             These uses are licensed under your Artist Agreement signed{' '}
             {formatSignedDate(agreementStatus.agreement.signed_at)}.{' '}
@@ -482,7 +509,7 @@ const SongForm = ({ value, onChange, index, disabled, agreementStatus, getToken 
 
       {/* Splits (every upload). With sync on, every writer needs a PRO and IPI. */}
       <RightsSection value={value.rights} onChange={(r) => patch({ rights: r })} disabled={disabled}
-        requirePro={value.consentSync} />
+        requirePro={value.consentSync} lockedFor={acting ? acting.artist_name : null} />
 
       {/* Sync details (stays open, PRO box only, while "not affiliated" is ticked) */}
       {(value.consentSync || value.proNotice) && (

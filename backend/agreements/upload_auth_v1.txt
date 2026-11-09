@@ -1,0 +1,117 @@
+# Upload Authorization
+
+THIS UPLOAD AUTHORIZATION (the "Authorization") is dated the {{authorization_date}} (the "Effective Date").
+
+BETWEEN:
+
+{{licensor_party}}, email {{licensor_email}}, Platform Account ID {{platform_account_id}} (the "Artist"),
+
+AND
+
+{{uploader_party}}, email {{uploader_email}}, acting as {{uploader_role}} (the "Authorized Uploader"),
+
+AND
+
+OVOXI, Inc., a Delaware corporation, of 2389 Main St. Ste 100, Glastonbury, CT, 06033, United States (the "Licensee")
+
+(individually a "Party" and collectively the "Parties").
+
+## Background
+
+A. The Artist has accepted the Licensee's AI Training and Sync Licensing Agreement (the "Artist Agreement") for its account on the Licensee's website and services at ovoxi.net (the "Platform").
+
+B. The Artist wishes to allow the Authorized Uploader to upload works and manage information for the Artist's account on the Platform, as Section 2.3 of the Artist Agreement permits.
+
+IN CONSIDERATION OF the mutual covenants in this Authorization, the Parties agree as follows:
+
+## 1. Appointment and Standing Approval
+
+1.1 The Artist appoints the Authorized Uploader to act for the Artist on the Platform, with the authority set out in Section 2. This Authorization is the Upload Authorization referred to in Section 2.3 of the Artist Agreement.
+
+1.2 Authorized Uses. The Artist authorizes the Authorized Uploader to select the following Opted-In Uses for works in the Artist's account: {{authorized_uses}} (the "Authorized Uses").
+
+1.3 Standing approval. The Artist approves in advance each work uploaded, and each action taken, by the Authorized Uploader within Section 2 while this Authorization is in effect. No further approval by the Artist is required. Each work the Authorized Uploader uploads becomes a Licensed Work, for the Authorized Uses selected for it, when its upload is completed, as if the Artist had uploaded it.
+
+## 2. What the Authorized Uploader May and May Not Do
+
+2.1 The Authorized Uploader may, for the Artist's account:
+
+- (a) upload sound recordings and their musical compositions;
+- (b) enter and correct titles, genres and other metadata;
+- (c) enter ownership splits and the details of each rights holder, including writers, publishers, master owners, performing rights organizations and IPI numbers;
+- (d) answer the Platform's questions about samples, loops and artificial intelligence tools, and provide loop licenses;
+- (e) select Authorized Uses for any work in the Artist's account; and
+- (f) view the Artist's catalog on the Platform.
+
+2.2 The Authorized Uploader may not:
+
+- (a) select any Opted-In Use that is not an Authorized Use;
+- (b) make or withdraw an Exclusive Election;
+- (c) withdraw a Licensed Work or remove an Opted-In Use, which only the Artist may do, or the Licensee under Section 2.3(f) of the Artist Agreement;
+- (d) view or change the Artist's OVOXI Wallet, statements, payout account or tax information;
+- (e) change the Artist's legal name, email address, account details or privacy choices;
+- (f) create, change or remove Artist Materials, including the Artist's sync profile, photographs and biography;
+- (g) accept, change or terminate the Artist Agreement or any other agreement for the Artist;
+- (h) appoint anyone else to act for the Artist; or
+- (i) receive any payment of the Revenue Share.
+
+## 3. The Artist's Responsibility
+
+3.1 Acts of the Authorized Uploader within Section 2 are acts of the Artist under the Artist Agreement. The representations and warranties in Section 9.1 of the Artist Agreement apply to each work the Authorized Uploader uploads as if the Artist had uploaded it, and Section 10.2 of the Artist Agreement applies to them.
+
+3.2 The Licensee may rely on each act of the Authorized Uploader within Section 2 without checking with the Artist.
+
+3.3 The Artist chooses the Authorized Uploader. Any arrangement between the Artist and the Authorized Uploader, including payment between them, is between them alone, and the Licensee is not a party to it.
+
+## 4. The Authorized Uploader's Promises
+
+4.1 The Authorized Uploader represents and warrants that:
+
+- (a) for each work it uploads, it has the Artist's instruction to upload that work to the Artist's account;
+- (b) the information it enters on the Platform is accurate to the best of its knowledge after reasonable inquiry;
+- (c) it will not upload a work that it knows contains a sample or interpolation of another recording or composition, or that it knows is subject to an agreement with a record label, publisher, distributor or music library that conflicts with the Artist Agreement; and
+- (d) it is at least eighteen (18) years of age and has reached the age of majority where it lives, and if it is a company, the individual accepting this Authorization is authorized to accept it for the company.
+
+4.2 The Authorized Uploader agrees to defend, indemnify and hold harmless the Artist and the Licensee against third-party claims, and related losses, liabilities, expenses and reasonable legal fees, resulting from (a) an act of the Authorized Uploader outside the authority in Section 2, or (b) a breach of Section 4.1.
+
+4.3 The Authorized Uploader shall keep the information it sees on the Platform about the Artist and the Artist's rights holders confidential, and shall use it only to act under this Authorization.
+
+4.4 The Authorized Uploader is not an agent, employee or partner of the Licensee, except where the Licensee is itself the Authorized Uploader.
+
+## 5. Where the Licensee Is the Authorized Uploader
+
+5.1 Where the Authorized Uploader is the Licensee, it acts through its employees and records which employee took each action. It acts only within Section 2 and the Authorized Uses the Artist has chosen, and does not select any other use for the Artist.
+
+5.2 Sections 4.2 and 4.4 do not apply to the Licensee. The Licensee is responsible for errors made by its employees acting as Authorized Uploader, as set out in Section 2.3(e) of the Artist Agreement.
+
+## 6. Notices and Records
+
+6.1 The Licensee will email the Artist a list of the works the Authorized Uploader uploads, at least once on each day an upload is made.
+
+6.2 The Platform shows the Artist, for each work, who uploaded it and who made each opt-in selection.
+
+6.3 If the Artist withdraws a work uploaded by the Authorized Uploader within thirty (30) days after its upload because the Artist did not intend it to be licensed, Section 12.4 of the Artist Agreement applies as amended for that case: the Licensee grants no new Sublicense for the work from the time of withdrawal, and the withdrawal does not count toward the limit in Section 12.4.
+
+## 7. Term, Revocation and Changes
+
+7.1 This Authorization begins on the Effective Date and continues until it ends under this Section 7.
+
+7.2 The Artist may revoke this Authorization at any time through the Platform. The Authorized Uploader may end it at any time through the Platform. Either takes effect immediately. This Authorization also ends when the Artist Agreement ends.
+
+7.3 When this Authorization ends, works already uploaded and selections already made remain Licensed Works and Opted-In Uses under the Artist Agreement, subject to the Artist's rights under Section 12.4 of the Artist Agreement and Section 6.3 of this Authorization. Sublicenses already granted are not affected.
+
+7.4 To change the Authorized Uses, the Parties accept a new Upload Authorization, which replaces this one.
+
+## 8. General
+
+8.1 Capitalized terms used but not defined in this Authorization have the meanings given in the Artist Agreement.
+
+8.2 Sections 16, 17.1, 17.2 and 17.6 of the Artist Agreement apply to this Authorization, reading "Parties" as the three Parties to this Authorization. Notices to the Authorized Uploader are sent to the email address above.
+
+8.3 This Authorization may be executed electronically. Electronic and click-to-accept signatures are binding and are considered to be original signatures, in accordance with the federal Electronic Signatures in Global and National Commerce Act and the Connecticut Uniform Electronic Transactions Act. The Licensee will keep a record of each acceptance, including the date and time, the Platform account or the email address the signing link was sent to, the IP address, the version of this Authorization and a fingerprint of its text.
+
+8.4 As to the authority of the Authorized Uploader, this Authorization prevails over the Artist Agreement. In all other respects, the Artist Agreement prevails.
+
+The Parties have executed this Upload Authorization on the {{authorization_date}}.
+
+{{SIGNATURE_BLOCK}}

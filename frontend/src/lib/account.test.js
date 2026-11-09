@@ -49,4 +49,21 @@ describe('accountFlags (Brief 23 Part C)', () => {
       isArtist: false, showVault: false, isBuyerOnly: true, showAccount: true, hasBuyerAccess: true,
     });
   });
+
+  // Brief 28 D3: an Authorized Uploader's login is never an artist account.
+  test('uploader sign-up: no Vault, no artist status, flagged uploader-only', () => {
+    expect(accountFlags(U({ accountType: 'uploader' }), true)).toMatchObject({
+      isArtist: false, isUploaderOnly: true, showVault: false, isBuyerOnly: false,
+    });
+  });
+
+  test('uploader later approved as an artist is an artist, not uploader-only', () => {
+    expect(accountFlags(U({ accountType: 'uploader', role: 'artist' }), true)).toMatchObject({
+      isArtist: true, isUploaderOnly: false, showVault: true,
+    });
+  });
+
+  test('admin is never uploader-only', () => {
+    expect(accountFlags(U({ accountType: 'uploader', role: 'admin' }), true).isUploaderOnly).toBe(false);
+  });
 });

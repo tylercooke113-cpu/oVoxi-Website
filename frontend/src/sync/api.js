@@ -4,8 +4,17 @@ import axios from 'axios';
 export const API = 'https://ovoxi-website-production.up.railway.app/api';
 
 export const authed = async (getToken) => ({
-  headers: { Authorization: `Bearer ${await getToken()}` },
+  headers: {
+    Authorization: `Bearer ${await getToken()}`,
+    // Brief 28 D4: a getToken made by actingGetToken also names the artist being acted for.
+    ...(getToken && getToken.actingFor ? { 'X-Acting-For': getToken.actingFor } : {}),
+  },
 });
+
+// Brief 28 D4: a getToken that makes every api.* call act for this artist (X-Acting-For).
+// The backend refuses the header on any route outside the delegate allowlist.
+export const actingGetToken = (getToken, actingFor) =>
+  Object.assign((...a) => getToken(...a), { actingFor });
 
 // FastAPI validation errors arrive as an array; pydantic prefixes validator
 // messages with "Value error, ".
@@ -70,8 +79,14 @@ export const api = {
       { ...(await authed(getToken)), timeout: 60000 })).data,
   deletePhoto: async (getToken) =>
     (await axios.delete(`${API}/sync/profile/photo`, await authed(getToken))).data,
+  // Brief 28 D5: the artist removes an uploader-added song as not intended (artist only).
+  notIntended: async (getToken, id) =>
+    (await axios.post(`${API}/vault/tracks/${id}/not-intended`, null, await authed(getToken))).data,
   adminProfiles: async (getToken) =>
     (await axios.get(`${API}/admin/sync/profiles`, await authed(getToken))).data,
+  // Brief 28 D6: takedown (a real Removal, Agreement 2.3(f)). Body: { uses, reason, note }.
+  adminTakedown: async (getToken, id, body) =>
+    (await axios.post(`${API}/admin/tracks/${encodeURIComponent(id)}/takedown`, body, await authed(getToken))).data,
   adminDelist: async (getToken, id, delisted) =>
     (await axios.post(`${API}/admin/sync/tracks/${id}/delist`, { delisted }, await authed(getToken))).data,
   // Oct 26: approve an artist (sets role in Clerk, processes held songs, emails them).

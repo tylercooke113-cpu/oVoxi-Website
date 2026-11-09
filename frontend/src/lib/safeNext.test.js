@@ -16,6 +16,7 @@ describe('safeNext (Brief 20 B3)', () => {
     ['/artist/jane-doe?license=t1', '/artist/jane-doe?license=t1'],
     ['/pricing', '/pricing'],
     ['/pricing?subscribe=pro&interval=m', '/pricing?subscribe=pro&interval=m'],
+    ['/authorize/Ab3_-xYz0123456789abcdefGHIJKLMNOPqrstu-_9', '/authorize/Ab3_-xYz0123456789abcdefGHIJKLMNOPqrstu-_9'],
   ])('allows %s', (input, expected) => expect(safeNext(input)).toBe(expected));
 
   test.each([
@@ -27,6 +28,10 @@ describe('safeNext (Brief 20 B3)', () => {
     ['/artist/Jane Doe'],
     ['/artist/'],
     ['/artistjane'],
+    ['/authorize/'],
+    ['/authorize/short'],
+    ['/authorize/Ab3_-xYz0123456789abcdef/../vault'],
+    ['/authorize/Ab3_-xYz0123456789abcdef?next=//evil.com'],
     [null],
     [undefined],
   ])('falls back %s to /vault', (input) => expect(safeNext(input)).toBe('/vault'));

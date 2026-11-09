@@ -316,7 +316,9 @@ const LoopsBlock = ({ track, getToken, onUpdated }) => {
   );
 };
 
-const TrackSyncPanel = ({ track, getToken, onUpdated, status }) => {
+// acting: { artist_name, uses } when an Authorized Uploader views the artist's Vault (Brief 28
+// D4). Uploaders can turn an authorized use on, never off, and never see Exclusive.
+const TrackSyncPanel = ({ track, getToken, onUpdated, status, acting = null }) => {
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState(null);       // 'bpm' | 'key' | 'moods'
   const [moodDraft, setMoodDraft] = useState([]);
@@ -365,7 +367,7 @@ const TrackSyncPanel = ({ track, getToken, onUpdated, status }) => {
   const toggle = (scope) => setConfirm({ scope, action: track.consent[scope] ? 'withdraw' : 'grant' });
   const addingSync = confirm?.scope === 'sync' && confirm?.action === 'grant';
   const copy = confirm && !addingSync ? CONFIRM_COPY[`${confirm.scope}:${confirm.action}`] : null;
-  const showExclusive = !track.legacy && (!!status?.exclusive_supported || !!track.consent.exclusive);
+  const showExclusive = !acting && !track.legacy && (!!status?.exclusive_supported || !!track.consent.exclusive);
   const modalTitle = addingSync ? 'Add sync placements' : copy?.[0];
   const declMissing = declarationsMissing(decl);
 
@@ -375,16 +377,27 @@ const TrackSyncPanel = ({ track, getToken, onUpdated, status }) => {
         <p className="mb-2 text-[11px] uppercase tracking-[0.14em] text-slate-500">Uses</p>
         {[['sync', 'Sync placements'], ['ai_training', 'AI training']].map(([scope, label]) => {
           const blocked = scope === 'ai_training' && loopSong && !track.consent.ai_training;
+          const on = !!track.consent[scope];
+          // Acting: an "on" use cannot be turned off; an "off" use only if the artist authorized it.
+          const actingLock = !!acting && (on || !(acting.uses || []).includes(scope));
           return (
             <div key={scope} className="py-1 text-sm text-slate-300">
               <div className="flex items-center justify-between">
                 {label}
-                <Switch on={!!track.consent[scope]} label={label} disabled={busy || blocked} onClick={() => toggle(scope)} />
+                <Switch on={on} label={label} disabled={busy || blocked || actingLock} onClick={() => toggle(scope)} />
               </div>
               {blocked && <p className="mt-1 text-xs text-slate-500">{LOOPS_NO_AI_MESSAGE}</p>}
+              {acting && !on && !(acting.uses || []).includes(scope) && (
+                <p className="mt-1 text-xs text-slate-500">{acting.artist_name} hasn't authorized you to set this use.</p>
+              )}
             </div>
           );
         })}
+        {acting && (
+          <p className="mt-1 text-xs text-slate-500" data-testid={`vault-acting-uses-${track.id}`}>
+            Uploaders can turn uses on. Only {acting.artist_name} can turn a use off or take a song down.
+          </p>
+        )}
         {showExclusive && (track.consent.sync || track.consent.ai_training) && (
           <div className="mt-1 border-t border-white/10 pt-2" data-testid={`vault-exclusive-${track.id}`}>
             <div className="flex items-center justify-between text-sm text-slate-300">

@@ -46,6 +46,8 @@ import payouts
 import statements
 import artist_agreement
 import cosign
+import upload_auth
+import authorization_events
 from profile_photo import (
     MAX_PHOTO_BYTES, PHOTO_CONTENT_TYPES, PHOTO_SIZES, PhotoRejected, REJECT_MESSAGE, process_photo,
 )
@@ -64,6 +66,7 @@ from sync_search import PAGE_SIZE, SearchParamError, build_filter, build_pipelin
 from sync_vault import (
     INSTAGRAM_URL, SPOTIFY_ARTIST_URL, is_legacy, metadata_patch_fields,
     slugify_profile, vault_track_view,
+    NOT_INTENDED_DAYS,   # one source for the 30-day not-intended window (Brief 28 D5)
 )
 from rights import TrackRightsIn, build_rights, EMAIL_PATTERN as RIGHTS_EMAIL_PATTERN
 from clearance import clearance_fields, writers_missing_pro, _creator_emails as rights_emails
@@ -1462,6 +1465,12 @@ class TrackSubmission(BaseModel):
     metadata: Optional[dict] = None
     intake: Optional[dict] = None
     rights: Optional[dict] = None
+    # Brief 28 B2: set only on delegated uploads. clerk_user_id stays the artist.
+    # Absent (None) means the artist uploaded the track directly; no backfill.
+    uploaded_by_user_id: Optional[str] = None
+    uploaded_by_name: Optional[str] = None
+    authorization_id: Optional[str] = None
+    acting_admin_user_id: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -1569,7 +1578,7 @@ async def fetch_clerk_user(user_id: str) -> dict:
         raise HTTPException(status_code=422, detail="Add an email address to your account first.")
     verified = ((primary or {}).get("verification") or {}).get("status") == "verified"
     return {"email": email, "first_name": u.get("first_name") or "", "last_name": u.get("last_name") or "",
-            "email_verified": verified}
+            "email_verified": verified, "role": (u.get("public_metadata") or {}).get("role")}
 
 
 async def set_clerk_public_metadata(user_id: str, patch: dict) -> None:
@@ -1619,6 +1628,69 @@ async def _require_signed_agreement(clerk_payload: dict) -> Optional[dict]:
     if a is None and artist_agreement.enforced():
         raise HTTPException(status_code=403, detail="Sign the Artist Agreement before uploading.")
     return a
+
+
+async def _require_artist_agreement(artist_user_id: str) -> Optional[dict]:
+    """The ARTIST's current agreement, for a delegated upload. No admin bypass: even an OVOXI
+    upload by an admin is gated on the artist's agreement, not the admin's role. Refuses like
+    the artist's own upload when they have no current agreement and enforcement is on."""
+    a = await _current_agreement(artist_user_id)
+    if a is None and artist_agreement.enforced():
+        raise HTTPException(status_code=403,
+                            detail="This artist has not signed the current Artist Agreement.")
+    return a
+
+
+_APPROVAL_CACHE: dict = {}          # artist_user_id -> (expires_at_epoch, approved)
+_APPROVAL_TTL = 300                 # 5 minutes
+
+
+async def _artist_is_approved(artist_user_id: str) -> bool:
+    """A delegated upload is held unless the ARTIST (not the caller) is approved. Approval is
+    the artist's Clerk role (artist/admin), the same signal is_approved() reads from the JWT
+    for the artist's own uploads. When ARTIST_APPROVAL_REQUIRED=false, everyone is approved.
+    Cached per artist for 5 minutes to avoid a Clerk call on every delegated upload; a failed
+    lookup is not cached and holds the upload (safe default)."""
+    if not _artist_approval_required():
+        return True
+    now = time.time()
+    hit = _APPROVAL_CACHE.get(artist_user_id)
+    if hit and hit[0] > now:
+        return hit[1]
+    try:
+        approved = (await fetch_clerk_user(artist_user_id)).get("role") in ("artist", "admin")
+    except HTTPException:
+        return False      # cannot confirm -> hold, and do not cache the failure
+    _APPROVAL_CACHE[artist_user_id] = (now + _APPROVAL_TTL, approved)
+    return approved
+
+
+async def _resolve_actor(request: Request, payload: dict) -> dict:
+    """Resolve who the request acts for (Brief 28 C2). No X-Acting-For: the caller acts as
+    themselves, exactly as today. With it: refused unless the caller has an active person
+    authorization for that artist, or is an admin and the artist has an active OVOXI one."""
+    artist_id = request.headers.get("x-acting-for")
+    if not artist_id:
+        return {"acting": False, "principal_id": payload["sub"], "actor_id": payload["sub"],
+                "authorization": None, "uses": None, "is_ovoxi": False, "acting_admin_user_id": None}
+    actor_id = payload["sub"]
+    auth = await db.upload_authorizations.find_one(
+        {"artist_user_id": artist_id, "uploader_user_id": actor_id, "kind": "person",
+         "status": "active"}, {"_id": 0})
+    if not auth and _role(payload) == "admin":
+        auth = await db.upload_authorizations.find_one(
+            {"artist_user_id": artist_id, "kind": "ovoxi", "status": "active"}, {"_id": 0})
+    if not auth:
+        raise HTTPException(status_code=403, detail="You are not authorized to act for this artist.")
+    is_ovoxi = auth["kind"] == "ovoxi"
+    return {"acting": True, "principal_id": artist_id, "actor_id": actor_id, "authorization": auth,
+            "uses": auth.get("uses") or [], "is_ovoxi": is_ovoxi,
+            "acting_admin_user_id": actor_id if is_ovoxi else None}
+
+
+async def resolve_actor(request: Request, payload: dict = Depends(require_artist)) -> dict:
+    """Dependency form for routes that already require the artist role set (rows 1, 2, 4-10)."""
+    return await _resolve_actor(request, payload)
 
 
 def _agreement_values(fields: dict, *, email: str, uid: str, now: datetime) -> dict:
@@ -1780,21 +1852,37 @@ async def agreement_pdf(request: Request, clerk_payload: dict = Depends(verify_c
 
 @api_router.post("/upload/presign")
 @limiter.limit("20/minute")
-async def presign_upload(request: Request, payload: PresignRequest, clerk_payload: dict = Depends(require_artist)):
+async def presign_upload(request: Request, payload: PresignRequest,
+                         clerk_payload: dict = Depends(require_artist),
+                         actor: dict = Depends(resolve_actor)):
     if os.environ.get("UPLOADS_ENABLED", "true") != "true":
         raise HTTPException(status_code=503, detail="Uploads are temporarily paused")
-    agreement = await _require_signed_agreement(clerk_payload)
+    acting = actor["acting"]
+    # Acting for an artist: the track is the ARTIST's, so the agreement, the legal-name check,
+    # approval and limits are all the artist's, never the caller's (Brief 28 C3).
+    owner_uid = actor["principal_id"]
+    if acting:
+        if payload.consent_exclusive:
+            raise HTTPException(status_code=403, detail="Only the artist can offer a song as exclusive.")
+        if payload.consent_ai_training and "ai_training" not in actor["uses"]:
+            raise HTTPException(status_code=403, detail="This uploader is not authorized for AI training.")
+        if payload.consent_sync and "sync" not in actor["uses"]:
+            raise HTTPException(status_code=403, detail="This uploader is not authorized for sync placements.")
+        agreement = await _require_artist_agreement(owner_uid)
+        approved = await _artist_is_approved(owner_uid)
+    else:
+        agreement = await _require_signed_agreement(clerk_payload)
+        approved = is_approved(clerk_payload)
     if payload.genre not in VALID_GENRES:
         raise HTTPException(status_code=400, detail=f"Invalid genre")
     try:
         genre_other = other_answer(payload.genre, payload.genre_other, GENRE_OTHER_MESSAGE)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
-    # The uploader's name in the splits must be the licensor on their signed agreement.
+    # The self name in the splits must be the licensor on the owning artist's agreement.
     account_name = account_legal_name(agreement)
     if account_name and payload.rights and _norm_name(payload.rights.self_legal_name) != _norm_name(account_name):
         raise HTTPException(status_code=422, detail=LEGAL_NAME_MISMATCH)
-    approved = is_approved(clerk_payload)
 
     ext = Path(payload.filename).suffix.lower()
     if ext not in AUDIO_CONTENT_TYPES:
@@ -1805,28 +1893,44 @@ async def presign_upload(request: Request, payload: PresignRequest, clerk_payloa
             detail=f"File exceeds the {MAX_UPLOAD_BYTES // (1024 * 1024)} MB limit",
         )
 
-    if _role(clerk_payload) != "admin":
+    since = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+    one_hour_ago = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    open_or = [
+        {"status": {"$in": ["uploaded", "scanning", "mastering", "processing"]}},
+        {"status": "pending", "upload_date": {"$gte": one_hour_ago}},
+    ]
+    if acting:
+        # Delegate limits: per artist, across all their uploaders, separate from the artist's
+        # own caps. authorization_id set marks a delegated upload. The caller's role never
+        # changes these (an admin acting for OVOXI is still bound by the artist's caps).
+        MAX_DELEGATE_PER_DAY = int(os.environ.get("MAX_DELEGATE_UPLOADS_PER_DAY", "250"))
+        MAX_DELEGATE_OPEN = int(os.environ.get("MAX_DELEGATE_OPEN_SUBMISSIONS", "50"))
+        if await db.track_submissions.count_documents(
+            {"clerk_user_id": owner_uid, "authorization_id": {"$ne": None},
+             "upload_date": {"$gte": since}}) >= MAX_DELEGATE_PER_DAY:
+            raise HTTPException(status_code=429, detail="This artist's daily uploader limit is reached.")
+        if await db.track_submissions.count_documents(
+            {"clerk_user_id": owner_uid, "authorization_id": {"$ne": None},
+             "awaiting_approval": {"$ne": True}, "$or": open_or}) >= MAX_DELEGATE_OPEN:
+            raise HTTPException(status_code=429, detail="Too many uploads in progress for this artist.")
+    elif _role(clerk_payload) != "admin":
         MAX_UPLOADS_PER_DAY = int(os.environ.get("MAX_UPLOADS_PER_DAY", "20"))
         MAX_OPEN_SUBMISSIONS = int(os.environ.get("MAX_OPEN_SUBMISSIONS", "15"))
         uid = clerk_payload["sub"]
-        since = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
-        one_hour_ago = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+        # The artist's own caps exclude delegated uploads (authorization_id null/absent).
         if await db.track_submissions.count_documents(
-            {"clerk_user_id": uid, "upload_date": {"$gte": since}}
+            {"clerk_user_id": uid, "authorization_id": None, "upload_date": {"$gte": since}}
         ) >= MAX_UPLOADS_PER_DAY:
             raise HTTPException(status_code=429, detail="Daily upload limit reached")
         if approved and await db.track_submissions.count_documents({
-            "clerk_user_id": uid,
-            "awaiting_approval": {"$ne": True},
-            "$or": [
-                {"status": {"$in": ["uploaded", "scanning", "mastering", "processing"]}},
-                {"status": "pending", "upload_date": {"$gte": one_hour_ago}},
-            ],
+            "clerk_user_id": uid, "authorization_id": None,
+            "awaiting_approval": {"$ne": True}, "$or": open_or,
         }) >= MAX_OPEN_SUBMISSIONS:
             raise HTTPException(status_code=429, detail="Too many uploads in progress")
         MAX_HELD = int(os.environ.get("MAX_PENDING_APPROVAL_UPLOADS", "25"))
         if not approved and await db.track_submissions.count_documents({
-            "clerk_user_id": uid, "awaiting_approval": True, "status": {"$ne": "failed"},
+            "clerk_user_id": uid, "authorization_id": None,
+            "awaiting_approval": True, "status": {"$ne": "failed"},
         }) >= MAX_HELD:
             raise HTTPException(status_code=429, detail=(
                 f"You can upload up to {MAX_HELD} songs before your account is approved."))
@@ -1858,7 +1962,7 @@ async def presign_upload(request: Request, payload: PresignRequest, clerk_payloa
         logger.error("Failed to generate presigned URL: %s", exc)
         raise HTTPException(status_code=500, detail="Failed to generate upload URL")
 
-    clerk_user_id = clerk_payload.get('sub')
+    clerk_user_id = owner_uid                    # the track is always owned by the artist
     now_iso = datetime.now(timezone.utc).isoformat()
     scopes = []
     if payload.consent_ai_training:
@@ -1893,6 +1997,9 @@ async def presign_upload(request: Request, payload: PresignRequest, clerk_payloa
         await record_grants(
             db, user_id=clerk_user_id, track_id=submission_id, scopes=scopes,
             source="upload", ip=get_real_client_ip(request), agreement=agreement,
+            actor_user_id=actor["actor_id"] if acting else None,
+            authorization_id=actor["authorization"]["id"] if acting else None,
+            acting_admin_user_id=actor["acting_admin_user_id"] if acting else None,
         )
     except Exception as exc:
         logger.error("Consent ledger write failed for %s: %s", submission_id, exc)
@@ -1917,6 +2024,13 @@ async def presign_upload(request: Request, payload: PresignRequest, clerk_payloa
                       "exclusive": payload.consent_exclusive}
     doc['consent_grant_version'] = GRANT_VERSION
     doc['agreement_id'] = agreement["id"] if agreement else None
+    # Delegated upload (Brief 28 B2): owner stays the artist; these record who acted.
+    if acting:
+        doc['uploaded_by_user_id'] = actor["actor_id"]
+        doc['uploaded_by_name'] = actor["authorization"].get("uploader_name") or (
+            "OVOXI" if actor["is_ovoxi"] else None)
+        doc['authorization_id'] = actor["authorization"]["id"]
+        doc['acting_admin_user_id'] = actor["acting_admin_user_id"]
     # Held until the artist is approved: not processed, not listed, no co-owner emails.
     doc['awaiting_approval'] = not approved
     doc['genre_other'] = genre_other
@@ -1958,6 +2072,11 @@ async def presign_upload(request: Request, payload: PresignRequest, clerk_payloa
     doc['cosign_required'] = has_coowner
     doc['cosign_status'] = "pending" if has_coowner else "not_required"
     await db.track_submissions.insert_one(doc)
+    if acting:
+        await authorization_events.record(
+            db, event="upload", authorization_id=actor["authorization"]["id"],
+            artist_user_id=owner_uid, actor_user_id=actor["actor_id"],
+            acting_admin_user_id=actor["acting_admin_user_id"], track_id=submission_id)
 
     return {
         "presigned_url": presigned_url,
@@ -1976,7 +2095,26 @@ async def complete_upload(request: Request, payload: CompleteUploadRequest, back
     sub = await db.track_submissions.find_one({"id": payload.submission_id}, {"_id": 0})
     if not sub:
         raise HTTPException(status_code=404, detail="Submission not found")
-    if sub.get("clerk_user_id") != clerk_payload.get("sub"):
+    delegated_auth_id = sub.get("authorization_id")
+    if delegated_auth_id:
+        # Delegated upload: re-check the authorization now (Brief 28 C3). If it was revoked
+        # or ended mid-upload, or the caller is no longer its uploader, refuse and delete the
+        # uploaded R2 object so no orphan is left.
+        auth = await db.upload_authorizations.find_one({"id": delegated_auth_id}, {"_id": 0})
+        caller = clerk_payload.get("sub")
+        ok = bool(auth) and auth["status"] == "active" \
+            and auth["artist_user_id"] == sub.get("clerk_user_id") and (
+                (auth["kind"] == "person" and auth.get("uploader_user_id") == caller)
+                or (auth["kind"] == "ovoxi" and _role(clerk_payload) == "admin"))
+        if not ok:
+            try:
+                await asyncio.to_thread(r2_client.delete_object, Bucket=R2_BUCKET,
+                                        Key=sub["original_r2_path"])
+            except Exception as del_exc:
+                logger.warning("Failed to delete R2 object for revoked delegation: %s", del_exc)
+            await _set_status(payload.submission_id, "failed", {"error": "authorization_revoked"})
+            raise HTTPException(status_code=403, detail="This authorization is no longer active.")
+    elif sub.get("clerk_user_id") != clerk_payload.get("sub"):
         raise HTTPException(status_code=403, detail="Not your submission")
     if sub["status"] != "pending":
         raise HTTPException(status_code=400, detail=f"Submission status is already '{sub['status']}'")
@@ -2018,17 +2156,27 @@ async def complete_upload(request: Request, payload: CompleteUploadRequest, back
 @api_router.get('/vault/tracks')
 @limiter.limit("30/minute")
 async def get_vault_tracks(request: Request, clerk_payload: dict = Depends(verify_clerk_token)):
-    clerk_user_id = clerk_payload.get('sub')
+    # Acting resolves inline so the viewer's own auth model (verify_clerk_token) is unchanged
+    # when there is no header; with it, an authorized uploader sees the ARTIST's catalog.
+    actor = await _resolve_actor(request, clerk_payload)
+    clerk_user_id = actor["principal_id"]
     # Backup release path: an artist approved by hand in Clerk gets their held songs
-    # processed the next time they open the Vault.
-    if is_approved(clerk_payload):
+    # processed the next time they open the Vault. Not when acting (that is the artist's).
+    if not actor["acting"] and is_approved(clerk_payload):
         await _release_held_uploads(clerk_user_id)
     subs = await db.track_submissions.find(
         {'clerk_user_id': clerk_user_id},
         {'_id': 0, 'id': 1, 'artist_name': 1, 'track_name': 1, 'genre': 1,
          'upload_date': 1, 'status': 1, 'stem_paths': 1, 'mastered_r2_key': 1,
          'consent': 1, 'metadata': 1, 'sync_status': 1, 'checks': 1, 'on_sync_profile': 1,
-         'cosign_required': 1, 'cosign_status': 1, 'awaiting_approval': 1},
+         'cosign_required': 1, 'cosign_status': 1, 'awaiting_approval': 1,
+         # Brief 28 D5: "Uploaded by" and the not-intended removal window.
+         'authorization_id': 1, 'uploaded_by_name': 1, 'not_intended_at': 1,
+         # Read by vault_track_view but missing before Oct 29: without them every song showed
+         # "Answer two questions", no loops, a blank AI status and no hold or exclusive-sold
+         # state. test_vault_tracks_projection_feeds_the_real_view guards this list.
+         'intake': 1, 'ai_status': 1, 'loop_licenses_reviewed': 1,
+         'sync_delisted_by_admin': 1, 'exclusive_sold': 1},
     ).sort('upload_date', -1).to_list(1000)
 
     cosign_by_track = await _cosign_views_for_tracks([s.get('id') for s in subs])
@@ -2481,8 +2629,9 @@ async def cosign_decline(request: Request, token: str, payload: CosignDeclineReq
 @api_router.post("/vault/tracks/{track_id}/cosign/{request_id}/resend")
 @limiter.limit("30/minute")
 async def cosign_resend(request: Request, track_id: str, request_id: str,
-                        clerk_payload: dict = Depends(require_artist)):
-    sub = await _owned_track(track_id, clerk_payload)
+                        clerk_payload: dict = Depends(require_artist),
+                        actor: dict = Depends(resolve_actor)):
+    sub = await _owned_track_for(track_id, actor["principal_id"])
     req = await db.cosign_requests.find_one(
         {"id": request_id, "track_id": track_id}, {"_id": 0})
     if not req:
@@ -2507,8 +2656,9 @@ async def cosign_resend(request: Request, track_id: str, request_id: str,
 @api_router.patch("/vault/tracks/{track_id}/cosign/{request_id}")
 @limiter.limit("30/minute")
 async def cosign_edit_email(request: Request, track_id: str, request_id: str,
-                            payload: CosignEmailUpdate, clerk_payload: dict = Depends(require_artist)):
-    sub = await _owned_track(track_id, clerk_payload)
+                            payload: CosignEmailUpdate, clerk_payload: dict = Depends(require_artist),
+                            actor: dict = Depends(resolve_actor)):
+    sub = await _owned_track_for(track_id, actor["principal_id"])
     req = await db.cosign_requests.find_one(
         {"id": request_id, "track_id": track_id}, {"_id": 0})
     if not req:
@@ -2527,6 +2677,10 @@ async def cosign_edit_email(request: Request, track_id: str, request_id: str,
         "email": new_email, "token_sha256": token_hash,
         "token_expires_at": (now + timedelta(days=COSIGN_TOKEN_TTL_DAYS)).isoformat()}})
     await _update_rights_email(track_id, old_email, new_email)
+    if actor["acting"]:
+        await authorization_events.record_coowner_email_changed(
+            db, authorization_id=actor["authorization"]["id"], artist_user_id=actor["principal_id"],
+            actor_user_id=actor["actor_id"], track_id=track_id, old_email=old_email, new_email=new_email)
     await _send_cosign_request({**req, "email": new_email, "token_sha256": token_hash}, token,
                                _uploader_name(sub), sub.get("track_name"),
                                req["interests"], _cosign_uses(sub))
@@ -2550,10 +2704,12 @@ async def _update_rights_email(track_id: str, old_email: str, new_email: str) ->
 # Vault: artist edits and consent changes (PRD-03 Phase 4a)
 # ---------------------------------------------------------------------------
 
-async def _owned_track(track_id: str, clerk_payload: dict) -> dict:
-    """The artist's own track, or 404 (never reveals whether another artist's exists)."""
+async def _owned_track_for(track_id: str, owner_uid: str) -> dict:
+    """The track owned by owner_uid, or 404 (never reveals whether another's exists). When
+    acting, owner_uid is the artist (the principal), so an uploader reads the artist's track,
+    never their own."""
     doc = await db.track_submissions.find_one(
-        {"id": track_id, "clerk_user_id": clerk_payload["sub"]},
+        {"id": track_id, "clerk_user_id": owner_uid},
         {"_id": 0, **{f: 0 for f in MATCH_DETAIL_FIELDS}},
     )
     if not doc:
@@ -2563,25 +2719,46 @@ async def _owned_track(track_id: str, clerk_payload: dict) -> dict:
     return doc
 
 
+async def _owned_track(track_id: str, clerk_payload: dict) -> dict:
+    return await _owned_track_for(track_id, clerk_payload["sub"])
+
+
 @api_router.patch("/vault/tracks/{track_id}/metadata")
 @limiter.limit("30/minute")
 async def patch_vault_metadata(request: Request, track_id: str, payload: VaultMetadataPatch,
-                               clerk_payload: dict = Depends(require_artist)):
-    await _owned_track(track_id, clerk_payload)
+                               clerk_payload: dict = Depends(require_artist),
+                               actor: dict = Depends(resolve_actor)):
+    owner_uid = actor["principal_id"]
+    await _owned_track_for(track_id, owner_uid)
     fields = metadata_patch_fields(payload.bpm, payload.key, payload.moods, payload.genre,
                                    payload.genre_other)
     await db.track_submissions.update_one(
-        {"id": track_id, "clerk_user_id": clerk_payload["sub"]}, {"$set": fields})
+        {"id": track_id, "clerk_user_id": owner_uid}, {"$set": fields})
     await _run_clearance(track_id)
-    doc = await _owned_track(track_id, clerk_payload)
+    if actor["acting"]:
+        await authorization_events.record(
+            db, event="metadata", authorization_id=actor["authorization"]["id"],
+            artist_user_id=owner_uid, actor_user_id=actor["actor_id"],
+            acting_admin_user_id=actor["acting_admin_user_id"], track_id=track_id)
+    doc = await _owned_track_for(track_id, owner_uid)
     return {"id": track_id, "genre": doc.get("genre"), **vault_track_view(doc)}
 
 
 @api_router.post("/vault/tracks/{track_id}/consent")
 @limiter.limit("10/minute")
 async def change_vault_consent(request: Request, track_id: str, payload: ConsentChange,
-                               clerk_payload: dict = Depends(require_artist)):
-    doc = await _owned_track(track_id, clerk_payload)
+                               clerk_payload: dict = Depends(require_artist),
+                               actor: dict = Depends(resolve_actor)):
+    acting = actor["acting"]
+    owner_uid = actor["principal_id"]
+    doc = await _owned_track_for(track_id, owner_uid)
+
+    # Acting (Brief 28 C4): an uploader may only ADD an authorized use. Withdrawing a use and
+    # the Exclusive Election are the artist's alone.
+    if acting and (payload.scope == "exclusive" or payload.action == "withdraw"):
+        raise HTTPException(status_code=403, detail="Only the artist can do this.")
+    if acting and payload.scope not in actor["uses"]:
+        raise HTTPException(status_code=403, detail="This uploader is not authorized for that use.")
 
     # Brief 25b: one song-level Exclusive choice (Agreement 3.4). Turning it off applies
     # to future deals at once (3.4(j)); a use already sold exclusively stays exclusive.
@@ -2646,15 +2823,19 @@ async def change_vault_consent(request: Request, track_id: str, payload: Consent
             raise HTTPException(status_code=422, detail=(
                 "Every writer needs a PRO and IPI for sync placements. Missing: "
                 + ", ".join(missing_pro) + "."))
-    agreement = await _require_signed_agreement(clerk_payload) if want else None
+    agreement = (await _require_artist_agreement(owner_uid) if acting
+                 else await _require_signed_agreement(clerk_payload)) if want else None
 
     try:
         if want:
-            await record_grants(db, user_id=clerk_payload["sub"], track_id=track_id,
+            await record_grants(db, user_id=owner_uid, track_id=track_id,
                                  scopes=[payload.scope], source="vault",
-                                 ip=get_real_client_ip(request), agreement=agreement)
+                                 ip=get_real_client_ip(request), agreement=agreement,
+                                 actor_user_id=actor["actor_id"] if acting else None,
+                                 authorization_id=actor["authorization"]["id"] if acting else None,
+                                 acting_admin_user_id=actor["acting_admin_user_id"] if acting else None)
         else:
-            await record_withdrawals(db, user_id=clerk_payload["sub"], track_id=track_id,
+            await record_withdrawals(db, user_id=owner_uid, track_id=track_id,
                                      scopes=[payload.scope], source="vault",
                                      ip=get_real_client_ip(request))
     except Exception as exc:
@@ -2682,9 +2863,14 @@ async def change_vault_consent(request: Request, track_id: str, payload: Consent
         # below keeps the track listed if it is still cleared for AI training.
         fields.update({"sync_delisted_at": now_iso, "sync_status": None})
     await db.track_submissions.update_one(
-        {"id": track_id, "clerk_user_id": clerk_payload["sub"]}, {"$set": fields})
+        {"id": track_id, "clerk_user_id": owner_uid}, {"$set": fields})
     await _run_clearance(track_id)      # every use change re-evaluates both uses
-    doc = await _owned_track(track_id, clerk_payload)
+    if acting:
+        await authorization_events.record(
+            db, event="use_added", authorization_id=actor["authorization"]["id"],
+            artist_user_id=owner_uid, actor_user_id=actor["actor_id"],
+            acting_admin_user_id=actor["acting_admin_user_id"], track_id=track_id)
+    doc = await _owned_track_for(track_id, owner_uid)
     return {"id": track_id, **vault_track_view(doc)}
 
 
@@ -2709,9 +2895,11 @@ def _owned_loop(doc: dict, index: int) -> dict:
 @api_router.post("/vault/tracks/{track_id}/loops/{index}/license/presign")
 @limiter.limit("20/minute")
 async def presign_loop_license(request: Request, track_id: str, index: int, payload: LoopLicensePresign,
-                               clerk_payload: dict = Depends(require_artist)):
+                               clerk_payload: dict = Depends(require_artist),
+                               actor: dict = Depends(resolve_actor)):
     """Agreement 3.6(c): upload the license for one loop (PDF, PNG or JPG, up to 10 MB)."""
-    doc = await _owned_track(track_id, clerk_payload)
+    owner_uid = actor["principal_id"]
+    doc = await _owned_track_for(track_id, owner_uid)
     _owned_loop(doc, index)
     ext = LOOP_LICENSE_TYPES.get(payload.content_type)
     if not ext:
@@ -2720,7 +2908,7 @@ async def presign_loop_license(request: Request, track_id: str, index: int, payl
         raise HTTPException(status_code=422, detail="The license file must be 10 MB or smaller.")
     key = f"loop-licenses/{track_id}/{index}-{uuid.uuid4().hex}{ext}"
     await db.track_submissions.update_one(
-        {"id": track_id, "clerk_user_id": clerk_payload["sub"]},
+        {"id": track_id, "clerk_user_id": owner_uid},
         {"$set": {f"intake.loops.{index}.pending_license_key": key,
                   f"intake.loops.{index}.pending_license_size": payload.file_size}})
     url = r2_client.generate_presigned_url(
@@ -2732,8 +2920,10 @@ async def presign_loop_license(request: Request, track_id: str, index: int, payl
 @api_router.post("/vault/tracks/{track_id}/loops/{index}/license/complete")
 @limiter.limit("20/minute")
 async def complete_loop_license(request: Request, track_id: str, index: int,
-                                clerk_payload: dict = Depends(require_artist)):
-    doc = await _owned_track(track_id, clerk_payload)
+                                clerk_payload: dict = Depends(require_artist),
+                                actor: dict = Depends(resolve_actor)):
+    owner_uid = actor["principal_id"]
+    doc = await _owned_track_for(track_id, owner_uid)
     loop = _owned_loop(doc, index)
     key = loop.get("pending_license_key")
     if not key:
@@ -2746,24 +2936,26 @@ async def complete_loop_license(request: Request, track_id: str, index: int,
         raise HTTPException(status_code=400, detail="The license file must be 10 MB or smaller.")
     now_iso = datetime.now(timezone.utc).isoformat()
     await db.track_submissions.update_one(
-        {"id": track_id, "clerk_user_id": clerk_payload["sub"]},
+        {"id": track_id, "clerk_user_id": owner_uid},
         {"$set": {f"intake.loops.{index}.license_key": key,
                   f"intake.loops.{index}.license_uploaded_at": now_iso,
                   f"intake.loops.{index}.pending_license_key": None,
                   "loop_licenses_reviewed": None}})    # a new file needs a new review
     await _run_clearance(track_id)
-    doc = await _owned_track(track_id, clerk_payload)
+    doc = await _owned_track_for(track_id, owner_uid)
     return {"id": track_id, **vault_track_view(doc)}
 
 
 @api_router.post("/vault/tracks/{track_id}/declarations")
 @limiter.limit("10/minute")
 async def set_vault_declarations(request: Request, track_id: str, payload: Declarations,
-                                 clerk_payload: dict = Depends(require_artist)):
+                                 clerk_payload: dict = Depends(require_artist),
+                                 actor: dict = Depends(resolve_actor)):
     """Brief 25b D1: answer (or update) the samples and AI-tools questions for a track,
     for older uploads that never asked them. A changed AI-tools answer needs a new
     admin review when it is "partial"."""
-    doc = await _owned_track(track_id, clerk_payload)
+    owner_uid = actor["principal_id"]
+    doc = await _owned_track_for(track_id, owner_uid)
     if is_legacy(doc):
         raise HTTPException(status_code=409, detail="This track has no usage choices recorded.")
     if payload.samples == "royalty_free_loop" and (doc.get("consent") or {}).get("ai_training"):
@@ -2783,10 +2975,55 @@ async def set_vault_declarations(request: Request, track_id: str, payload: Decla
     if _loop_keys(old.get("loops")) != _loop_keys(new["loops"]):
         fields["loop_licenses_reviewed"] = None
     await db.track_submissions.update_one(
-        {"id": track_id, "clerk_user_id": clerk_payload["sub"]}, {"$set": fields})
+        {"id": track_id, "clerk_user_id": owner_uid}, {"$set": fields})
     await _run_clearance(track_id)
-    doc = await _owned_track(track_id, clerk_payload)
+    if actor["acting"]:
+        await authorization_events.record(
+            db, event="declarations", authorization_id=actor["authorization"]["id"],
+            artist_user_id=owner_uid, actor_user_id=actor["actor_id"],
+            acting_admin_user_id=actor["acting_admin_user_id"], track_id=track_id)
+    doc = await _owned_track_for(track_id, owner_uid)
     return {"id": track_id, **vault_track_view(doc)}
+
+
+
+
+@api_router.post("/vault/tracks/{track_id}/not-intended")
+@limiter.limit("10/minute")
+async def not_intended_removal(request: Request, track_id: str,
+                               clerk_payload: dict = Depends(require_artist)):
+    """Brief 28 C5 / Agreement 12.4 last sentence. The ARTIST (only) removes a song an
+    uploader uploaded, within 30 days, because they did not intend it. Not in the acting
+    allowlist, so the guard already refuses any X-Acting-For here. Withdraws every use at
+    once, delists it and stops new licenses and dataset use; existing licenses stay (13.2-4)."""
+    doc = await _owned_track(track_id, clerk_payload)
+    if not doc.get("authorization_id"):
+        raise HTTPException(status_code=409, detail="This song was not uploaded by an uploader.")
+    upload_date = doc.get("upload_date")
+    if isinstance(upload_date, str):
+        upload_date = datetime.fromisoformat(upload_date)
+    now = datetime.now(timezone.utc)
+    if upload_date and (now - upload_date) > timedelta(days=NOT_INTENDED_DAYS):
+        raise HTTPException(status_code=409,
+                            detail=f"The {NOT_INTENDED_DAYS}-day window to remove this song has passed.")
+    consent = doc.get("consent") or {}
+    scopes = [s for s in ("ai_training", "sync", "exclusive") if consent.get(s)]
+    now_iso = now.isoformat()
+    if scopes:
+        try:
+            await record_withdrawals(db, user_id=clerk_payload["sub"], track_id=track_id,
+                                     scopes=scopes, source="vault", ip=get_real_client_ip(request),
+                                     reason="not_intended")
+        except Exception as exc:
+            logger.error("not-intended ledger write failed for %s: %s", track_id, exc)
+            raise HTTPException(status_code=503, detail="Could not record the removal. Please try again.")
+    await db.track_submissions.update_one(
+        {"id": track_id, "clerk_user_id": clerk_payload["sub"]},
+        {"$set": {"consent.ai_training": False, "consent.sync": False, "consent.exclusive": False,
+                  "not_intended_at": now_iso}})
+    await _run_clearance(track_id)      # ai_status/sync_status -> None, on_sync_profile -> False
+    doc = await _owned_track(track_id, clerk_payload)
+    return {"id": track_id, "removed": True, **vault_track_view(doc)}
 
 
 # ---------------------------------------------------------------------------
@@ -3078,6 +3315,91 @@ async def admin_delist_track(request: Request, track_id: str, payload: AdminDeli
         {"id": track_id}, {"_id": 0, "id": 1, "sync_status": 1, "on_sync_profile": 1,
                            "sync_delisted_by_admin": 1})
     return doc
+
+
+# Brief 28 C6: admin takedown (Agreement 2.3(f)). Maps the admin's reason to a ledger
+# reason code; never counted toward 12.4 (we do not enforce 12.4, so this is recording only).
+TAKEDOWN_REASONS = {
+    "artist_request": "admin_takedown_artist_request",
+    "upload_error": "admin_takedown_upload_error",
+    "rights_problem": "admin_takedown_rights",
+}
+
+
+class AdminTakedownIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    uses: list = Field(..., min_length=1)
+    reason: Literal["artist_request", "upload_error", "rights_problem"]
+    note: Optional[str] = Field(default=None, max_length=1000)
+
+    @field_validator("uses")
+    @classmethod
+    def _uses(cls, v):
+        out = [u for u in ("ai_training", "sync") if u in set(v or [])]
+        if not out:
+            raise ValueError("Choose sync, AI training, or both.")
+        return out
+
+
+@api_router.post("/admin/tracks/{track_id}/takedown")
+@limiter.limit("30/minute")
+async def admin_takedown(request: Request, track_id: str, payload: AdminTakedownIn,
+                         admin: dict = Depends(require_admin)):
+    """Take a song down for the given uses, immediately, as a real Removal. Clears
+    consent.ai_training and/or consent.sync (matching the ledger withdrawal) and reruns
+    clearance, so ai_status/sync_status recompute to None: the track leaves the cleared set,
+    and no NEW AI or sync Sublicense, dataset inclusion or catalog listing is issued for that
+    use (every issuing/listing path reads consent/ai_status/sync_status). Restoring a use
+    requires the artist to re-add it in the Vault. Existing Sublicenses are untouched
+    (Agreement 13.2 to 13.4). This is not the delist hold: it writes the ledger."""
+    doc = await db.track_submissions.find_one({"id": track_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Track not found")
+    consent = doc.get("consent") or {}
+    active = [u for u in payload.uses if consent.get(u)]
+    now_iso = datetime.now(timezone.utc).isoformat()
+    if active:
+        try:
+            await record_withdrawals(db, user_id=doc["clerk_user_id"], track_id=track_id,
+                                     scopes=active, source="admin", ip=get_real_client_ip(request),
+                                     actor_user_id=admin["sub"], acting_admin_user_id=admin["sub"],
+                                     reason=TAKEDOWN_REASONS[payload.reason])
+        except Exception as exc:
+            logger.error("takedown ledger write failed for %s: %s", track_id, exc)
+            raise HTTPException(status_code=503, detail="Could not record the takedown. Please try again.")
+    # A real Removal: clear consent for each taken-down use (matches the ledger). Relist cannot
+    # bring these back; only the artist re-adding the use in the Vault can.
+    fields = {"takedown": {"uses": payload.uses, "reason": payload.reason, "note": payload.note,
+                           "at": now_iso, "admin": admin["sub"]}}
+    for use in payload.uses:
+        fields[f"consent.{use}"] = False
+    if "sync" in payload.uses:
+        fields["sync_delisted_at"] = now_iso
+    await db.track_submissions.update_one({"id": track_id}, {"$set": fields})
+    await _run_clearance(track_id)
+    await _log_admin_action(admin, "takedown", track_id, f"{payload.reason}:{','.join(payload.uses)}")
+    doc = await db.track_submissions.find_one(
+        {"id": track_id}, {"_id": 0, "id": 1, "consent": 1, "sync_status": 1, "ai_status": 1,
+                           "on_sync_profile": 1, "sync_delisted_by_admin": 1})
+    return doc
+
+
+@api_router.get("/admin/uploaders")
+@limiter.limit("30/minute")
+async def admin_list_uploaders(request: Request, admin: dict = Depends(require_admin),
+                               status: Optional[str] = None, artist: Optional[str] = None,
+                               uploader: Optional[str] = None):
+    """Brief 28 C8: every authorization, with optional filters."""
+    q: dict = {}
+    if status:
+        q["status"] = status
+    if artist:
+        q["artist_user_id"] = artist
+    if uploader:
+        q["$or"] = [{"uploader_user_id": uploader}, {"uploader_email": _norm_email(uploader)}]
+    rows = await db.upload_authorizations.find(q, {"_id": 0}).to_list(2000)
+    rows.sort(key=lambda a: a.get("created_at") or "", reverse=True)
+    return {"uploaders": [_authorization_public(a) for a in rows]}
 
 
 @api_router.post("/admin/sync/tracks/{track_id}/ai-tools-review")
@@ -5044,7 +5366,606 @@ async def admin_reissue_link(request: Request, order_id: str, payload: AdminReis
 # App wiring
 # ---------------------------------------------------------------------------
 
-app.include_router(api_router)
+# ---------------------------------------------------------------------------
+# Authorized Uploaders (Brief 28 Part C-1): authorization lifecycle + acting-for
+# ---------------------------------------------------------------------------
+
+UPLOAD_AUTH_LINK_BASE = "https://ovoxi.net/authorize"
+SIGNED_COPY_TO = "tyler@ovoxi.net"          # signed authorizations also go here (Part C1)
+PERSON_ROLES = ("Engineer", "Studio owner", "Producer", "Manager")
+
+
+def _norm_email(v: str) -> str:
+    return (v or "").strip().lower()
+
+
+def _clean_uploader_uses(uses) -> list:
+    """Canonical, de-duplicated use list; at least one required."""
+    chosen = set(uses or [])
+    out = [u for u in ("ai_training", "sync") if u in chosen]
+    if not out:
+        raise ValueError("Choose at least one use: AI training or sync.")
+    if chosen - {"ai_training", "sync"}:
+        raise ValueError("Unknown use.")
+    return out
+
+
+async def fetch_clerk_verified_emails(user_id: str) -> set:
+    """Every verified email on a Clerk account, lowercased. The invited email may be a
+    non-primary address, so the sign-in check uses this rather than the primary only."""
+    if not CLERK_SECRET_KEY:
+        raise HTTPException(status_code=503, detail="Account lookup is not configured.")
+    try:
+        async with httpx.AsyncClient(timeout=10) as c:
+            r = await c.get(f"https://api.clerk.com/v1/users/{quote(user_id, safe='')}",
+                            headers={"Authorization": f"Bearer {CLERK_SECRET_KEY}"})
+    except Exception as exc:
+        logger.warning("Clerk user lookup failed: %s", type(exc).__name__)
+        raise HTTPException(status_code=503, detail="Could not load your account. Please try again.")
+    if r.status_code != 200:
+        logger.warning("Clerk user lookup returned %s", r.status_code)
+        raise HTTPException(status_code=503, detail="Could not load your account. Please try again.")
+    return {(e.get("email_address") or "").strip().lower()
+            for e in r.json().get("email_addresses", [])
+            if ((e.get("verification") or {}).get("status") == "verified") and e.get("email_address")}
+
+
+def _authorization_public(a: dict) -> dict:
+    """Artist- and uploader-facing view. No token hash, IPs or stored text."""
+    return {
+        "id": a["id"], "kind": a["kind"], "artist_user_id": a.get("artist_user_id"),
+        "artist_name": a.get("artist_name"),
+        "uploader_name": a.get("uploader_name"), "uploader_email": a.get("uploader_email"),
+        "uploader_role": a.get("uploader_role"), "uses": a.get("uses") or [],
+        "status": a["status"], "created_at": a.get("created_at"),
+        "revoked_at": a.get("revoked_at"), "has_pdf": bool(a.get("pdf_key")),
+    }
+
+
+async def _artist_agreement_for_uploaders(uid: str) -> dict:
+    """The artist's full signed agreement, required and supporting Authorized Uploaders
+    (v6 and later). 403 otherwise (Part C1)."""
+    a = await db.artist_agreements.find_one(
+        {"user_id": uid, "version": artist_agreement.current_version()}, {"_id": 0})
+    if not a or not artist_agreement.supports_authorized_uploaders(a.get("version", "")):
+        raise HTTPException(status_code=403,
+                            detail="Sign the current Artist Agreement before adding an uploader.")
+    return a
+
+
+def _render_authorization(agreement: dict, uid: str, payload, now: datetime) -> tuple:
+    """Render the Upload Authorization text and its hash for an artist's agreement. OVOXI
+    rows render with a placeholder email so the text reads cleanly; the stored
+    uploader_email stays null (uniqueness rule 2 is for named uploaders)."""
+    render_email = payload.uploader_email if payload.kind == "person" else SIGNED_COPY_TO
+    values = upload_auth.build_values(
+        now=now,
+        licensor_party=agreement.get("licensor_party") or artist_agreement.licensor_party(agreement["fields"]),
+        licensor_email=agreement.get("licensor_email") or "",
+        platform_account_id=uid, kind=payload.kind, uploader_name=payload.uploader_name,
+        uploader_email=render_email, uploader_role=payload.uploader_role, uses=payload.uses)
+    text = upload_auth.render_text(values)
+    return text, upload_auth.text_sha256(text)
+
+
+class UploaderPreviewIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    kind: Literal["person", "ovoxi"] = "person"
+    uploader_name: str = Field(default="", max_length=200)
+    uploader_email: str = Field(default="", max_length=254)
+    uploader_role: str = Field(default="", max_length=40)
+    uses: list = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _check(self):
+        self.uses = _clean_uploader_uses(self.uses)
+        if self.kind == "ovoxi":
+            self.uploader_name, self.uploader_email, self.uploader_role = "", "", "OVOXI"
+        else:
+            self.uploader_name = " ".join(self.uploader_name.split())
+            self.uploader_email = _norm_email(self.uploader_email)
+            if not self.uploader_name:
+                raise ValueError("Enter the uploader's name.")
+            if not RIGHTS_EMAIL_PATTERN.fullmatch(self.uploader_email):
+                raise ValueError("Enter a valid uploader email.")
+            if self.uploader_role not in PERSON_ROLES:
+                raise ValueError("Choose a role for the uploader.")
+        return self
+
+
+class UploaderCreateIn(UploaderPreviewIn):
+    typed_signature: str = Field(..., min_length=1, max_length=120)
+    text_sha256: str = Field(..., pattern=r"^[0-9a-f]{64}$")
+    consent_electronic: bool = True
+
+
+class AuthorizeSignIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    typed_signature: str = Field(..., min_length=1, max_length=120)
+    adult_confirmed: bool
+    text_sha256: str = Field(..., pattern=r"^[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def _check(self):
+        if not self.adult_confirmed:
+            raise ValueError("Confirm you are 18 or older.")
+        return self
+
+
+class AuthorizeDeclineIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    reason: Optional[str] = Field(default=None, max_length=500)
+
+
+# ---- Acting-for: resolve_actor and the deny-by-default allowlist (Part C2) ----
+
+# (METHOD, path template) pairs that accept X-Acting-For: Part 0 rows 1 to 10. Every other
+# route refuses the header (deny by default). Kept as templates and checked against the
+# request path so a route the grep missed is denied, not silently allowed.
+ACTING_FOR_ALLOWLIST = {
+    ("POST", "/api/upload/presign"),
+    ("POST", "/api/upload/complete"),
+    ("GET", "/api/vault/tracks"),
+    ("PATCH", "/api/vault/tracks/{track_id}/metadata"),
+    ("POST", "/api/vault/tracks/{track_id}/declarations"),
+    ("POST", "/api/vault/tracks/{track_id}/loops/{index}/license/presign"),
+    ("POST", "/api/vault/tracks/{track_id}/loops/{index}/license/complete"),
+    ("POST", "/api/vault/tracks/{track_id}/consent"),
+    ("POST", "/api/vault/tracks/{track_id}/cosign/{request_id}/resend"),
+    ("PATCH", "/api/vault/tracks/{track_id}/cosign/{request_id}"),
+}
+
+_ACTING_FOR_RES = [
+    (method, re.compile("^" + re.sub(r"\{[^/]+\}", r"[^/]+", template) + "$"))
+    for method, template in ACTING_FOR_ALLOWLIST
+]
+
+
+def _acting_for_allowed(method: str, path: str) -> bool:
+    return any(m == method.upper() and rx.match(path) for m, rx in _ACTING_FOR_RES)
+
+
+async def acting_for_guard(request: Request) -> None:
+    """Deny by default: when X-Acting-For is present, only the delegate-allowed routes
+    proceed; every other route is refused with 403. No header means today's behavior."""
+    if not request.headers.get("x-acting-for"):
+        return
+    if not _acting_for_allowed(request.method, request.url.path):
+        raise HTTPException(status_code=403,
+                            detail="This action cannot be performed on behalf of an artist.")
+
+
+async def _end_authorizations_on_agreement_end(artist_user_id: str) -> None:
+    """Hook for Agreement termination (Section 2.3(d)/7.2): end every live authorization for
+    the artist. Call this from the termination flow when one exists; there is none today."""
+    now_iso = datetime.now(timezone.utc).isoformat()
+    live = await db.upload_authorizations.find(
+        {"artist_user_id": artist_user_id, "status": {"$in": ["awaiting_uploader", "active"]}},
+        {"_id": 0, "id": 1}).to_list(1000)
+    for a in live:
+        res = await db.upload_authorizations.update_one(
+            {"id": a["id"], "status": {"$in": ["awaiting_uploader", "active"]}},
+            {"$set": {"status": "ended_agreement", "ended_at": now_iso, "ended_reason": "agreement_ended"}})
+        if res.matched_count:
+            await authorization_events.record(db, event="ended", authorization_id=a["id"],
+                                              artist_user_id=artist_user_id, actor_user_id=None)
+
+
+# ---- Lifecycle endpoints (Part C1) ----
+
+@api_router.get("/vault/uploaders")
+@limiter.limit("30/minute")
+async def list_uploaders(request: Request, clerk_payload: dict = Depends(require_artist)):
+    rows = await db.upload_authorizations.find(
+        {"artist_user_id": clerk_payload["sub"]}, {"_id": 0}).to_list(500)
+    rows.sort(key=lambda a: a.get("created_at") or "", reverse=True)
+    return {"uploaders": [_authorization_public(a) for a in rows]}
+
+
+@api_router.post("/vault/uploaders/preview")
+@limiter.limit("20/minute")
+async def preview_uploader(request: Request, payload: UploaderPreviewIn,
+                           clerk_payload: dict = Depends(require_artist)):
+    uid = clerk_payload["sub"]
+    agreement = await _artist_agreement_for_uploaders(uid)
+    text, text_hash = _render_authorization(agreement, uid, payload, datetime.now(timezone.utc))
+    return {"version": upload_auth.current_version(),
+            "blocks": upload_auth.blocks(text), "text_sha256": text_hash}
+
+
+@api_router.post("/vault/uploaders", status_code=201)
+@limiter.limit("20/minute")
+async def create_uploader(request: Request, payload: UploaderCreateIn,
+                          clerk_payload: dict = Depends(require_artist)):
+    uid = clerk_payload["sub"]
+    agreement = await _artist_agreement_for_uploaders(uid)
+    account_name = account_legal_name(agreement)
+    if _norm_name(payload.typed_signature) != _norm_name(account_name or ""):
+        raise HTTPException(status_code=422,
+                            detail="Type your full legal name exactly as on your account.")
+    now = datetime.now(timezone.utc)
+    text, text_hash = _render_authorization(agreement, uid, payload, now)
+    if text_hash != payload.text_sha256:
+        raise HTTPException(status_code=409, detail="The authorization changed. Please review it again.")
+
+    is_ovoxi = payload.kind == "ovoxi"
+    if is_ovoxi:
+        if await db.upload_authorizations.find_one(
+                {"artist_user_id": uid, "kind": "ovoxi", "status": "active"}, {"_id": 1}):
+            raise HTTPException(status_code=409, detail="OVOXI is already an uploader for your account.")
+    else:
+        if await db.upload_authorizations.find_one(
+                {"artist_user_id": uid, "uploader_email": payload.uploader_email,
+                 "status": {"$in": ["awaiting_uploader", "active"]}}, {"_id": 1}):
+            raise HTTPException(status_code=409,
+                                detail="That uploader already has an active or pending authorization.")
+
+    now_iso = now.isoformat()
+    ip = get_real_client_ip(request)
+    auth_id = str(uuid.uuid4())
+    artist_name = account_name or (agreement.get("licensor_party") or "the artist")
+    doc = {
+        "id": auth_id, "artist_user_id": uid, "artist_name": artist_name,
+        "artist_email": agreement.get("licensor_email") or None,
+        "kind": payload.kind, "uploader_name": payload.uploader_name or None,
+        "uploader_email": payload.uploader_email or None, "uploader_role": payload.uploader_role,
+        "uploader_user_id": None, "uses": payload.uses,
+        "status": "active" if is_ovoxi else "awaiting_uploader",
+        "version": upload_auth.current_version(), "text": text, "text_sha256": text_hash,
+        "artist_signature": {"typed_name": " ".join(payload.typed_signature.split()),
+                             "signed_at": now_iso, "ip": ip},
+        "uploader_signature": None, "token_sha256": None, "token_expires_at": None,
+        "created_at": now_iso, "revoked_at": None, "revoked_by": None, "pdf_key": None,
+    }
+    token = None
+    if not is_ovoxi:
+        token, token_hash = _new_cosign_token()
+        doc["token_sha256"] = token_hash
+        doc["token_expires_at"] = (now + timedelta(days=COSIGN_TOKEN_TTL_DAYS)).isoformat()
+
+    pdf = None
+    if is_ovoxi:
+        # Active on the artist's signature; OVOXI accepts as Licensee. PDF now (two parties).
+        sig = {"authorization_id": auth_id, "version": doc["version"], "text_sha256": text_hash,
+               "kind": "ovoxi", "artist_typed_signature": doc["artist_signature"]["typed_name"],
+               "artist_legal_name": account_name or "", "artist_email": doc["artist_email"] or "",
+               "artist_signed_at": now_iso, "artist_ip": ip}
+        pdf = await asyncio.to_thread(upload_auth.render_pdf, text, sig)
+        pdf_key = f"authorizations/{uid}/{auth_id}.pdf"
+        try:
+            await asyncio.to_thread(r2_client.put_object, Bucket=R2_BUCKET, Key=pdf_key, Body=pdf,
+                                    ContentType="application/pdf")
+            doc["pdf_key"] = pdf_key
+        except Exception as exc:
+            logger.error("Authorization PDF upload failed for %s: %s", auth_id, exc)
+            raise HTTPException(status_code=503, detail="Could not save the authorization. Please try again.")
+
+    try:
+        await db.upload_authorizations.insert_one(doc)
+    except DuplicateKeyError:
+        raise HTTPException(status_code=409, detail="An active authorization already exists.")
+
+    await authorization_events.record(db, event="created", authorization_id=auth_id,
+                                      artist_user_id=uid, actor_user_id=uid)
+    await authorization_events.record(db, event="artist_signed", authorization_id=auth_id,
+                                      artist_user_id=uid, actor_user_id=uid)
+
+    if is_ovoxi:
+        subject, html, body = upload_auth.signed_copy_email(artist_name=artist_name)
+        for to in {doc["artist_email"], SIGNED_COPY_TO}:
+            if to:
+                try:
+                    await send_email(to=to, subject=subject, html=html, text=body,
+                                     attachments=[("OVOXI-Upload-Authorization.pdf", pdf)],
+                                     reply_to=SIGNED_COPY_TO, idempotency_key=f"uauth-signed-{auth_id}-{to}")
+                except Exception as exc:
+                    logger.warning("authorization signed-copy email failed for %s: %s", auth_id, exc)
+    else:
+        link = f"{UPLOAD_AUTH_LINK_BASE}/{token}"
+        subject, html, body = upload_auth.invitation_email(
+            artist_name=artist_name, uploader_role=payload.uploader_role, uses=payload.uses, link=link)
+        try:
+            await send_email(to=payload.uploader_email, subject=subject, html=html, text=body,
+                             reply_to=SIGNED_COPY_TO, idempotency_key=f"uauth-invite-{auth_id}")
+        except Exception as exc:
+            logger.warning("authorization invite email failed for %s: %s", auth_id, exc)
+
+    return {"uploader": _authorization_public(doc)}
+
+
+@api_router.delete("/vault/uploaders/{authorization_id}")
+@limiter.limit("20/minute")
+async def revoke_uploader(request: Request, authorization_id: str,
+                          clerk_payload: dict = Depends(require_artist)):
+    uid = clerk_payload["sub"]
+    auth = await db.upload_authorizations.find_one(
+        {"id": authorization_id, "artist_user_id": uid}, {"_id": 0})
+    if not auth:
+        raise HTTPException(status_code=404, detail="Authorization not found.")
+    if auth["status"] not in ("awaiting_uploader", "active"):
+        raise HTTPException(status_code=409, detail="This authorization is no longer active.")
+    now_iso = datetime.now(timezone.utc).isoformat()
+    res = await db.upload_authorizations.update_one(
+        {"id": authorization_id, "artist_user_id": uid,
+         "status": {"$in": ["awaiting_uploader", "active"]}},
+        {"$set": {"status": "revoked", "revoked_at": now_iso, "revoked_by": uid}})
+    if res.matched_count == 0:
+        raise HTTPException(status_code=409, detail="This authorization is no longer active.")
+    await authorization_events.record(db, event="revoked", authorization_id=authorization_id,
+                                      artist_user_id=uid, actor_user_id=uid)
+    if auth.get("uploader_email"):
+        subject, html, body = upload_auth.revocation_email(artist_name=auth.get("artist_name") or "The artist")
+        try:
+            await send_email(to=auth["uploader_email"], subject=subject, html=html, text=body,
+                             reply_to=SIGNED_COPY_TO, idempotency_key=f"uauth-revoked-{authorization_id}")
+        except Exception as exc:
+            logger.warning("authorization revoke email failed for %s: %s", authorization_id, exc)
+    return {"status": "revoked"}
+
+
+async def _load_authorization_for_token(token: str, payload: dict) -> tuple:
+    """Load a person authorization by token, expire stale links, and require the caller to be
+    signed in with the invited (verified) email. All four /authorize routes use this."""
+    now = datetime.now(timezone.utc)
+    auth = await db.upload_authorizations.find_one({"token_sha256": _hash_token(token)}, {"_id": 0})
+    if not auth:
+        raise HTTPException(status_code=404, detail="This link is not valid. Ask the artist to resend it.")
+    if auth["status"] == "awaiting_uploader" and _cosign_expired(auth, now):
+        upd = await db.upload_authorizations.update_one(
+            {"id": auth["id"], "status": "awaiting_uploader"}, {"$set": {"status": "expired"}})
+        if upd.matched_count:
+            await authorization_events.record(db, event="expired", authorization_id=auth["id"],
+                                              artist_user_id=auth["artist_user_id"], actor_user_id=None)
+        raise HTTPException(status_code=404, detail="This link has expired. Ask the artist to resend it.")
+    invited = _norm_email(auth.get("uploader_email"))
+    if invited not in await fetch_clerk_verified_emails(payload["sub"]):
+        raise HTTPException(status_code=403, detail=f"Sign in with {auth.get('uploader_email')} to accept.")
+    return auth, now
+
+
+@api_router.get("/authorize/{token}")
+@limiter.limit("20/minute")
+async def authorize_get(request: Request, token: str, clerk_payload: dict = Depends(verify_clerk_token)):
+    auth, _ = await _load_authorization_for_token(token, clerk_payload)
+    if auth["status"] != "awaiting_uploader":
+        raise HTTPException(status_code=409, detail={"status": auth["status"]})
+    return {
+        "artist_name": auth.get("artist_name"), "uploader_name": auth.get("uploader_name"),
+        "uploader_email": auth.get("uploader_email"), "uploader_role": auth.get("uploader_role"),
+        "uses": auth.get("uses") or [], "version": auth["version"],
+        "blocks": upload_auth.blocks(auth["text"]), "text_sha256": auth["text_sha256"],
+    }
+
+
+@api_router.post("/authorize/{token}/preview")
+@limiter.limit("20/minute")
+async def authorize_preview(request: Request, token: str,
+                            clerk_payload: dict = Depends(verify_clerk_token)):
+    auth, _ = await _load_authorization_for_token(token, clerk_payload)
+    if auth["status"] != "awaiting_uploader":
+        raise HTTPException(status_code=409, detail={"status": auth["status"]})
+    return {"blocks": upload_auth.blocks(auth["text"]), "text_sha256": auth["text_sha256"]}
+
+
+@api_router.post("/authorize/{token}/sign")
+@limiter.limit("10/minute")
+async def authorize_sign(request: Request, token: str, payload: AuthorizeSignIn,
+                         clerk_payload: dict = Depends(verify_clerk_token)):
+    auth, now = await _load_authorization_for_token(token, clerk_payload)
+    if auth["status"] != "awaiting_uploader":
+        raise HTTPException(status_code=409, detail={"status": auth["status"]})
+    if payload.text_sha256 != auth["text_sha256"]:
+        raise HTTPException(status_code=409, detail="The document changed. Please review it again.")
+    if _norm_name(payload.typed_signature) != _norm_name(auth.get("uploader_name") or ""):
+        raise HTTPException(status_code=422, detail=(
+            "This doesn't match the name the artist entered. Ask the artist to correct it and "
+            "send a new invitation."))
+    signed_at = now.isoformat()
+    ip = get_real_client_ip(request)
+    invited_email = auth.get("uploader_email")
+    sig = {"authorization_id": auth["id"], "version": auth["version"], "text_sha256": auth["text_sha256"],
+           "kind": "person", "artist_typed_signature": auth["artist_signature"]["typed_name"],
+           "artist_legal_name": auth.get("artist_name") or "", "artist_email": auth.get("artist_email") or "",
+           "artist_signed_at": auth["artist_signature"]["signed_at"], "artist_ip": auth["artist_signature"]["ip"],
+           "uploader_typed_signature": " ".join(payload.typed_signature.split()),
+           "uploader_name": auth.get("uploader_name") or "", "uploader_email": invited_email,
+           "uploader_signed_at": signed_at, "uploader_ip": ip}
+    pdf = await asyncio.to_thread(upload_auth.render_pdf, auth["text"], sig)
+    pdf_key = f"authorizations/{auth['artist_user_id']}/{auth['id']}.pdf"
+    try:
+        await asyncio.to_thread(r2_client.put_object, Bucket=R2_BUCKET, Key=pdf_key, Body=pdf,
+                                ContentType="application/pdf")
+    except Exception as exc:
+        logger.error("Authorization PDF upload failed for %s: %s", auth["id"], exc)
+        raise HTTPException(status_code=503, detail="Could not save your signature. Please try again.")
+    try:
+        res = await db.upload_authorizations.update_one(
+            {"id": auth["id"], "status": "awaiting_uploader"},
+            {"$set": {"status": "active", "uploader_user_id": clerk_payload["sub"],
+                      "uploader_signature": {"typed_name": sig["uploader_typed_signature"],
+                                             "signed_at": signed_at, "ip": ip, "email": invited_email},
+                      "pdf_key": pdf_key}})
+    except DuplicateKeyError:
+        raise HTTPException(status_code=409, detail="An active authorization already exists for this email.")
+    if res.matched_count == 0:
+        raise HTTPException(status_code=409, detail={"status": "already handled"})
+    await authorization_events.record(db, event="uploader_signed", authorization_id=auth["id"],
+                                      artist_user_id=auth["artist_user_id"], actor_user_id=clerk_payload["sub"])
+    subject, html, body = upload_auth.signed_copy_email(artist_name=auth.get("artist_name") or "the artist")
+    for to in {auth.get("artist_email"), invited_email, SIGNED_COPY_TO}:
+        if to:
+            try:
+                await send_email(to=to, subject=subject, html=html, text=body,
+                                 attachments=[("OVOXI-Upload-Authorization.pdf", pdf)],
+                                 reply_to=SIGNED_COPY_TO, idempotency_key=f"uauth-signed-{auth['id']}-{to}")
+            except Exception as exc:
+                logger.warning("authorization signed-copy email failed for %s: %s", auth["id"], exc)
+    return {"status": "active"}
+
+
+@api_router.post("/authorize/{token}/decline")
+@limiter.limit("10/minute")
+async def authorize_decline(request: Request, token: str, payload: AuthorizeDeclineIn,
+                            clerk_payload: dict = Depends(verify_clerk_token)):
+    auth, now = await _load_authorization_for_token(token, clerk_payload)
+    if auth["status"] != "awaiting_uploader":
+        raise HTTPException(status_code=409, detail={"status": auth["status"]})
+    res = await db.upload_authorizations.update_one(
+        {"id": auth["id"], "status": "awaiting_uploader"},
+        {"$set": {"status": "declined", "declined_at": now.isoformat(),
+                  "decline_reason": payload.reason}})
+    if res.matched_count == 0:
+        raise HTTPException(status_code=409, detail={"status": "already handled"})
+    await authorization_events.record(db, event="declined", authorization_id=auth["id"],
+                                      artist_user_id=auth["artist_user_id"], actor_user_id=clerk_payload["sub"])
+    if auth.get("artist_email"):
+        from xml.sax.saxutils import escape
+        subject = "An uploader declined your OVOXI authorization"
+        body = (f"{auth.get('uploader_name') or 'The uploader'} declined the Upload Authorization "
+                "for your account. No access was granted.\n\nOVOXI")
+        try:
+            await send_email(to=auth["artist_email"], subject=subject,
+                             html=f"<p>{escape(body)}</p>", text=body, reply_to=SIGNED_COPY_TO,
+                             idempotency_key=f"uauth-declined-{auth['id']}")
+        except Exception as exc:
+            logger.warning("authorization decline email failed for %s: %s", auth["id"], exc)
+    return {"status": "declined"}
+
+
+@api_router.get("/uploader/artists")
+@limiter.limit("30/minute")
+async def uploader_artists(request: Request, clerk_payload: dict = Depends(verify_clerk_token)):
+    uid = clerk_payload["sub"]
+    rows = await db.upload_authorizations.find(
+        {"uploader_user_id": uid, "kind": "person", "status": "active"}, {"_id": 0}).to_list(500)
+    if _role(clerk_payload) == "admin":
+        rows += await db.upload_authorizations.find(
+            {"kind": "ovoxi", "status": "active"}, {"_id": 0}).to_list(1000)
+    artists = {}
+    for a in rows:
+        artists.setdefault(a["artist_user_id"], {
+            "artist_user_id": a["artist_user_id"], "artist_name": a.get("artist_name"),
+            "authorization_id": a["id"], "uses": a.get("uses") or [], "is_ovoxi": a["kind"] == "ovoxi"})
+    # Brief 28 D3: the licensor name on each artist's CURRENT agreement, which upload/presign
+    # requires as rights.self_legal_name when acting. The upload form prefills and locks it.
+    # The uploader already saw this name in the Authorization they signed.
+    for item in artists.values():
+        current = account_legal_name(await _current_agreement(item["artist_user_id"]))
+        item["licensor_name"] = current or item["artist_name"]
+    return {"artists": list(artists.values())}
+
+
+@api_router.post("/uploader/authorizations/{authorization_id}/end")
+@limiter.limit("20/minute")
+async def uploader_end(request: Request, authorization_id: str,
+                       clerk_payload: dict = Depends(verify_clerk_token)):
+    uid = clerk_payload["sub"]
+    is_admin = _role(clerk_payload) == "admin"
+    auth = await db.upload_authorizations.find_one({"id": authorization_id}, {"_id": 0})
+    if not auth:
+        raise HTTPException(status_code=404, detail="Authorization not found.")
+    allowed = ((auth["kind"] == "person" and auth.get("uploader_user_id") == uid)
+               or (auth["kind"] == "ovoxi" and is_admin))
+    if not allowed:
+        raise HTTPException(status_code=403, detail="You cannot end this authorization.")
+    if auth["status"] != "active":
+        raise HTTPException(status_code=409, detail="This authorization is no longer active.")
+    res = await db.upload_authorizations.update_one(
+        {"id": authorization_id, "status": "active"},
+        {"$set": {"status": "ended_by_uploader", "ended_at": datetime.now(timezone.utc).isoformat()}})
+    if res.matched_count == 0:
+        raise HTTPException(status_code=409, detail="This authorization is no longer active.")
+    await authorization_events.record(
+        db, event="ended", authorization_id=authorization_id, artist_user_id=auth["artist_user_id"],
+        actor_user_id=uid, acting_admin_user_id=uid if auth["kind"] == "ovoxi" else None)
+    if auth.get("artist_email"):
+        subject, html, body = upload_auth.ended_email(
+            artist_name=auth.get("artist_name") or "your account",
+            uploader_name=auth.get("uploader_name") or "OVOXI")
+        try:
+            await send_email(to=auth["artist_email"], subject=subject, html=html, text=body,
+                             reply_to=SIGNED_COPY_TO, idempotency_key=f"uauth-ended-{authorization_id}")
+        except Exception as exc:
+            logger.warning("authorization ended email failed for %s: %s", authorization_id, exc)
+    return {"status": "ended_by_uploader"}
+
+
+# ---- Daily upload digest (Part C7) ----
+
+DIGEST_INTERVAL = int(os.environ.get("DIGEST_INTERVAL", "900"))     # how often the loop wakes
+DIGEST_HOUR_ET = int(os.environ.get("DIGEST_HOUR_ET", "23"))        # send at/after 23:00 ET
+DIGEST_TZ = "America/New_York"
+
+
+async def _send_digest_email(artist_user_id: str, rows: list, et_date: str) -> bool:
+    try:
+        artist = await fetch_clerk_user(artist_user_id)
+    except Exception as exc:
+        logger.warning("digest: could not load artist %s: %s", artist_user_id, exc)
+        return False
+    items = [{"title": r.get("track_name"), "uploader": r.get("uploaded_by_name") or "an uploader",
+              "uses": [u for u in ("ai_training", "sync") if (r.get("consent") or {}).get(u)]}
+             for r in rows]
+    subject, html, text = upload_auth.digest_email(items=items, link="https://ovoxi.net/vault")
+    try:
+        await send_email(to=artist["email"], subject=subject, html=html, text=text,
+                         reply_to=SIGNED_COPY_TO, idempotency_key=f"uauth-digest-{artist_user_id}-{et_date}")
+        return True
+    except Exception as exc:
+        logger.warning("digest email failed for %s: %s", artist_user_id, exc)
+        return False
+
+
+async def _maybe_send_digest(artist_user_id: str, et_date: str, run_now: str) -> None:
+    """Digest the delegated uploads for one artist since that artist's last digest cutoff (not
+    since midnight), through run_now. One per artist per ET day via the unique
+    (artist_user_id, digest_date) record; cutoff_at advances only on a sent digest, so a worker
+    outage or a failed send rolls everything into the next digest, losing nothing."""
+    prev = await db.upload_digests.find(
+        {"artist_user_id": artist_user_id, "cutoff_at": {"$ne": None}},
+        {"_id": 0, "cutoff_at": 1}).to_list(1000)
+    prev_cutoff = max((d["cutoff_at"] for d in prev), default=None)
+    window = {"$gt": prev_cutoff, "$lte": run_now} if prev_cutoff else {"$lte": run_now}
+    rows = await db.track_submissions.find(
+        {"clerk_user_id": artist_user_id, "authorization_id": {"$ne": None}, "upload_date": window},
+        {"_id": 0, "track_name": 1, "uploaded_by_name": 1, "consent": 1}).to_list(2000)
+    if not rows:
+        return
+    try:
+        await db.upload_digests.insert_one({
+            "id": str(uuid.uuid4()), "artist_user_id": artist_user_id, "digest_date": et_date,
+            "cutoff_at": None, "created_at": run_now})
+    except DuplicateKeyError:
+        return      # already sent (or attempted) for this ET day
+    if await _send_digest_email(artist_user_id, rows, et_date):
+        await db.upload_digests.update_one(
+            {"artist_user_id": artist_user_id, "digest_date": et_date}, {"$set": {"cutoff_at": run_now}})
+
+
+async def _run_upload_digest() -> None:
+    """Upload Authorization 6.1: once on each day an uploader adds a song, email the artist the
+    songs added since the last digest. Runs on the worker instance; idempotent per artist per
+    ET day via the unique (artist_user_id, digest_date) index."""
+    from zoneinfo import ZoneInfo
+    tz = ZoneInfo(DIGEST_TZ)
+    while True:
+        await asyncio.sleep(DIGEST_INTERVAL)
+        try:
+            if datetime.now(tz).hour < DIGEST_HOUR_ET:
+                continue
+            et_date = datetime.now(tz).date().isoformat()
+            run_now = datetime.now(timezone.utc).isoformat()
+            # Every artist who has ever had a delegated upload; the per-artist cutoff decides
+            # what is new, so a missed day is picked up here next time.
+            artist_ids = await db.track_submissions.distinct(
+                "clerk_user_id", {"authorization_id": {"$ne": None}})
+            for artist_user_id in artist_ids:
+                await _maybe_send_digest(artist_user_id, et_date, run_now)
+        except Exception as exc:
+            logger.error("upload digest run failed: %s", exc)
+
+
+app.include_router(api_router, dependencies=[Depends(acting_for_guard)])
 
 _cors_origins = [
     o.strip()
@@ -5056,7 +5977,11 @@ app.add_middleware(
     allow_credentials=True,
     allow_origins=_cors_origins,
     allow_methods=["*"],
-    allow_headers=["*"],
+    # Explicit so the delegated-upload header is allowed through credentialed preflight.
+    # The browser only ever sends Authorization and Content-Type to this API, plus
+    # X-Acting-For for acting-for requests (Brief 28 Part C). Keep this list in sync if a
+    # new request header is added on the frontend.
+    allow_headers=["Authorization", "Content-Type", "X-Acting-For"],
 )
 
 
@@ -5081,6 +6006,27 @@ async def create_indexes():
         await db.artist_legal_profiles.create_index([("user_id", 1)], unique=True)
         await db.cosign_requests.create_index([("token_sha256", 1)], unique=True)
         await db.cosign_requests.create_index([("track_id", 1), ("email", 1)], unique=True)
+        # Brief 28: Authorized Uploaders.
+        await db.upload_authorizations.create_index([("id", 1)], unique=True)
+        await db.upload_authorizations.create_index([("artist_user_id", 1), ("status", 1)])
+        await db.upload_authorizations.create_index([("uploader_user_id", 1), ("status", 1)])
+        await db.upload_authorizations.create_index(
+            [("token_sha256", 1)], unique=True,
+            partialFilterExpression={"token_sha256": {"$type": "string"}})
+        # Uniqueness rule 1: at most one active OVOXI authorization per artist.
+        await db.upload_authorizations.create_index(
+            [("artist_user_id", 1)], unique=True, name="uniq_active_ovoxi_per_artist",
+            partialFilterExpression={"status": "active", "kind": "ovoxi"})
+        # Uniqueness rule 2: at most one active authorization per artist plus uploader email.
+        # Scoped to string emails so OVOXI rows (no uploader_email) are governed by rule 1.
+        await db.upload_authorizations.create_index(
+            [("artist_user_id", 1), ("uploader_email", 1)], unique=True,
+            name="uniq_active_per_artist_email",
+            partialFilterExpression={"status": "active", "uploader_email": {"$type": "string"}})
+        await db.authorization_events.create_index([("authorization_id", 1), ("created_at", 1)])
+        await db.authorization_events.create_index([("artist_user_id", 1), ("created_at", 1)])
+        await db.authorization_events.create_index([("track_id", 1)])
+        await db.upload_digests.create_index([("artist_user_id", 1), ("digest_date", 1)], unique=True)
         await sync_orders.ensure_indexes(db)
         await licenses.ensure_indexes(db)
         await subscriptions.ensure_indexes(db)
@@ -5099,6 +6045,7 @@ async def create_indexes():
             asyncio.ensure_future(_worker_loop())
         asyncio.ensure_future(_run_sweeper())
         asyncio.ensure_future(_run_fulfilment_reconciler())
+        asyncio.ensure_future(_run_upload_digest())
         logger.info("Started %d worker(s), sweeper and reconciler instance=%s", WORKER_CONCURRENCY, INSTANCE_ID)
 
 

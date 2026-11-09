@@ -200,7 +200,9 @@ const TotalLine = ({ label, parties }) => {
   );
 };
 
-const RightsSection = ({ value, onChange, disabled, requirePro = false }) => {
+// lockedFor: the artist's name when an Authorized Uploader uploads for them (Brief 28 D3). The
+// licensor legal name is then fixed to the artist's agreement and cannot be edited.
+const RightsSection = ({ value, onChange, disabled, requirePro = false, lockedFor = null }) => {
   const r = value;
   const set = (patch) => onChange({ ...r, ...patch });
   const selfCf = r.self_legal_name.trim().toLowerCase();
@@ -265,12 +267,14 @@ const RightsSection = ({ value, onChange, disabled, requirePro = false }) => {
           className={CHECKBOX_CLASS}
         />
         <span className="text-sm font-medium text-white">
-          I own 100% of the writing, publishing and master of this song.
+          {lockedFor
+            ? `${lockedFor} owns 100% of the writing, publishing and master of this song.`
+            : 'I own 100% of the writing, publishing and master of this song.'}
         </span>
       </label>
 
       <div className="space-y-2">
-        <Label htmlFor="rights-legal-name" className="text-slate-300">Your legal name *</Label>
+        <Label htmlFor="rights-legal-name" className="text-slate-300">{lockedFor ? "Artist's legal name *" : 'Your legal name *'}</Label>
         <Input
           id="rights-legal-name"
           data-testid="upload-rights-legal-name"
@@ -279,9 +283,15 @@ const RightsSection = ({ value, onChange, disabled, requirePro = false }) => {
           maxLength={120}
           placeholder="Full legal name"
           disabled={disabled}
-          className={FIELD_CLASS}
+          readOnly={!!lockedFor}
+          aria-readonly={!!lockedFor}
+          className={`${FIELD_CLASS}${lockedFor ? ' cursor-not-allowed text-slate-400' : ''}`}
         />
-        {legalNameMismatch(r) ? (
+        {lockedFor ? (
+          <p className="text-xs text-slate-500" data-testid="upload-rights-legal-name-locked">
+            Locked to the licensor name on {lockedFor}'s Artist Agreement.
+          </p>
+        ) : legalNameMismatch(r) ? (
           <p className="text-xs text-red-400" data-testid="upload-rights-legal-name-error">{LEGAL_NAME_MISMATCH}</p>
         ) : (
           <p className="text-xs text-slate-500">The legal name on your Artist Agreement, not your artist name.</p>
