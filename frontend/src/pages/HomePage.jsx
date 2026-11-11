@@ -1,114 +1,188 @@
-import React from 'react';
-import { Link } from 'react-router-dom';
+import React, { useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import { ButtonLink, Check, Eyebrow } from '../landing/parts';
-import { LINKS, buyerCta } from '../landing/links';
-import useCatalogVisible from '../landing/useCatalogVisible';
+import { LINKS } from '../landing/links';
 
-// The landing page (Direction A, "Two doors", chosen Oct 27): one door for artists, one for
-// buyers, AI teams one link below. Copy is short on purpose.
+// Custom Datasets homepage (Plan 29, copy draft v2, approved Nov 8).
+// Copy rules: no studio names, no sample pack, no counts except the network line,
+// no prices, deposits, reply times or artist pay.
 const WRAP = 'mx-auto max-w-[1200px] px-6';
-const H2 = 'm-0 font-heading text-[36px] font-extrabold leading-[1.08] sm:text-[44px]';
+const H2 = 'm-0 font-heading text-[32px] font-extrabold leading-[1.08] sm:text-[44px]';
+const CARD = 'flex flex-col gap-3 rounded-[20px] border border-[#27272A] bg-[#111114] p-8';
+const CARD_TITLE = 'm-0 text-[22px] font-bold';
+const BODY = 'm-0 text-[17px] leading-relaxed text-[#A1A1AA]';
+const PURPLE = 'text-[#C78BE0]';
 
-const Steps = ({ color, items }) => (
-  <ol className="m-0 flex list-none flex-col gap-4 p-0 text-[17px] leading-relaxed text-[#D4D4D8]">
-    {items.map((t, i) => (
-      <li key={t} className="flex gap-4">
-        <span className={`font-heading font-extrabold ${color}`}>{`0${i + 1}`}</span>{t}
-      </li>
-    ))}
-  </ol>
-);
+const TRUST = ['Never released', 'True multitracks', 'Consent on every file', 'Exclusivity available'];
 
-const TRUST = ['Ownership checked on every track', 'Every co-writer signs', 'Stems available', 'License you can verify online'];
+const GAP = [
+  ['Already released', 'Catalog music is already out in the world. Other buyers can license the same tracks.'],
+  ['Mostly stereo', 'Catalogs usually ship finished mixes. Stems, when offered, are often separated by software after the fact.'],
+  ['Freelancers take managing', 'Hiring producers one at a time means tracking consent, ownership and quality yourself.'],
+];
+
+const DELIVERABLES = [
+  'Full mixes',
+  'True multitracks, printed from the session',
+  'MIDI and tempo maps',
+  'Lyrics with timestamps',
+  'Chord, key and instrument labels',
+  'A provenance manifest for every file',
+  'A dataset card for the delivery',
+];
+
+const STEPS = [
+  ["Tell us what's missing", 'Genre, language, instruments, vocal style, tempo, track count, format and labels.'],
+  ['Get a scope', 'We send a statement of work and a schedule.'],
+  ['We cast it', 'Writers, artists, producers and session players from our network of over 2,000 artists and producers.'],
+  ['We record to protocol', 'Every session follows one standard for mics, channels, file naming, sample rate, click and stem printing.'],
+  ['Everyone signs in the room', 'Composers, master owners, session players and vocalists, including a voice and likeness release.'],
+  ['We check and label it', 'Originality checks, technical QC and annotation.'],
+  ['We deliver', 'Securely, with an optional exclusivity window of 6, 12 or 24 months.'],
+];
+
+const WHY = [
+  ['Never released', 'Recorded for your project, not pulled from a catalog.'],
+  ['Exclusive if you want it', 'Sole training rights for 6, 12 or 24 months.'],
+  ['Documented consent', 'Composer, master and performer sign-off on every file, recorded in a provenance manifest.'],
+  ['Real multitracks', 'Printed from the session, not separated by software.'],
+  ['One protocol', 'Every session is recorded to the same standard in commercial studios.'],
+  ['Shaped by your evals', 'Tell us where your model falls short and we record to close the gap.'],
+];
+
+const WAYS = [
+  ['Custom commission', 'Tracks made to your spec, with annotations.'],
+  ['Exclusive window', 'A custom commission with sole training rights for 6, 12 or 24 months.'],
+  ['Evaluation sets', 'Small, never-released sets for testing your models.'],
+];
 
 const HomePage = () => {
-  const buyer = buyerCta(useCatalogVisible());
-  return (
-    <div data-testid="home-page" className="bg-ink pt-16 text-[#F4F4F6]">
-      <section className={`${WRAP} flex flex-col items-center gap-6 pb-[72px] pt-20 text-center sm:pt-24`}>
-        <p className="m-0 text-sm uppercase tracking-[0.14em] text-cyan">Licensed music for media and AI</p>
-        <h1 className="m-0 max-w-[15ch] font-heading text-[40px] font-extrabold leading-[1.02] sm:text-[64px] lg:text-[80px]">
-          Music that&apos;s cleared. Artists who get paid.
-        </h1>
-        <p className="m-0 max-w-[46ch] text-lg leading-relaxed text-[#A1A1AA] sm:text-xl">
-          Original music from independent artists, licensed to brands, creators and AI companies. Every owner signs.
-          Every sale pays.
-        </p>
+  const { hash } = useLocation();
 
-        <div className="mt-6 grid w-full max-w-[880px] grid-cols-1 gap-4 text-left md:grid-cols-2">
-          <div className="flex flex-col gap-3 rounded-[20px] border border-[#27272A] bg-[#111114] p-8" data-testid="door-artist">
-            <Eyebrow color="text-[#B44FD4]">I make music</Eyebrow>
-            <h2 className="m-0 font-heading text-[28px] font-bold leading-tight">Earn from sync and AI licensing</h2>
-            <p className="m-0 text-base leading-relaxed text-[#A1A1AA]">Upload, we handle the rest. Paid monthly.</p>
-            <div className="mt-2 flex flex-wrap items-center gap-4">
-              <ButtonLink to={LINKS.join} kind="artist" arrow testid="home-join">Join as an artist</ButtonLink>
-              <Link to={LINKS.artists} data-testid="home-artists-how" className="text-[15px] font-medium text-[#D4D4D8] underline-offset-4 hover:underline">How it works</Link>
-            </div>
-          </div>
-          <div className="flex flex-col gap-3 rounded-[20px] border border-[#27272A] bg-[#111114] p-8" data-testid="door-buyer">
-            <Eyebrow color="text-cyan">I need music</Eyebrow>
-            <h2 className="m-0 font-heading text-[28px] font-bold leading-tight">License tracks in minutes</h2>
-            <p className="m-0 text-base leading-relaxed text-[#A1A1AA]">For videos, ads, films, games and apps.</p>
-            <div className="mt-2">
-              <ButtonLink to={buyer.to} kind="buyer" arrow testid="home-buyer">{buyer.label}</ButtonLink>
-            </div>
-          </div>
-        </div>
-        <p className="m-0 mt-1 text-[15px] text-[#A1A1AA]">
-          Training AI models? <Link to={LINKS.ai} data-testid="home-ai" className="text-cyan hover:underline">Talk to us about licensed data</Link>
+  // "How it works" in the header links to /#how. Scroll after the route's
+  // scroll-to-top has run, hence the animation frame.
+  useEffect(() => {
+    if (hash !== '#how') return undefined;
+    const id = requestAnimationFrame(() => {
+      const el = document.getElementById('how');
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    return () => cancelAnimationFrame(id);
+  }, [hash]);
+
+  return (
+    <div data-testid="home-page" className="bg-ink pt-16 font-light text-[#F4F4F6]">
+      {/* Hero */}
+      <section className={`${WRAP} flex flex-col items-center gap-7 pb-[104px] pt-24 text-center sm:pt-[120px]`}>
+        <p className="m-0 text-sm font-medium uppercase tracking-[0.14em] text-cyan">Custom music datasets for AI</p>
+        <h1 className="m-0 max-w-[16ch] font-heading text-[40px] font-extrabold leading-[1.02] sm:text-[64px] lg:text-[84px]">
+          The music data your model needs doesn&apos;t exist yet. We record it.
+        </h1>
+        <p className="m-0 max-w-[54ch] text-lg leading-relaxed text-[#A1A1AA] sm:text-[21px]">
+          OVOXI makes custom datasets for AI labs: new, never-released music recorded to your spec in commercial
+          studios, with true multitracks and signed consent from everyone in the room.
         </p>
+        <div className="mt-2 flex flex-wrap items-center justify-center gap-5">
+          <ButtonLink to={LINKS.request} kind="artist" size="lg" testid="home-request">Request data</ButtonLink>
+          <a href="#how" data-testid="home-how" className="text-base font-medium text-[#D4D4D8] underline-offset-4 hover:underline">
+            See how it works
+          </a>
+        </div>
       </section>
 
-      <section aria-label="Why it&apos;s safe to license" className="border-y border-[#1F1F23]">
-        <ul className={`${WRAP} m-0 grid list-none grid-cols-1 gap-5 py-7 text-[15px] text-[#D4D4D8] sm:grid-cols-2 lg:grid-cols-4`}>
+      {/* Trust bar */}
+      <section aria-label="At a glance" className="border-y border-[#1F1F23]">
+        <ul className={`${WRAP} m-0 grid list-none grid-cols-1 gap-5 py-7 text-base font-normal text-[#D4D4D8] sm:grid-cols-2 lg:grid-cols-4`}>
           {TRUST.map((t) => <li key={t} className="flex items-center gap-2.5"><Check />{t}</li>)}
         </ul>
       </section>
 
-      <section className={`${WRAP} grid grid-cols-1 gap-12 py-24 md:grid-cols-2`}>
-        <div className="flex flex-col gap-5">
-          <Eyebrow color="text-[#B44FD4]">For artists</Eyebrow>
-          <h2 className={H2}>Your songs, working while you make the next one.</h2>
-          <Steps color="text-[#B44FD4]" items={[
-            'Upload your tracks and choose sync, AI training or both.',
-            'We master, split stems and clear ownership.',
-            'Buyers license your music. Your Wallet pays out monthly.',
-          ]} />
-          <div className="flex flex-wrap items-center gap-4">
-            <ButtonLink to={LINKS.join} kind="artist">Join as an artist</ButtonLink>
-            <Link to={LINKS.artists} className="text-[15px] font-medium text-[#D4D4D8] underline-offset-4 hover:underline">How it works</Link>
-          </div>
+      {/* The gap */}
+      <section className={`${WRAP} flex flex-col gap-10 py-28`}>
+        <div className="flex flex-col gap-4">
+          <Eyebrow color={PURPLE}>The gap</Eyebrow>
+          <h2 className={H2}>Licensed catalogs are open to everyone.</h2>
         </div>
-        <div className="flex flex-col gap-5">
-          <Eyebrow color="text-cyan">For buyers</Eyebrow>
-          <h2 className={H2}>Fresh music, no clearance headaches.</h2>
-          <Steps color="text-cyan" items={[
-            'Search by mood, genre and BPM. Preview anything.',
-            'Buy a single license or subscribe.',
-            'Download the track, stems and your license certificate.',
-          ]} />
-          <div><ButtonLink to={buyer.to} kind="buyer">{buyer.label}</ButtonLink></div>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          {GAP.map(([t, b]) => (
+            <div key={t} className={CARD}><h3 className={CARD_TITLE}>{t}</h3><p className={BODY}>{b}</p></div>
+          ))}
         </div>
       </section>
 
+      {/* What you get */}
       <section className="border-y border-[#1F1F23] bg-[#0B0B0E]">
-        <div className={`${WRAP} flex flex-wrap items-center justify-between gap-8 py-20`}>
-          <div className="flex min-w-0 flex-[1_1_520px] flex-col gap-4">
-            <Eyebrow>For AI teams</Eyebrow>
-            <h2 className="m-0 font-heading text-[34px] font-extrabold leading-tight sm:text-[40px]">Training data with a paper trail.</h2>
-            <p className="m-0 max-w-[52ch] text-lg leading-relaxed text-[#A1A1AA]">
-              Consented, rights-cleared music with stems and metadata. Every track traces back to signed agreements.
-            </p>
+        <div className={`${WRAP} grid grid-cols-1 items-start gap-14 py-28 md:grid-cols-2`}>
+          <div className="flex flex-col gap-4">
+            <Eyebrow color="text-cyan">What you get</Eyebrow>
+            <h2 className={H2}>Delivered ready for training.</h2>
           </div>
-          <ButtonLink to={LINKS.ai} kind="ghost">Talk to sales</ButtonLink>
+          <ul className="m-0 flex list-none flex-col p-0 text-[19px] font-normal text-[#E4E4E7]">
+            {DELIVERABLES.map((d, i) => (
+              <li key={d} className={`border-t border-[#27272A] py-4 ${i === DELIVERABLES.length - 1 ? 'border-b' : ''}`}>{d}</li>
+            ))}
+          </ul>
         </div>
       </section>
 
-      <section className={`${WRAP} flex flex-col items-center gap-6 pb-28 pt-24 text-center`}>
-        <h2 className="m-0 max-w-[18ch] font-heading text-[36px] font-extrabold leading-[1.05] sm:text-[60px]">Make music? Need music? Start here.</h2>
-        <div className="flex flex-wrap justify-center gap-3">
-          <ButtonLink to={LINKS.join} kind="artist" size="lg">Join as an artist</ButtonLink>
-          <ButtonLink to={buyer.to} kind="buyer" size="lg">{buyer.label}</ButtonLink>
+      {/* How it works */}
+      <section id="how" className={`${WRAP} flex scroll-mt-20 flex-col gap-12 py-28`}>
+        <div className="flex flex-col gap-4">
+          <Eyebrow color={PURPLE}>How it works</Eyebrow>
+          <h2 className={H2}>From spec to delivery.</h2>
+        </div>
+        <ol className="m-0 grid list-none grid-cols-1 gap-x-8 gap-y-10 p-0 sm:grid-cols-2 lg:grid-cols-4">
+          {STEPS.map(([t, b], i) => (
+            <li key={t} className="flex flex-col gap-2.5 border-t border-[#27272A] pt-5">
+              <span className="font-heading text-[40px] font-extrabold leading-none text-[#52525B]">{`0${i + 1}`}</span>
+              <h3 className="m-0 text-[21px] font-bold">{t}</h3>
+              <p className="m-0 text-base leading-relaxed text-[#A1A1AA]">{b}</p>
+            </li>
+          ))}
+        </ol>
+      </section>
+
+      {/* Why OVOXI */}
+      <section className="border-y border-[#1F1F23] bg-[#0B0B0E]">
+        <div className={`${WRAP} flex flex-col gap-12 py-28`}>
+          <div className="flex flex-col gap-4">
+            <Eyebrow color="text-cyan">Why OVOXI</Eyebrow>
+            <h2 className={H2}>Made for your model.</h2>
+          </div>
+          <div className="grid grid-cols-1 gap-x-12 gap-y-10 md:grid-cols-2 lg:grid-cols-3">
+            {WHY.map(([t, b]) => (
+              <div key={t} className="flex flex-col gap-2"><h3 className="m-0 text-[21px] font-bold">{t}</h3><p className={BODY}>{b}</p></div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Ways to work with us */}
+      <section className={`${WRAP} flex flex-col gap-10 py-28`}>
+        <h2 className={H2}>Ways to work with us.</h2>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          {WAYS.map(([t, b]) => (
+            <div key={t} className={CARD}><h3 className={CARD_TITLE}>{t}</h3><p className={BODY}>{b}</p></div>
+          ))}
+        </div>
+        <div><ButtonLink to={LINKS.request} kind="artist">Request data</ButtonLink></div>
+      </section>
+
+      {/* Artist strip */}
+      <section className="border-t border-[#1F1F23]">
+        <div className={`${WRAP} flex flex-wrap items-center justify-between gap-4 py-10`}>
+          <p className="m-0 text-[19px] font-normal text-[#D4D4D8]">Make music? Record sessions for AI labs.</p>
+          <ButtonLink to={LINKS.artists} kind="ghost" testid="home-artists">Join the network</ButtonLink>
+        </div>
+      </section>
+
+      {/* Final CTA */}
+      <section className="border-t border-[#1F1F23] bg-[#0B0B0E]">
+        <div className={`${WRAP} flex flex-col items-center gap-8 py-[120px] text-center`}>
+          <h2 className="m-0 max-w-[16ch] font-heading text-[36px] font-extrabold leading-[1.04] sm:text-[64px]">
+            Tell us what your model is missing.
+          </h2>
+          <ButtonLink to={LINKS.request} kind="artist" size="lg">Request data</ButtonLink>
         </div>
       </section>
     </div>

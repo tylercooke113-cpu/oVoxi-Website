@@ -2,11 +2,11 @@
 
 export const BRAND = {
   name: "OVOXI",
-  tagline: "The Curated Music Catalog Built for the AI Economy",
+  tagline: "Custom music datasets for AI",
   email: "tyler@ovoxi.net",
   domain: "ovoxi.net",
   logo: "/logo.png",
-  pillars: ["Emerging-First", "Fully Licensed", "AI-Ready"],
+  pillars: ["Never released", "True multitracks", "Consent on every file"],
 };
 
 export const NAV_LINKS = [

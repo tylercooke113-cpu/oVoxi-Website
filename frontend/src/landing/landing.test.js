@@ -8,7 +8,10 @@ import { createRoot } from 'react-dom/client';
 
 let mockLibrary = false;
 jest.mock('@clerk/clerk-react', () => ({ useAuth: () => ({ getToken: async () => 't', isSignedIn: false, isLoaded: true }) }));
-jest.mock('react-router-dom', () => ({ Link: ({ to, children, ...p }) => <a href={to} {...p}>{children}</a> }), { virtual: true });
+jest.mock('react-router-dom', () => ({
+  Link: ({ to, children, ...p }) => <a href={to} {...p}>{children}</a>,
+  useLocation: () => ({ hash: '' }),
+}), { virtual: true });
 jest.mock('../sync/api', () => ({ publicApi: { pricing: async () => ({ visible: true, library_visible: mockLibrary }) } }));
 
 import HomePage from '../pages/HomePage';
@@ -27,34 +30,34 @@ const href = (c, id) => c.querySelector(`[data-testid="${id}"]`).getAttribute('h
 
 beforeEach(() => { sessionStorage.clear(); mockLibrary = false; });
 
-test('home: every Join as an artist goes to sign-up; How it works goes to /artists', async () => {
+test('home: Custom Datasets hero, every Request data goes to /request', async () => {
   const c = await render(<HomePage />);
-  const joins = byText(c, 'Join as an artist');
-  expect(joins.length).toBeGreaterThanOrEqual(3);
-  joins.forEach((a) => expect(a.getAttribute('href')).toBe('/signup'));
-  byText(c, 'How it works').forEach((a) => expect(a.getAttribute('href')).toBe('/artists'));
-  expect(href(c, 'home-ai')).toBe('/contact?interest=ai_company');
-  expect(c.textContent).toContain('Music that\'s cleared. Artists who get paid.');
+  expect(c.textContent).toContain("The music data your model needs doesn't exist yet. We record it.");
+  const req = byText(c, 'Request data');
+  expect(req.length).toBeGreaterThanOrEqual(3);
+  req.forEach((a) => expect(a.getAttribute('href')).toBe('/request'));
+  expect(href(c, 'home-how')).toBe('#how');
+  expect(c.querySelector('#how')).not.toBeNull();
+  expect(href(c, 'home-artists')).toBe('/artists');
 });
 
-test('home: catalog off, the I need music card asks for early access', async () => {
+test('home: no old marketplace doors', async () => {
   const c = await render(<HomePage />);
-  expect(c.querySelector('[data-testid="door-buyer"]')).not.toBeNull();
-  expect(href(c, 'home-buyer')).toBe('/contact?interest=buyer');
-  expect(c.querySelector('[data-testid="home-buyer"]').textContent).toContain('Get early access');
+  expect(c.querySelector('[data-testid="door-buyer"]')).toBeNull();
+  expect(c.querySelector('[data-testid="door-artist"]')).toBeNull();
   expect(byText(c, 'Browse the catalog')).toHaveLength(0);
+  expect(byText(c, 'Get early access')).toHaveLength(0);
 });
 
-test('home: catalog on, the buyer button browses the catalog', async () => {
-  mockLibrary = true;
+test('home: copy guard (Plan 29 rules)', async () => {
   const c = await render(<HomePage />);
-  expect(href(c, 'home-buyer')).toBe('/catalog');
-  expect(c.querySelector('[data-testid="home-buyer"]').textContent).toContain('Browse the catalog');
-});
-
-test('home: no numbers section', async () => {
-  const c = await render(<HomePage />);
-  expect(c.textContent).not.toMatch(/\[N\]|paid to artists|cleared tracks/);
+  const t = c.textContent;
+  expect(t).not.toMatch(/sample pack/i);
+  expect(t).not.toMatch(/—/);                        // no em dashes
+  expect(t).not.toMatch(/deposit|\$\d|business days/i);   // no terms, prices or reply times
+  expect(t).not.toMatch(/1,127|1127|2,300|\b26 artists/); // no catalog counts
+  expect(t).not.toMatch(/First Class|Quad|Platinum Sound|Penthouse|Smash|Bakery|Paramount|The Kitchen|Chalice/); // no studio names
+  expect(t).not.toMatch(/5-stem|stem separation/i);
 });
 
 test('/artists: Join goes to sign-up, FAQ present', async () => {

@@ -22,16 +22,13 @@ export const LegalLinkLabel = ({ link }) => (
 );
 
 const COLUMNS = [
+  { heading: 'Company', links: [{ label: 'Contact', to: '/contact' }] },
+  { heading: 'Datasets', links: [{ label: 'Request data', to: '/request' }] },
   {
-    heading: 'Company',
+    heading: 'Artists',
     links: [
-      { label: 'Contact', to: '/contact' },
-    ],
-  },
-  {
-    heading: 'Catalog',
-    links: [
-      { label: 'For AI & Enterprise', to: '/contact?interest=ai_company' },
+      { label: 'Join the network', to: '/artists' },
+      { label: 'Artist sign in', to: '/login' },
     ],
   },
 ];
@@ -39,7 +36,7 @@ const COLUMNS = [
 export const Footer = () => (
   <footer data-testid="site-footer" className="border-t border-white/10 bg-black">
     <div className="mx-auto max-w-7xl px-6 lg:px-8 py-16">
-      <div className="grid grid-cols-1 gap-12 md:grid-cols-3">
+      <div className="grid grid-cols-1 gap-12 md:grid-cols-4">
         <div>
           <div className="flex items-center">
             <img src={BRAND.logo} alt="OVOXI" className="h-10 w-auto" />

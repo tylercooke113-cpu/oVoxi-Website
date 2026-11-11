@@ -87,8 +87,8 @@ export const Header = () => {
         )}
         {!isSignedIn && (
           <>
+            <Link to="/#how" onClick={click} data-testid="header-how" className={cls}>How it works</Link>
             <Link to="/artists" onClick={click} data-testid="header-artist-cta" className={cls}>For artists</Link>
-            <Link to="/contact?interest=ai_company" onClick={click} data-testid="header-partnership-cta" className={cls}>For AI teams</Link>
           </>
         )}
         {browsePrompt && (
@@ -111,6 +111,10 @@ export const Header = () => {
         {!isSignedIn && (
           <Link to="/login" onClick={click} data-testid="nav-signin"
             className={`rounded-full border border-[#3F3F46] px-[18px] py-2.5 text-sm font-medium text-white transition-colors hover:bg-white/10 ${mobile ? 'text-center' : ''}`}>Sign in</Link>
+        )}
+        {!isSignedIn && (
+          <Link to="/request" onClick={click} data-testid="header-request"
+            className={`rounded-full bg-[#8E44CC] px-[18px] py-2.5 text-sm font-bold text-white transition-colors hover:bg-[#7D3AB6] ${mobile ? 'text-center' : ''}`}>Request data</Link>
         )}
       </>
     );

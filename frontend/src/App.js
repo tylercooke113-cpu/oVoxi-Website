@@ -76,6 +76,8 @@ function AppContent() {
               : <HomePage />}
           />
           <Route path='/contact' element={<ContactPage />} />
+          {/* Brief 31 placeholder; Brief 32 replaces it with the spec form. */}
+          <Route path='/request' element={<Navigate to='/contact?interest=ai_company' replace />} />
           <Route path='/artists' element={<ArtistsPage />} />
           <Route path='/artist-upload' element={<Navigate to='/signup' replace />} />
           <Route path='/upload' element={<UploadPage />} />
