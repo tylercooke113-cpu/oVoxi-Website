@@ -65,7 +65,7 @@ test('stop() before any start never loads PostHog', () => {
 test.each([
   ['/vault', true], ['/account', true], ['/upload', true], ['/admin', true], ['/cosign/t1', true],
   ['/license/tok', true], ['/catalog/success', true], ['/appeal/x', true], ['/signup/verify', true],
-  ['/login', true], ['/apply', true], ['/contact', true],
+  ['/login', true], ['/apply', true], ['/contact', true], ['/artists', true], ['/request', true],
   ['/', false], ['/catalog', false], ['/catalog/track/1', false], ['/pricing', false],
   ['/license-terms', false], ['/privacy', false], ['/verify/L-1', false],
 ])('isPrivatePath(%s) is %s', (path, priv) => {

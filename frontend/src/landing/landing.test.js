@@ -13,6 +13,8 @@ jest.mock('react-router-dom', () => ({
   useLocation: () => ({ hash: '' }),
 }), { virtual: true });
 jest.mock('../sync/api', () => ({ publicApi: { pricing: async () => ({ visible: true, library_visible: mockLibrary }) } }));
+jest.mock('axios', () => ({ post: jest.fn(() => Promise.resolve({ data: {} })) }));
+import axios from 'axios';
 
 import HomePage from '../pages/HomePage';
 import ArtistsPage from '../pages/ArtistsPage';
@@ -60,10 +62,64 @@ test('home: copy guard (Plan 29 rules)', async () => {
   expect(t).not.toMatch(/5-stem|stem separation/i);
 });
 
-test('/artists: Join goes to sign-up, FAQ present', async () => {
+const setValue = (el, value) => {
+  const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value').set;
+  setter.call(el, value);
+  el.dispatchEvent(new Event('input', { bubbles: true }));
+};
+const chip = (c, label) => [...c.querySelectorAll('label')].find((l) => l.textContent.trim() === label).querySelector('input');
+const field = (c, label) => [...c.querySelectorAll('label')].find((l) => l.textContent.trim().startsWith(label)).querySelector('input');
+
+test('/artists: network copy, apply and how-it-works anchors, sign-in block', async () => {
   const c = await render(<ArtistsPage />);
-  byText(c, 'Join as an artist').forEach((a) => expect(a.getAttribute('href')).toBe('/signup'));
-  expect(href(c, 'artists-join')).toBe('/signup');
-  expect(c.textContent).toContain('Do I keep my rights?');
-  expect(byText(c, 'Get early access')[0].getAttribute('href')).toBe('/contact?interest=buyer');
+  expect(c.textContent).toContain('Record music for AI labs.');
+  expect(href(c, 'artists-apply')).toBe('#apply');
+  expect(href(c, 'artists-how')).toBe('#how');
+  expect(c.querySelector('#apply')).not.toBeNull();
+  expect(c.querySelector('#how')).not.toBeNull();
+  expect(href(c, 'artists-signin')).toBe('/login');
+  expect(href(c, 'artists-signup')).toBe('/signup');
+  expect(c.textContent).toContain('Sync stays non-exclusive.');
+});
+
+test('/artists: copy guard (no old marketplace, no pay, Plan 29 rules)', async () => {
+  const c = await render(<ArtistsPage />);
+  const t = c.textContent;
+  expect(t).not.toMatch(/get paid|paid monthly|wallet|earn/i);
+  expect(t).not.toMatch(/browse the catalog|get early access|talk to sales/i);
+  expect(t).not.toMatch(/only place your chosen songs are licensed for sync/i);
+  expect(t).not.toMatch(/—/);
+  expect(t).not.toMatch(/\d+\s?%/);
+  expect(t).not.toMatch(/sample pack/i);
+  expect(t).not.toMatch(/First Class|Quad|Platinum Sound|Penthouse|Smash|Bakery|Paramount|The Kitchen|Chalice/);
+});
+
+test('/artists: empty form shows an error and sends nothing', async () => {
+  axios.post.mockClear();
+  const c = await render(<ArtistsPage />);
+  await act(async () => { c.querySelector('[data-testid="artists-apply-submit"]').click(); });
+  expect(c.querySelector('[data-testid="artists-apply-error"]').textContent).toContain('fields marked required');
+  expect(axios.post).not.toHaveBeenCalled();
+});
+
+test('/artists: a valid application posts to /api/contact as interest network', async () => {
+  axios.post.mockClear();
+  const c = await render(<ArtistsPage />);
+  await act(async () => {
+    setValue(field(c, 'Your name'), 'Jane Doe');
+    setValue(field(c, 'Email'), 'jane@example.com');
+    setValue(field(c, 'City'), 'Hartford, CT');
+    chip(c, 'Producer').click();
+    chip(c, 'R&B').click();
+  });
+  await act(async () => { c.querySelector('[data-testid="artists-apply-submit"]').click(); });
+  expect(axios.post).toHaveBeenCalledTimes(1);
+  const [url, body] = axios.post.mock.calls[0];
+  expect(url).toMatch(/\/api\/contact$/);
+  expect(body.interest).toBe('network');
+  expect(body.name).toBe('Jane Doe');
+  expect(body.message).toContain('Roles: Producer');
+  expect(body.message).toContain('Genres: R&B');
+  expect(body.message).toContain('City: Hartford, CT');
+  expect(c.querySelector('[data-testid="artists-apply-success"]').textContent).toContain('Thanks, Jane.');
 });

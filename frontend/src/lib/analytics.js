@@ -10,7 +10,7 @@ export const POSTHOG_HOST = 'https://us.i.posthog.com';
 // Session replay is off on these (Data Collection Policy section 3).
 const PRIVATE_PREFIXES = [
   '/vault', '/account', '/upload', '/admin', '/cosign', '/license', '/catalog/success',
-  '/appeal', '/apply', '/contact', '/signup', '/login',
+  '/appeal', '/apply', '/contact', '/signup', '/login', '/artists', '/request',
 ];
 export const isPrivatePath = (path) =>
   PRIVATE_PREFIXES.some((p) => path === p || path.startsWith(`${p}/`));
